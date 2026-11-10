@@ -1,0 +1,112 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Nova — Account</title>
+<script src="theme.js"></script>
+<style>
+:root{--bg1:#1b1140;--bg2:#5b2a6e;--bg3:#a8623a;--card:rgba(255,255,255,.09);--tx:#fff;--mu:#c9c3e6;--ac:#c9b6ff;--onac:#1b1140;--chip:#ffffff20;--chip2:#ffffff30;--inp:#00000040;--sheet:#0b0716}
+[data-theme=light]{--bg1:#f6f2ff;--bg2:#e4d9ff;--bg3:#ffe2cc;--card:rgba(255,255,255,.78);--tx:#1b1140;--mu:#5d557f;--ac:#6b3fd6;--onac:#fff;--chip:#1b114014;--chip2:#1b114026;--inp:#fff;--sheet:#fff}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;color:var(--tx);font:16px/1.4 system-ui,sans-serif;background:linear-gradient(160deg,var(--bg1),var(--bg2) 55%,var(--bg3)) fixed}
+#app{max-width:520px;margin:0 auto;padding:max(12px,env(safe-area-inset-top)) 14px 40px}
+.bar{display:flex;align-items:center;justify-content:space-between;padding:8px 0;position:relative}.bar h1{font-size:18px;margin:0}
+button,.btn{font:inherit;color:inherit;background:none;border:0;cursor:pointer}.ib{width:36px;height:36px;border-radius:50%;background:var(--card);font-size:18px}
+.card{background:var(--card);border-radius:20px;margin:10px 0;overflow:hidden;backdrop-filter:blur(8px)}
+.row{display:flex;align-items:center;gap:14px;padding:15px 16px;width:100%;text-align:left;border-top:1px solid rgba(255,255,255,.07)}.row:first-child{border:0}
+.row .i{width:26px;text-align:center;font-size:20px}.row .m{flex:1}.row small{display:block;color:var(--mu);font-size:13px}
+h2{font-size:15px;margin:18px 4px 6px}input[type=checkbox]{width:24px;height:24px;accent-color:var(--ac)}
+.sw{appearance:none;width:46px!important;height:26px!important;border-radius:13px;background:var(--chip2);position:relative}.sw:checked{background:var(--ac)}
+.sw:after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.2s}.sw:checked:after{left:23px}
+.av{width:62px;height:62px;border-radius:50%;object-fit:cover;background:var(--chip2);display:grid;place-items:center;font-size:26px}
+input,textarea,select{width:100%;padding:12px;border-radius:12px;border:1px solid #ffffff30;background:var(--inp);color:var(--tx);font:inherit;margin:4px 0 10px}
+.pri{background:var(--ac);color:var(--onac);padding:12px 20px;border-radius:14px;font-weight:600}.dng{background:#d33;padding:12px 20px;border-radius:14px}
+.ov{position:fixed;inset:0;background:#0009;display:flex;align-items:flex-end;justify-content:center;z-index:9}.ov.c{align-items:center}
+.sheet{background:var(--sheet);border-radius:24px 24px 0 0;padding:16px;width:100%;max-width:520px}.ov.c .sheet{border-radius:24px;margin:16px}
+.em{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;font-size:30px;text-align:center}.em button{padding:6px;border-radius:12px}
+.menu{position:absolute;right:0;top:46px;background:var(--sheet);border-radius:14px;z-index:5;min-width:150px}
+.gal{display:flex;gap:8px;overflow-x:auto;padding:10px}.gal img,.gal button{width:110px;height:140px;border-radius:14px;object-fit:cover;flex:none;background:var(--chip);font-size:34px}
+.pad{padding:14px 16px}.dot{width:14px;height:14px;border-radius:50%;background:#2c2;display:inline-block;margin-right:6px}.legal p{color:var(--mu)}
+</style></head><body><div id="app"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script><script src="nova-core.js"></script>
+<script>
+const {sb,t,esc}=Nova,app=document.getElementById('app');let U,P={};
+const EMOJI="👍 ❤️ 😂 😮 😢 😡 👏 🙏 🔥 🎉 😍 😎 🤣 💯 🥳 👌 🤘 👎 😴 🎵 💔 😘 🤔 🙌 ✨ 🤯 🥰 😭".split(' ');
+const bar=(title,back=true,menu=false)=>`<div class=bar>${back?'<button class=ib data-go="back">‹</button>':'<span></span>'}<h1>${title}</h1>${menu?'<button class=ib data-act=menu>⋮</button>':'<span style="width:36px"></span>'}</div>`;
+const row=(i,ti,sub,go,right='›')=>`<button class=row data-go="${go}"><span class=i>${i}</span><span class=m>${t(ti)}${sub?`<small>${sub}</small>`:''}</span><span>${right}</span></button>`;
+const chk=(i,k,ti,d,cls='')=>`<label class=row><span class=i>${i}</span><span class=m>${t(ti)}<small>${t(d)}</small></span><input type=checkbox class="${cls}" data-k=${k} ${Nova.S[k]?'checked':''}></label>`;
+const CF=window.APP_CONFIG||{},APP=esc(CF.APP_NAME||'the app'),CO=esc(CF.COMPANY_NAME||'the Company'),EM=esc(CF.SUPPORT_EMAIL||''),PH=esc(CF.SUPPORT_PHONE||''),HR=esc(CF.SUPPORT_HOURS||''),AD=esc(CF.COMPANY_ADDRESS||''),JU=esc(CF.JURISDICTION||'India'),RF=+CF.REFUND_DAYS||0;
+const POL={privacy:['privpol',[
+['Who we are',`${APP} is operated by ${CO}, ${AD}. Questions: ${EM}.`],
+['Information we collect',`Account details (name, email, sign-in method such as email or Google, profile photo); content you add (bio, gallery photos, social links, chat messages); activity (videos watched, likes, watch time, friends, rooms); and, only if you allow it, your approximate location.`],
+['How we use it',`To run watch parties, show your profile to people you allow, remember your settings, provide support, keep the service safe and prevent abuse.`],
+['Who can see your profile',`You control each profile section (👁️ button). Hidden sections are not sent to other users. "Hide Location" removes you from the map. "Restrict Invitations" limits room invitations to friends.`],
+['Sharing',`We do not sell your personal data. If "Do not share my data with third parties" is on, we share nothing beyond service providers needed to operate the app (hosting, authentication, email). We may disclose data when required by law.`],
+['Retention and deletion',`We keep data while your account is active. You can delete your account at any time in Support > Delete Account; your profile, friends, history and tickets are then erased from our database.`],
+['Your rights',`You may access, correct or delete your data and withdraw consent by contacting ${EM}.`],
+['Children',`${APP} is not for children under 13 (or the minimum age in your country). Mature content is only for users aged 18+.`],
+['Security',`Data is encrypted in transit and protected by row-level access rules. No system is perfectly secure; keep your password private.`]]],
+data:['datapol',[
+['Where data is stored',`Account and profile data is stored with our infrastructure provider (Supabase) in a database protected by row-level security. Photos are stored in a gallery storage bucket.`],
+['Watch history',`When you watch a video we record its link, title, channel, site and watch time to build your history, Top, Liked, Keywords, Channels and Interests. You can clear history in Profile > Videos > History, and hide these sections from others.`],
+['Settings',`Your settings (language, reactions, privacy toggles) sync to your account.`],
+['Translation',`If Auto-translate is on, chat text that is not English is sent to a translation service to be translated.`],
+['Requests',`To request a copy or deletion of your data, use Support > Contact us or write to ${EM}.`]]],
+terms:['tos',[
+['Acceptance',`By using ${APP} you agree to these Terms. If you do not agree, do not use the service.`],
+['Your account',`Provide accurate information, keep your password secure, and you are responsible for activity on your account.`],
+['Your content',`You keep ownership of what you upload, but you give ${CO} permission to host and display it to provide the service. Upload only content you have the right to share.`],
+['Acceptable use',`No illegal content, harassment, hate, exploitation of minors, spam, malware, or attempts to break the service. Sharing videos you do not have the right to share is your responsibility.`],
+['Mature content',`Mature content is hidden by default and may be enabled only by users aged 18 or older, where lawful.`],
+['Payments and refunds',RF?`Paid plans renew until cancelled. You may request a refund within ${RF} days of purchase by contacting ${EM}.`:`Paid plans renew until cancelled. Contact ${EM} for billing questions.`],
+['Termination',`You may delete your account at any time. We may suspend accounts that break these Terms.`],
+['Disclaimer',`The service is provided "as is" without warranties. To the extent permitted by law, ${CO} is not liable for indirect or consequential losses.`],
+['Governing law',`These Terms are governed by the laws of ${JU}.`],
+['Contact',`${CO}, ${AD}. ${EM}.`]]]};
+const V={
+home:()=>`${bar(t('profile'),false,true)}
+<button class="card row" data-go=profile style="border-radius:22px"><span class=av>${P.avatar_url?`<img class=av src="${esc(P.avatar_url)}">`:'👤'}</span><span class=m><b>${esc(P.full_name||'Your name')}</b><small>${esc(U.email)}</small></span><span>›</span></button>
+<h2>${t('terms')}</h2><div class=card>${row('⚙️','settings','','settings')}${row('🔗','social','','social')}${row('🌐','language',Nova.LANGS[Nova.S.lang],'language')}${row('❓','support','','support')}</div>
+<h2>${t('acct')}</h2><div class=card><label class=row><span class=i>🔔</span><span class=m>${t('notification')}</span><input type=checkbox class=sw data-k=notif ${Nova.S.notif?'checked':''}></label>${row('🗂️','mydata','','privacy')}</div>`,
+settings:()=>`${bar(t('settings'))}<div class=card>
+<button class=row data-act=emoji><span class=i>😀</span><span class=m>${t('quick')}<small>${t('quickd')}</small></span><span style="font-size:32px">${Nova.S.quick}</span></button>
+${chk('👥','restrict','restrict','restrictd')}${chk('🙈','hideMature','mature','matured')}${chk('📳','haptic','haptic','hapticd')}${chk('🖼️','floating','floating','floatingd')}
+${chk('🈯','translate','translate','translated')}${chk('🔇','mute','mute','muted')}${chk('📍','hideLoc','hideloc','hidelocd')}
+${row('🌐','language',Nova.LANGS[Nova.S.lang],'language')}${row('🔒','privacy','','privacy')}</div>`,
+language:()=>`${bar(t('language'))}<div class=card>${Object.entries(Nova.LANGS).map(([c,n])=>`<button class=row data-lang=${c}><span class=m>${n}</span><span>${Nova.S.lang==c?'✓':''}</span></button>`).join('')}</div><p class=pad style="color:var(--mu)">More languages: add a block to <code>T</code> in nova-core.js and an entry to <code>LANGS</code>.</p>`,
+privacy:()=>`${bar(t('privacy'))}<div class=card>${['privacy','data','terms'].map(k=>`<button class=row data-go="policy/${k}"><span class=m>${t(POL[k][0])}</span><span>›</span></button>`).join('')}
+<label class=row><span class=m>${t('noshare')}</span><input type=checkbox class=sw data-k=noShare ${Nova.S.noShare?'checked':''}></label></div>`,
+policy:k=>`${bar(t(POL[k][0]))}<div class="card pad legal">${POL[k][1].map(([h,p])=>`<h3 style='margin:14px 0 4px'>${h}</h3><p>${p}</p>`).join('')}<p><small>Last updated: 10 November 2026</small></p></div>`,
+social:()=>`${bar(t('social'))}<div class="card pad">${t('soon')}</div>`,
+support:()=>`${bar(t('support'))}<div class=card>${row('✉️','contact','','contact')}${row('🗑️','delete','','delete')}</div><div class='card pad' style='color:var(--mu)'>${EM?`✉️ <a style='color:var(--ac)' href='mailto:${EM}'>${EM}</a><br>`:''}${PH?`📞 ${PH}<br>`:''}${HR?`🕘 ${HR}`:''}</div>`,
+contact:()=>`${bar(t('contact'))}<div class="card pad"><input id=sj placeholder="Subject" maxlength=150><textarea id=ms rows=6 placeholder="How can we help?" maxlength=4000></textarea><button class=pri data-act=ticket>Send</button><p id=out></p></div>`,
+delete:()=>`${bar(t('delete'))}<div class="card pad"><p>This permanently deletes your account, profile, gallery and friends. It cannot be undone.</p><input id=cf placeholder="Type DELETE to confirm"><button class=dng data-act=del>${t('delete')}</button><p id=out></p></div>`,
+profile:()=>`${bar(t('profile'))}<div class="card pad"><div style="display:flex;gap:14px;align-items:center"><span class=av>${P.avatar_url?`<img class=av src="${esc(P.avatar_url)}">`:'👤'}</span><div><b style="font-size:20px">${esc(P.full_name||'')}</b><br><span style="color:var(--mu)">@${esc(P.username||'set-username')}</span></div></div></div>
+<h2>${t('bio')}</h2><div class="card pad"><input id=fn placeholder="Name" value="${esc(P.full_name||'')}"><input id=un placeholder="username (a-z 0-9 _ .)" value="${esc(P.username||'')}"><input id=co placeholder="Country" value="${esc(P.country||'')}"><textarea id=bi rows=3 placeholder="Bio" maxlength=200>${esc(P.bio||'')}</textarea><button class=pri data-act=saveProfile>${t('save')}</button> <span id=out></span></div>
+<h2>${t('gallery')} (${(P._g||[]).length})</h2><div class="card gal"><button data-act=upl>＋</button>${(P._g||[]).map(g=>`<img src="${sb.storage.from('gallery').getPublicUrl(g.path).data.publicUrl}">`).join('')}</div><input type=file id=file accept="image/*" hidden>
+<h2>${t('stats')}</h2><div class=card><div class=row><span class=m><span class=dot></span>Online</span></div><div class=row><span class=m>${t('joined')}</span><span>${new Date(P.created_at).toLocaleDateString()}</span></div><div class=row><span class=m>${t('friends')}</span><span>${P._f||0}</span></div></div>`};
+async function route(){const h=(location.hash||'#home').slice(1).split('/');const f=V[h[0]]||V.home;app.innerHTML=f(h[1]);Nova.applyLang();}
+async function loadP(){const {data}=await sb.from('profiles').select('*').eq('id',U.id).single();P=data||{};
+ P._g=(await sb.from('gallery').select('*').eq('user_id',U.id).order('created_at',{ascending:false})).data||[];
+ P._f=(await sb.from('friendships').select('*',{count:'exact',head:true}).eq('status','accepted').or(`user_id.eq.${U.id},friend_id.eq.${U.id}`)).count;}
+const dlg=(h)=>{const d=document.createElement('div');d.className='ov c';d.innerHTML=`<div class=sheet>${h}</div>`;document.body.append(d);return d};
+document.addEventListener('click',async e=>{const el=e.target.closest('[data-go],[data-act],[data-lang]');if(!el){if(!e.target.closest('.menu'))document.querySelector('.menu')?.remove();return}
+ const d=el.dataset;if(d.go)d.go=='back'?history.back():location.hash=d.go;
+ if(d.lang){await Nova.set('lang',d.lang);route()}
+ if(d.act=='menu'){const m=document.createElement('div');m.className='menu';m.innerHTML=`<button class=row data-act=out>${t('signout')}</button>`;el.parentNode.append(m);e.stopPropagation()}
+ if(d.act=='out'){await sb.auth.signOut();location.href='login.html'}
+ if(d.act=='emoji'){const o=document.createElement('div');o.className='ov';o.innerHTML=`<div class=sheet><div class=em>${EMOJI.map(x=>`<button>${x}</button>`).join('')}</div></div>`;
+  o.onclick=async ev=>{if(ev.target.tagName=='BUTTON')await Nova.set('quick',ev.target.textContent);o.remove();route()};document.body.append(o)}
+ if(d.act=='saveProfile'){const u=document.getElementById('un').value.trim().toLowerCase()||null;
+  const {error}=await sb.from('profiles').update({full_name:fn.value.trim(),username:u,country:co.value.trim(),bio:bi.value.trim()}).eq('id',U.id);
+  out.textContent=error?(error.message.includes('username')?'Invalid or taken username':error.message):'Saved ✓';if(!error)await loadP()}
+ if(d.act=='upl'){file.click();file.onchange=async()=>{const f=file.files[0];if(!f||f.size>5e6)return alert('Max 5 MB image');
+  const p=`${U.id}/${Date.now()}_${f.name.replace(/[^\w.]/g,'_')}`;const r=await sb.storage.from('gallery').upload(p,f);
+  if(r.error)return alert(r.error.message);await sb.from('gallery').insert({user_id:U.id,path:p});await loadP();route()}}
+ if(d.act=='ticket'){const {error}=await sb.from('support_tickets').insert({user_id:U.id,email:U.email,subject:sj.value,message:ms.value});out.textContent=error?'Please fill subject (3+) and message (10+ chars).':'Sent. We will reply by email.'}
+ if(d.act=='del'){if(cf.value!=='DELETE')return out.textContent='Type DELETE exactly.';const {error}=await sb.rpc('delete_my_account');if(error)return out.textContent=error.message;await sb.auth.signOut();location.href='login.html'}
+});
+document.addEventListener('change',async e=>{const k=e.target.dataset?.k;if(!k)return;
+ if(k=='hideMature'&&!e.target.checked){e.target.checked=true;const o=dlg(`<h2 style="font-size:22px;margin:0 0 24px">Enable 🔞 Mature Content</h2><div style="text-align:right"><button class=row style="display:inline;width:auto" data-n>${t('no')}</button> <button class=row style="display:inline;width:auto" data-y>${t('yes')}</button></div>`);
+  o.onclick=async ev=>{if(ev.target.dataset.y!==undefined){await Nova.set('hideMature',false);route()}if(ev.target.dataset.y!==undefined||ev.target.dataset.n!==undefined||ev.target==o)o.remove()};return}
+ await Nova.set(k,e.target.checked)});
+window.onhashchange=route;
+(async()=>{const {data}=await sb.auth.getSession();if(!data.session){try{sessionStorage.setItem('postLoginRedirect','profile.html')}catch(_){}return location.href='login.html'}U=data.session.user;await Nova.sync(U.id);await loadP();route()})();
+</script><script src="nova-profile.js"></script></body></html>
