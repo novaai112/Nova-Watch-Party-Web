@@ -107,6 +107,8 @@
     sparkles:'<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/>',
     settings:'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
     clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+    landmark:'<line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/>',
+    activity:'<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
     play:'<polygon points="6 3 20 12 6 21 6 3"/>',
     calendar:'<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
     userplus:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/>',
@@ -117,11 +119,26 @@
   Nova.ic = (n, s = 18) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P_[n] || ''}</svg>`;
   Nova.hasIcon = n => !!P_[n];
 
+  Nova.cosmicStarSvg = () => `<svg viewBox="0 0 100 100" class="star-icon" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:72%;height:72%;display:block;margin:auto;">
+    <defs>
+      <linearGradient id="cosmicGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#ef4444" />
+        <stop offset="28%" stop-color="#ec4899" />
+        <stop offset="55%" stop-color="#3b82f6" />
+        <stop offset="80%" stop-color="#10b981" />
+        <stop offset="100%" stop-color="#f59e0b" />
+      </linearGradient>
+    </defs>
+    <path d="M 50 12 Q 50 50 88 50 Q 50 50 50 88 Q 50 50 12 50 Q 50 50 50 12 Z" fill="url(#cosmicGrad)" />
+  </svg>`;
+
   Nova.avatar = (u, s, cls = '') => {
+    u = u || {};
     const src = u.avatar_url || u.avatar, n = String(u.full_name || u.name || u.username || '?').trim() || '?';
-    return src && /^https?:\/\//i.test(src)
-      ? `<img class="avt ${cls}" style="width:${s}px;height:${s}px" src="${Nova.esc(src)}" alt="" referrerpolicy="no-referrer" loading="lazy">`
-      : `<span class="avt ${cls}" style="width:${s}px;height:${s}px;font-size:${Math.round(s * .4)}px">${Nova.esc(n[0].toUpperCase())}</span>`;
+    if (src && /^https?:\/\//i.test(src)) {
+      return `<img class="avt ${cls}" style="width:${s}px;height:${s}px;object-fit:cover;border-radius:50%;display:block;" src="${Nova.esc(src)}" alt="${Nova.esc(n)}" referrerpolicy="no-referrer" loading="lazy">`;
+    }
+    return `<span class="avt cosmic ${cls}" style="width:${s}px;height:${s}px;display:inline-grid;place-items:center;background:#ffffff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.06);overflow:hidden;" title="${Nova.esc(n)}">${Nova.cosmicStarSvg()}</span>`;
   };
 
   Nova.toast = (m, kind = '') => {

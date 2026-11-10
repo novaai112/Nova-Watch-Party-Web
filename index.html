@@ -3,153 +3,229 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#ffffff">
+<meta name="theme-color" content="#f8fafc">
 <script src="theme.js"></script>
 <title>Login</title>
 <link rel="preload" as="script" crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <style>
 :root{
-  --bg:#ffffff; --page:#f4f4f2; --fg:#0f172a; --muted:#64748b; --border:#e2e8f0; --input:#dbe2ec;
-  --primary:#2563eb; --primary-fg:#ffffff; --ring:rgba(37,99,235,.2);
-  --danger:#dc2626; --danger-bg:#fef2f2; --ok:#15803d; --ok-bg:#f0fdf4; --hover:#f1f5f9;
-  --radius:10px;
+  --bg:#ffffff; --page:#f8fafc; --fg:#0f172a; --muted:#64748b; --border:#e2e8f0; --input:#cbd5e1;
+  --primary:#2874f0; --primary-hover:#1a5dc9; --primary-fg:#ffffff; --ring:rgba(40,116,240,.25);
+  --danger:#ef4444; --danger-bg:#fef2f2; --ok:#16a34a; --ok-bg:#f0fdf4; --hover:#f1f5f9;
+  --radius:14px;
 }
 :root[data-theme="dark"]{
-    --bg:#111a2b; --page:#080d18; --fg:#f1f5f9; --muted:#94a3b8; --border:#202c42; --input:#2a3853;
-    --primary:#3b82f6; --primary-fg:#ffffff; --ring:rgba(59,130,246,.3);
-    --danger:#f87171; --danger-bg:#2a1214; --ok:#4ade80; --ok-bg:#0f2417; --hover:#1a2740;
-  }
+  --bg:#111a2b; --page:#080d18; --fg:#f1f5f9; --muted:#94a3b8; --border:#1e293b; --input:#334155;
+  --primary:#3b82f6; --primary-hover:#2563eb; --primary-fg:#ffffff; --ring:rgba(59,130,246,.3);
+  --danger:#f87171; --danger-bg:#2a1214; --ok:#4ade80; --ok-bg:#0f2417; --hover:#1a2740;
+}
 *{box-sizing:border-box;margin:0}
 html{-webkit-text-size-adjust:100%}
 body{
   font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   background:var(--page);color:var(--fg);font-size:14px;line-height:1.5;
   min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+  padding:max(20px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+  position:relative;overflow-x:hidden;
 }
-@media (min-width:900px){
-  body{background:radial-gradient(900px 620px at 0% 0%,#d6e6ff 0%,transparent 65%),radial-gradient(1000px 720px at 88% 102%,#a4ece2 0%,transparent 62%),radial-gradient(700px 520px at 100% 38%,#bfe9fb 0%,transparent 60%),linear-gradient(180deg,#f7faff,#f1fbf9);background-attachment:fixed}
-  :root[data-theme="dark"] body{background:radial-gradient(900px 620px at 0% 0%,#10244a 0%,transparent 65%),radial-gradient(1000px 720px at 88% 102%,#0b3a3d 0%,transparent 62%),#080d18;background-attachment:fixed}
+
+/* Atmospheric glowing background mesh */
+.bg-mesh{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.blob{position:absolute;border-radius:50%;filter:blur(100px);opacity:.75;pointer-events:none;animation:blobFloat 12s infinite alternate ease-in-out}
+.blob-1{top:-10%;left:-8%;width:55vw;height:55vw;max-width:650px;max-height:650px;background:rgba(59,130,246,0.22);mix-blend-mode:multiply}
+.blob-2{top:15%;right:-8%;width:60vw;height:60vw;max-width:750px;max-height:750px;background:rgba(6,182,212,0.22);mix-blend-mode:multiply;animation-delay:2.5s}
+.blob-3{bottom:-15%;left:20%;width:60vw;height:60vw;max-width:700px;max-height:700px;background:rgba(16,185,129,0.18);mix-blend-mode:multiply;animation-delay:5s}
+[data-theme="dark"] .blob{mix-blend-mode:screen;opacity:.35}
+[data-theme="dark"] .blob-1{background:rgba(59,130,246,0.35)}
+[data-theme="dark"] .blob-2{background:rgba(14,165,233,0.3)}
+[data-theme="dark"] .blob-3{background:rgba(16,185,129,0.25)}
+
+@keyframes blobFloat{
+  0%{transform:translate(0,0) scale(1)}
+  50%{transform:translate(30px,-40px) scale(1.08)}
+  100%{transform:translate(-25px,25px) scale(0.94)}
 }
+
+/* Auth card with frosted glass & layered soft shadow */
 .card{
-  width:100%;max-width:400px;border:1px solid var(--border);border-radius:16px;
-  padding:28px;background:var(--bg);box-shadow:0 1px 2px #0f172a0a,0 10px 30px #0f172a0d;
+  width:100%;max-width:440px;border:1px solid rgba(255,255,255,0.85);border-radius:28px;
+  padding:36px 32px;background:rgba(255,255,255,0.88);
+  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  box-shadow:0 20px 60px rgba(31,38,135,0.12),0 4px 16px rgba(15,23,42,0.04);
+  position:relative;z-index:10;
 }
-.card.wide{max-width:440px}
-h1{font-size:22px;font-weight:800;letter-spacing:-.01em;line-height:1.3}
-.sub{color:var(--muted);margin-top:6px;margin-bottom:20px}
+[data-theme="dark"] .card{
+  background:rgba(17,26,43,0.88);
+  border:1px solid rgba(255,255,255,0.1);
+  box-shadow:0 20px 60px rgba(0,0,0,0.5);
+}
+
+/* Brand header */
+.brand-head{text-align:center;margin-bottom:20px}
+.brand-logo{display:inline-flex;margin-bottom:10px;cursor:pointer;transition:transform .3s ease}
+.brand-logo:hover{transform:scale(1.08)}
+.brand-title{font-size:24px;font-weight:900;letter-spacing:-.02em;color:var(--fg);margin-bottom:2px}
+.brand-sub{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+
+h1{font-size:20px;font-weight:800;letter-spacing:-.015em;text-align:center;margin-bottom:6px;color:var(--fg)}
+.sub{color:var(--muted);margin-bottom:20px;text-align:center;font-size:13.5px;font-weight:500}
 form{display:flex;flex-direction:column;gap:16px}
-.field{display:flex;flex-direction:column;gap:8px}
+.field{display:flex;flex-direction:column;gap:7px}
 .row{display:flex;justify-content:space-between;align-items:center;gap:8px}
-label{font-weight:500;font-size:14px}
+label{font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--fg)}
 input{
-  width:100%;height:44px;padding:0 12px;border:1px solid var(--input);border-radius:10px;
-  background:transparent;color:var(--fg);font:inherit;font-size:14px;outline:none;
-  transition:border-color .15s, box-shadow .15s;
+  width:100%;height:46px;padding:0 14px;border:1px solid var(--border);border-radius:12px;
+  background:rgba(255,255,255,0.65);color:var(--fg);font:inherit;font-size:14px;font-weight:500;outline:none;
+  transition:border-color .2s, box-shadow .2s, background .2s;
 }
-input::placeholder{color:var(--muted);opacity:.8}
-input:focus-visible{border-color:var(--primary);box-shadow:0 0 0 3px var(--ring)}
+input::placeholder{color:var(--muted);opacity:.75}
+input:focus-visible{border-color:var(--primary);background:var(--bg);box-shadow:0 0 0 3px var(--ring)}
 input[aria-invalid="true"]{border-color:var(--danger)}
+[data-theme="dark"] input{background:rgba(15,23,42,0.6);border-color:var(--border)}
+[data-theme="dark"] input:focus-visible{background:var(--bg)}
+
 .pw{position:relative}
 .pw input{padding-right:44px}
 .eye{
-  position:absolute;right:2px;top:2px;width:36px;height:36px;border:0;background:transparent;
-  color:var(--muted);cursor:pointer;border-radius:6px;display:grid;place-items:center;
+  position:absolute;right:4px;top:4px;width:38px;height:38px;border:0;background:transparent;
+  color:var(--muted);cursor:pointer;border-radius:8px;display:grid;place-items:center;
 }
 .eye:hover{color:var(--fg);background:var(--hover)}
 .eye svg{width:18px;height:18px}
+
 .btn{
-  height:44px;border-radius:10px;font:inherit;font-weight:700;font-size:14px;cursor:pointer;
-  display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;
-  border:1px solid var(--input);background:transparent;color:var(--fg);transition:background .15s, opacity .15s;
+  height:46px;border-radius:12px;font:inherit;font-weight:700;font-size:14px;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;gap:10px;width:100%;
+  border:1px solid var(--border);background:transparent;color:var(--fg);transition:all .2s;
 }
 .btn:hover{background:var(--hover)}
-.btn.primary{background:var(--primary);color:var(--primary-fg);border-color:var(--primary)}
-.btn.primary:hover{opacity:.9;background:var(--primary)}
-.btn:disabled{opacity:.55;cursor:not-allowed}
+.btn.primary{
+  background:linear-gradient(135deg,#2874f0 0%,#1d4ed8 100%);
+  color:#ffffff;border:none;box-shadow:0 4px 14px rgba(40,116,240,0.3);
+}
+.btn.primary:hover{opacity:.95;transform:translateY(-1px);box-shadow:0 6px 18px rgba(40,116,240,0.38)}
+.btn.primary:active{transform:translateY(0)}
+.btn.submit-green{
+  background:linear-gradient(135deg,#16a34a 0%,#059669 100%);
+  color:#ffffff;border:none;box-shadow:0 4px 14px rgba(22,163,74,0.3);
+}
+.btn.submit-green:hover{opacity:.95;transform:translateY(-1px);box-shadow:0 6px 18px rgba(22,163,74,0.38)}
+.btn:disabled{opacity:.55;cursor:not-allowed;transform:none!important}
 .btn svg{width:18px;height:18px}
+
+/* Google Sign-in pill */
+.btn-google{
+  background:#131314;color:#e8eaed;border:1px solid #393a3f;border-radius:9999px;height:48px;
+  font-weight:600;font-size:14px;display:flex;align-items:center;justify-content:center;gap:12px;
+  box-shadow:0 2px 8px rgba(0,0,0,0.1);transition:background .2s,border-color .2s;
+}
+.btn-google:hover{background:#1c1d20;border-color:#5f6368}
+.btn-google svg{width:20px;height:20px;flex:none}
+
 .spinner{width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-a,.link{color:var(--fg);text-decoration:none;cursor:pointer;background:none;border:0;font:inherit;padding:0}
+a,.link{color:var(--primary);text-decoration:none;cursor:pointer;background:none;border:0;font:inherit;padding:0;font-weight:700}
 .link.u,.foot a{text-decoration:underline;text-underline-offset:4px}
-.link:hover,a:hover{opacity:.75}
-.foot{text-align:center;margin-top:16px}
-.divider{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.link:hover,a:hover{opacity:.85}
+.foot{text-align:center;margin-top:20px;font-size:13.5px;color:var(--muted);font-weight:500}
+.divider{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin:6px 0}
 .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--border)}
-.alert{display:none;padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.45}
+.alert{display:none;padding:12px 14px;border-radius:10px;font-size:13px;line-height:1.45;font-weight:600}
 .alert.show{display:block}
 .alert.err{background:var(--danger-bg);color:var(--danger);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent)}
 .alert.ok{background:var(--ok-bg);color:var(--ok);border:1px solid color-mix(in srgb,var(--ok) 30%,transparent)}
-.hint{color:var(--danger);font-size:12px;min-height:0;display:none}
+.hint{color:var(--danger);font-size:12px;min-height:0;display:none;font-weight:600}
 .hint.show{display:block}
-.meter{display:flex;gap:4px;margin-top:2px}
+.meter{display:flex;gap:4px;margin-top:4px}
 .meter i{flex:1;height:4px;border-radius:2px;background:var(--border);transition:background .2s}
-.rules{list-style:none;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:12px;color:var(--muted)}
-.rules li::before{content:"○ ";}
-.rules li.ok{color:var(--ok)}
-.rules li.ok::before{content:"● ";}
+.rules{list-style:none;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:12px;color:var(--muted);margin-top:6px}
+.rules li::before{content:"○ "}
+.rules li.ok{color:var(--ok);font-weight:600}
+.rules li.ok::before{content:"● "}
 .center{text-align:center}
-.icon-big{width:48px;height:48px;border-radius:50%;background:var(--hover);display:grid;place-items:center;margin:0 auto 16px}
-.icon-big svg{width:24px;height:24px}
-.profile{display:flex;align-items:center;gap:12px;margin:16px 0 20px;padding:12px;border:1px solid var(--border);border-radius:10px}
-.avatar{width:44px;height:44px;border-radius:50%;background:var(--primary);color:var(--primary-fg);display:grid;place-items:center;font-weight:600;overflow:hidden;flex:none}
-.avatar img{width:100%;height:100%;object-fit:cover}
-.pname{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pmail{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.meta{font-size:13px;color:var(--muted);display:grid;gap:6px;margin-bottom:20px}
-.meta b{color:var(--fg);font-weight:500}
-[hidden]{display:none!important}
-.planbadge{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;border:1px solid var(--border)}
-.planbadge.pro{background:var(--primary);color:var(--primary-fg);border-color:var(--primary)}
-.btn-row{display:grid;gap:10px}
-a.btn{text-decoration:none}
-@media (max-width:420px){
-  .card{padding:20px;border-radius:12px}
-  .rules{grid-template-columns:1fr}
-}
-@media (max-width:480px){
-  body{justify-content:flex-start;padding-top:max(32px,env(safe-area-inset-top))}
-  input{font-size:16px} /* stops iOS zoom on focus */
-}
-@media (min-width:1024px){ .card{padding:28px} }
+.icon-big{width:54px;height:54px;border-radius:50%;background:#eaf1fe;color:var(--primary);display:grid;place-items:center;margin:0 auto 16px}
+[data-theme="dark"] .icon-big{background:#16264a}
+.icon-big svg{width:26px;height:26px}
 
-/* ===== v2 refinement (same look as the account pages) ===== */
-:root:not([data-theme="dark"]){--border:#e6eaf1;--fg:#0b1324;--muted:#64748b;--input:#dfe5ee}
-.card{border-radius:14px;padding:30px}
-h1{font-size:21px;letter-spacing:-.015em}.sub{color:#7a8799;font-size:13.5px}
-label{font-size:13px;font-weight:700}
-input{height:44px;border-radius:8px;font-size:14px}
-.btn{height:42px;border-radius:8px;font-size:13.5px}
-.btn.primary{box-shadow:0 2px 8px color-mix(in srgb,var(--primary) 30%,transparent)}
-.link,.foot a{color:var(--primary);font-weight:600}
-.foot{color:var(--muted);font-size:13.5px}
-.icon-big{background:#eaf1fe;color:var(--primary)}
-:root[data-theme="dark"] .icon-big{background:#16264a}
-@media (max-width:899px){
-  .card{border:0;box-shadow:0 1px 2px #0f172a0a,0 8px 24px #0f172a0d;border-radius:16px}
+/* Tap to change avatar */
+.avtap{
+  position:relative;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:50%;border:none;background:transparent;padding:0;cursor:pointer;flex:none;line-height:0;
+  transition:transform .2s ease;outline:none;
+}
+.avtap:hover{transform:scale(1.05)}
+.avtap .avcam{
+  position:absolute;right:-2px;bottom:-2px;width:24px;height:24px;border-radius:50%;background:var(--primary);
+  color:#ffffff;display:grid;place-items:center;border:2px solid var(--bg);box-shadow:0 2px 6px rgba(0,0,0,0.2);
+}
+.avtap.busy .avt{opacity:.4}
+.avtap.busy::after{
+  content:"";position:absolute;inset:0;margin:auto;width:22px;height:22px;border-radius:50%;
+  border:3px solid var(--border);border-top-color:var(--primary);animation:spin .7s linear infinite;
+}
+.avt{border-radius:50%;object-fit:cover;display:inline-grid;place-items:center;flex:none;background:#ffffff;box-shadow:0 2px 8px rgba(0,0,0,0.08)}
+
+[hidden]{display:none!important}
+@media (max-width:480px){
+  .card{padding:26px 20px;border-radius:22px}
+  .rules{grid-template-columns:1fr}
 }
 </style>
 </head>
 <body>
 
+<div class="bg-mesh" aria-hidden="true">
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+</div>
+
 <!-- ============ LOGIN ============ -->
 <main class="card" id="view-login" hidden>
-  <h1>Login</h1>
+  <div class="brand-head">
+    <div class="brand-logo" title="Nova">
+      <svg width="56" height="56" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="brandGradL" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#ef4444" />
+            <stop offset="28%" stop-color="#ec4899" />
+            <stop offset="55%" stop-color="#3b82f6" />
+            <stop offset="80%" stop-color="#10b981" />
+            <stop offset="100%" stop-color="#f59e0b" />
+          </linearGradient>
+        </defs>
+        <circle cx="50" cy="50" r="46" fill="#ffffff" stroke="rgba(255,255,255,0.8)" stroke-width="2"/>
+        <path d="M 50 14 Q 50 50 86 50 Q 50 50 50 86 Q 50 50 14 50 Q 50 50 50 14 Z" fill="url(#brandGradL)" />
+      </svg>
+    </div>
+    <div class="brand-title">NOVA</div>
+    <div class="brand-sub">Authentication</div>
+  </div>
+
+  <h1>Secure Sign In</h1>
   <p class="sub">Enter your email below to login to your account</p>
+
+  <button class="btn btn-google" type="button" data-google>
+    <span data-gicon></span>
+    <span>Sign in with Google</span>
+  </button>
+
+  <div class="divider">Or continue with email</div>
+
   <form id="form-login" novalidate>
     <div class="alert err" role="alert" data-alert></div>
     <div class="field">
-      <label for="l-email">Email</label>
+      <label for="l-email">Email Address</label>
       <input id="l-email" type="email" name="email" placeholder="m@example.com" autocomplete="username email" inputmode="email" autocapitalize="none" spellcheck="false" required>
       <div class="hint" data-hint="email"></div>
     </div>
     <div class="field">
       <div class="row">
         <label for="l-pass">Password</label>
-        <button type="button" class="link" data-go="forgot">Forgot your password?</button>
+        <button type="button" class="link" data-go="forgot">Forgot password?</button>
       </div>
       <div class="pw">
         <input id="l-pass" type="password" name="password" autocomplete="current-password" required>
@@ -157,25 +233,52 @@ input{height:44px;border-radius:8px;font-size:14px}
       </div>
       <div class="hint" data-hint="password"></div>
     </div>
-    <button class="btn primary" type="submit">Login</button>
-    <button class="btn" type="button" data-google><span data-gicon></span>Login with Google</button>
+    <button class="btn primary submit-green" type="submit">Sign In →</button>
   </form>
-  <p class="foot">Don't have an account? <a href="?v=signup" data-go="signup">Sign up</a></p>
+  <p class="foot">Don't have an account? <a href="?v=signup" data-go="signup">Sign up here</a></p>
 </main>
 
 <!-- ============ SIGN UP ============ -->
 <main class="card" id="view-signup" hidden>
-  <h1>Sign up</h1>
-  <p class="sub">Create your account to get started</p>
+  <div class="brand-head">
+    <div class="brand-logo" title="Nova">
+      <svg width="56" height="56" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="brandGradS" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#ef4444" />
+            <stop offset="28%" stop-color="#ec4899" />
+            <stop offset="55%" stop-color="#3b82f6" />
+            <stop offset="80%" stop-color="#10b981" />
+            <stop offset="100%" stop-color="#f59e0b" />
+          </linearGradient>
+        </defs>
+        <circle cx="50" cy="50" r="46" fill="#ffffff" stroke="rgba(255,255,255,0.8)" stroke-width="2"/>
+        <path d="M 50 14 Q 50 50 86 50 Q 50 50 50 86 Q 50 50 14 50 Q 50 50 50 14 Z" fill="url(#brandGradS)" />
+      </svg>
+    </div>
+    <div class="brand-title">NOVA</div>
+    <div class="brand-sub">Create Account</div>
+  </div>
+
+  <h1>Create New Account</h1>
+  <p class="sub">Get started with your free Nova account</p>
+
+  <button class="btn btn-google" type="button" data-google>
+    <span data-gicon></span>
+    <span>Sign in with Google</span>
+  </button>
+
+  <div class="divider">Or create an account with email</div>
+
   <form id="form-signup" novalidate>
     <div class="alert err" role="alert" data-alert></div>
     <div class="field">
-      <label for="s-name">Full name</label>
+      <label for="s-name">Full Name</label>
       <input id="s-name" type="text" name="name" placeholder="John Doe" autocomplete="name" required>
       <div class="hint" data-hint="name"></div>
     </div>
     <div class="field">
-      <label for="s-email">Email</label>
+      <label for="s-email">Email Address</label>
       <input id="s-email" type="email" name="email" placeholder="m@example.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" required>
       <div class="hint" data-hint="email"></div>
     </div>
@@ -196,44 +299,83 @@ input{height:44px;border-radius:8px;font-size:14px}
       <div class="hint" data-hint="password"></div>
     </div>
     <div class="field">
-      <label for="s-conf">Confirm password</label>
+      <label for="s-conf">Confirm Password</label>
       <div class="pw">
         <input id="s-conf" type="password" name="confirm" autocomplete="new-password" required>
         <button type="button" class="eye" aria-label="Show password" data-eye></button>
       </div>
       <div class="hint" data-hint="confirm"></div>
     </div>
-    <button class="btn primary" type="submit">Create account</button>
-    <button class="btn" type="button" data-google><span data-gicon></span>Sign up with Google</button>
+    <button class="btn primary submit-green" type="submit">Create Account →</button>
   </form>
-  <p class="foot">Already have an account? <a href="?v=login" data-go="login">Login</a></p>
+  <p class="foot">Already have an account? <a href="?v=login" data-go="login">Log in here</a></p>
 </main>
 
 <!-- ============ FORGOT PASSWORD ============ -->
 <main class="card" id="view-forgot" hidden>
-  <h1>Forgot password?</h1>
-  <p class="sub">Enter your email and we'll send you a link to reset your password</p>
+  <div class="brand-head">
+    <div class="brand-logo" title="Nova">
+      <svg width="56" height="56" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="brandGradF" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#ef4444" />
+            <stop offset="28%" stop-color="#ec4899" />
+            <stop offset="55%" stop-color="#3b82f6" />
+            <stop offset="80%" stop-color="#10b981" />
+            <stop offset="100%" stop-color="#f59e0b" />
+          </linearGradient>
+        </defs>
+        <circle cx="50" cy="50" r="46" fill="#ffffff" stroke="rgba(255,255,255,0.8)" stroke-width="2"/>
+        <path d="M 50 14 Q 50 50 86 50 Q 50 50 50 86 Q 50 50 14 50 Q 50 50 50 14 Z" fill="url(#brandGradF)" />
+      </svg>
+    </div>
+    <div class="brand-title">NOVA</div>
+    <div class="brand-sub">Password Recovery</div>
+  </div>
+
+  <h1>Reset Password</h1>
+  <p class="sub">Enter your email and we'll send you a secure link to reset your password</p>
   <form id="form-forgot" novalidate>
     <div class="alert err" role="alert" data-alert></div>
     <div class="alert ok" role="status" data-ok></div>
     <div class="field">
-      <label for="f-email">Email</label>
+      <label for="f-email">Email Address</label>
       <input id="f-email" type="email" name="email" placeholder="m@example.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" required>
       <div class="hint" data-hint="email"></div>
     </div>
-    <button class="btn primary" type="submit">Send reset link</button>
+    <button class="btn primary submit-green" type="submit">Send Reset Link →</button>
   </form>
-  <p class="foot">Remembered it? <a href="?v=login" data-go="login">Back to login</a></p>
+  <p class="foot">Remembered your password? <a href="?v=login" data-go="login">Back to login</a></p>
 </main>
 
 <!-- ============ RESET PASSWORD (opened from email link) ============ -->
 <main class="card" id="view-reset" hidden>
-  <h1>Set a new password</h1>
+  <div class="brand-head">
+    <div class="brand-logo" title="Nova">
+      <svg width="56" height="56" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="brandGradR" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#ef4444" />
+            <stop offset="28%" stop-color="#ec4899" />
+            <stop offset="55%" stop-color="#3b82f6" />
+            <stop offset="80%" stop-color="#10b981" />
+            <stop offset="100%" stop-color="#f59e0b" />
+          </linearGradient>
+        </defs>
+        <circle cx="50" cy="50" r="46" fill="#ffffff" stroke="rgba(255,255,255,0.8)" stroke-width="2"/>
+        <path d="M 50 14 Q 50 50 86 50 Q 50 50 50 86 Q 50 50 14 50 Q 50 50 50 14 Z" fill="url(#brandGradR)" />
+      </svg>
+    </div>
+    <div class="brand-title">NOVA</div>
+    <div class="brand-sub">New Password</div>
+  </div>
+
+  <h1>Create New Password</h1>
   <p class="sub">Choose a strong password for your account</p>
   <form id="form-reset" novalidate>
     <div class="alert err" role="alert" data-alert></div>
     <div class="field">
-      <label for="r-pass">New password</label>
+      <label for="r-pass">New Password</label>
       <div class="pw">
         <input id="r-pass" type="password" name="password" autocomplete="new-password" required>
         <button type="button" class="eye" aria-label="Show password" data-eye></button>
@@ -249,14 +391,14 @@ input{height:44px;border-radius:8px;font-size:14px}
       <div class="hint" data-hint="password"></div>
     </div>
     <div class="field">
-      <label for="r-conf">Confirm new password</label>
+      <label for="r-conf">Confirm New Password</label>
       <div class="pw">
         <input id="r-conf" type="password" name="confirm" autocomplete="new-password" required>
         <button type="button" class="eye" aria-label="Show password" data-eye></button>
       </div>
       <div class="hint" data-hint="confirm"></div>
     </div>
-    <button class="btn primary" type="submit">Update password</button>
+    <button class="btn primary submit-green" type="submit">Update Password →</button>
   </form>
 </main>
 
@@ -267,9 +409,11 @@ input{height:44px;border-radius:8px;font-size:14px}
   <p class="sub" id="check-text"></p>
   <div class="alert err" role="alert" data-alert style="text-align:left"></div>
   <div class="alert ok" role="status" data-ok style="text-align:left;margin-bottom:12px"></div>
-  <button class="btn" type="button" id="btn-resend">Resend confirmation email</button>
+  <button class="btn primary" type="button" id="btn-resend">Resend confirmation email</button>
   <p class="foot"><a href="?v=login" data-go="login">Back to login</a></p>
 </main>
+
+<input type="file" id="avf" accept="image/*" hidden>
 
 <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
@@ -453,7 +597,6 @@ input{height:44px;border-radius:8px;font-size:14px}
     const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
     busy(btn, false);
     if (error && (error.status === 429 || /rate/i.test(error.message))) return showAlert(fForgot, "err", friendly(error));
-    // Same message whether or not the email exists (prevents account enumeration).
     showAlert(fForgot, "ok", "If an account exists for " + email + ", a password reset link has been sent. Check your inbox (and spam folder).");
   });
 
@@ -483,7 +626,7 @@ input{height:44px;border-radius:8px;font-size:14px}
     if (error) { busy(b, false); $$("[data-gicon]", b).forEach(s => (s.innerHTML = GOOGLE)); showAlert(form, "err", friendly(error)); }
   }));
 
-  /* ---------- after login: straight into the website (no "signed in" page) ---------- */
+  /* ---------- after login: straight into the website ---------- */
   function goProfile() {
     let next = null;
     try { next = sessionStorage.getItem("postLoginRedirect"); if (next) sessionStorage.removeItem("postLoginRedirect"); } catch (_) {}
@@ -503,7 +646,7 @@ input{height:44px;border-radius:8px;font-size:14px}
   (async () => {
     if (recoveryMode) { show("reset", false); return; }
     const { data: { session } } = await sb.auth.getSession();
-    if (session) return; // onAuthStateChange shows the app
+    if (session) return;
     show(viewFromUrl(), false);
     if (linkError) {
       const msg = /expired|invalid/i.test(linkError) ? "That link has expired or was already used. Request a new one below." : linkError.replace(/\+/g, " ");
