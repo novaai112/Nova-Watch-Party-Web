@@ -66,7 +66,7 @@
   /* ---------- OWN VIEWS ---------- */
   V.info = () => shell('info', mbar(t('info')) + panel(t('info'), 'Your photo, name, username and bio',
     `<div class=actg>${eye('bio')}<button class="btn sec sm" data-go=preview>${ic('eye', 16)}${t('preview')}</button><button class="btn pri sm" data-act=editinfo>${ic('pencil', 15)}${t('edit')}</button></div>`,
-    `<div class=idstrip>${Nova.avatar(P, 76, 'ring')}<div class=idt><h3>${esc(P.full_name || '')}</h3><p>@${esc(P.username || '')}</p><div class=pills>${isVer() ? `<span class="pill ok">✓ ${t('verified')}</span>` : ''}${planPill()}</div></div></div>
+    `<div class=idstrip>${avtap(76, 'ring')}<div class=idt><h3>${esc(P.full_name || '')}</h3><p>@${esc(P.username || '')}</p><div class=pills>${isVer() ? `<span class="pill ok">✓ ${t('verified')}</span>` : ''}${planPill()}</div></div></div>
 <div class=fgrid>${fc('user', 'Full name', `<b>${esc(P.full_name || '—')}</b>`)}${fc('at', 'Username', `<b>@${esc(P.username || '')}</b>`)}${fc('mail', 'Email address', `<b>${esc(U.email)}</b>`, 'wide')}${fc('pencil', 'Bio', P.bio ? `<span class=biot>${esc(P.bio)}</span>` : '<span class="biot mu">No bio yet</span>', 'wide bio')}</div>`));
 
   V.stats = () => {
@@ -121,7 +121,7 @@ ${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.
 
   /* ---------- EDIT POPUPS ---------- */
   function editInfo() {
-    modal(t('editprofile'), `<div class=mav><div class=avwrap id=avw>${Nova.avatar(P, 72)}<button class=cam data-act=pickAv aria-label="Change photo">${ic('camera', 14)}</button></div><div class=avact id=ava>${avActs()}</div><p class=avnote>JPG, PNG or WebP. Cropped to a square automatically.</p></div>
+    modal(t('editprofile'), `<div class=mav>${avtap(72)}<div><b style="display:block">Profile photo</b><span class=avnote style="display:block">Tap the photo to change it.</span><span class=avact id=ava>${avActs()}</span></div></div>
 <label class=fld><span class=l>Full Name</span><input id=fn maxlength=40 autocomplete=name value="${esc(P.full_name || '')}"></label>
 <label class=fld><span class=l>Username</span><div class=pre><b>@</b><input id=un maxlength=24 autocomplete=off autocapitalize=none spellcheck=false value="${esc(P.username || '')}"></div><div class=hint id=uh></div></label>
 <label class=fld><span class=l>Email Address</span><input value="${esc(U.email)}" disabled></label><p class=note>Your sign-in email cannot be changed.</p>

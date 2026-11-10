@@ -187,6 +187,40 @@ input.bad{border-color:var(--bad)}input::placeholder,textarea::placeholder{color
 .setup{max-width:440px;margin:0 auto;padding-top:6vh}.setup h1{font-size:26px;font-weight:800;letter-spacing:-.02em;margin:0 0 6px}.setup .lead{color:var(--mu);margin:0 0 22px}
 .stepper{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mu);margin-bottom:14px;font-weight:600}.stepper i{width:28px;height:4px;border-radius:2px;background:var(--ac)}
 .link{background:none;border:0;padding:0;font:inherit;font-weight:600;color:var(--ac);cursor:pointer}
+
+/* ===== v2: match the reference account page ===== */
+:root:not([data-theme=dark]){--line:#e6eaf1;--soft:#f8fafc;--onbg:#eaf1fe;--tx:#0b1324;--mu:#64748b}
+body{font-size:13.5px}
+.card{border-radius:12px;box-shadow:0 1px 2px #0f172a08,0 6px 20px #0f172a0a}
+.phead{padding:20px 24px}.pt h2{font-size:18px}.pt p{font-size:12.5px;color:#7a8799}
+.btn,.pri,.btn.pri{height:40px;padding:0 18px;font-size:13.5px;border-radius:8px}.btn.sm{height:36px;padding:0 14px;font-size:13px}
+.pri,.btn.pri{box-shadow:0 2px 8px color-mix(in srgb,var(--ac) 28%,transparent)}
+.nv{padding:14px 18px;font-size:13.5px;color:var(--tx)}.nv .go{color:#a3b0c2}.nv.on{color:var(--ac)}
+.hello{padding:20px 18px}
+.idstrip{padding:22px 24px}.idt h3{font-size:18px}
+.fgrid{gap:14px;padding:20px 24px}.fc{padding:15px 16px;border-radius:12px}.fi{width:36px;height:36px;border-radius:10px}
+.fv small{font-size:10px;color:#8794a8;letter-spacing:.08em}.fv b{font-size:14px;color:var(--tx)}
+.tiles{gap:12px}.tile{border-radius:12px;padding:16px 8px}.tile b{font-size:24px}.tile span{font-size:11.5px}
+.row{padding:14px 24px}.row .i{width:36px;height:36px;border-radius:10px}.row .m{font-size:13.5px}
+input[type=text],input[type=url],input:not([type]),textarea{height:44px;border-radius:8px;border-color:#dfe5ee;font-size:14px}
+textarea{height:auto}.pre>b{border-radius:8px 0 0 8px;border-color:#dfe5ee}.pre input{border-radius:0 8px 8px 0}
+.modal{border-radius:14px}.mh{padding:16px 22px}.mh b{font-size:16px}
+.crumb,.crumb a{font-size:13.5px}.ucp{padding:4px 4px 4px 12px;gap:10px}.unm{font-weight:700;font-size:13.5px}
+.cred{border-radius:12px}
+/* tap-to-change profile photo */
+.avtap{position:relative;display:inline-grid;place-items:center;padding:0;border-radius:50%;cursor:pointer;flex:none;line-height:0}
+.avtap .avcam{position:absolute;right:-1px;bottom:-1px;width:24px;height:24px;border-radius:50%;background:var(--ac);color:#fff;display:grid;place-items:center;border:2px solid var(--card);opacity:.95;transition:transform .15s}
+.avtap:hover .avcam{transform:scale(1.1)}.avtap:hover .avt{filter:brightness(.93)}.avtap.s .avcam{display:none}
+.mid .avtap .avcam{width:30px;height:30px;right:2px;bottom:2px;border-color:#fff}
+.avtap.busy .avt{opacity:.45}.avtap.busy:after{content:"";position:absolute;inset:0;margin:auto;width:22px;height:22px;border-radius:50%;border:3px solid var(--chip2);border-top-color:var(--ac);animation:sp .7s linear infinite}
+.mav .avtap{margin-right:2px}
+@media(max-width:899px){
+ body{font-size:13.5px}.card,.pcard{border-radius:14px}
+ .mid h2{font-size:17px}.hstats b{font-size:16px}.hstats span{font-size:11.5px}
+ .mh2{font-size:13px}.mrow{padding:11px 12px;border-radius:14px;margin-bottom:9px;box-shadow:0 1px 2px #0f172a0a,0 4px 14px #0f172a0a}.mrow .mi{width:36px;height:36px;background:#f1f1ef}.mrow .nl{font-size:13px}.mrow .go{color:#94a3b8}
+ [data-theme=dark] .mrow .mi{background:var(--chip)}
+ .bnav{height:62px}.bnav button{width:46px;height:46px}
+}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style></head><body><div id="app"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
@@ -227,6 +261,8 @@ terms:['tos',[
 const inv=()=>{PD=null};
 const isVer=()=>!!(U&&(U.email_confirmed_at||U.confirmed_at));
 const skel=()=>'<div class="sk" style="height:56px;margin:12px 0"></div><div class="sk" style="height:230px;margin:12px 0"></div><div class="sk" style="height:140px"></div>';
+const avtap=(sz,cls='')=>`<button class="avtap${sz<44?' s':''}" data-act=pickAv data-s=${sz} data-c="${cls}" aria-label="Change profile photo" title="Tap to change photo">${Nova.avatar(P,sz,cls)}<span class=avcam>${ic('camera',sz>=100?15:12)}</span></button>`;
+let AVT=null;
 const planPill=()=>`<span class="pill pl">${ic('sparkles',11)}${PLAN.pro?'Pro Plan':'Free Plan'}</span>`;
 
 /* one navigation list drives the desktop sidebar AND the mobile list */
@@ -241,8 +277,8 @@ function pct(){const g=(P._g||[]).length,s=Object.values(P.socials||{}).filter(B
  const c=[P.avatar_url,P.username,P.full_name,P.bio,g>0,s>0,f>0];return Math.round(c.filter(Boolean).length/c.length*100)}
 function shell(active,inner){
  const nm=esc(P.full_name||'Your name'),bd=r=>r==='notifications'&&REQ.length?`<em class=bd>${REQ.length}</em>`:'',p=pct();
- return `<div class="top do"><div class=crumb>${HOME?`<a href="${esc(HOME)}">${ic('left',16)}${t('dashboard')}</a><i>/</i>`:''}<b>${t('myaccount')}</b></div><button class=ucp data-go=info aria-label="Profile">${nm}${Nova.avatar(P,34)}</button></div>
-<div class=shell><aside class="side do"><div class="card hello">${Nova.avatar(P,56,'ring')}<div><small>${t('hello')}</small><b>${nm}</b>${planPill()}</div></div>
+ return `<div class="top do"><div class=crumb>${HOME?`<a href="${esc(HOME)}">${ic('left',16)}${t('dashboard')}</a><i>/</i>`:''}<b>${t('myaccount')}</b></div><div class=ucp><button class=unm data-go=info>${nm}</button>${avtap(34)}</div></div>
+<div class=shell><aside class="side do"><div class="card hello">${avtap(56,'ring')}<div><small>${t('hello')}</small><b>${nm}</b>${planPill()}</div></div>
 <nav class="card nav" aria-label="Account">${NAV.map(([r,i,k,c])=>`<button class="nv${active===r?' on':''}" data-go=${r} style="--c:${c}"><span class=ni>${ic(i,18)}</span><span>${t(k)}</span>${bd(r)}<span class=go>${ic('right',16)}</span></button>`).join('')}<button class="nv out" data-act=out><span class=ni>${ic('logout',18)}</span><span>${t('signout')}</span></button></nav>
 <div class=cred><small>${t('complete')}</small><div class=big><b>${p}%</b><span>/ 100</span></div><div class=pb><i style="width:${p}%"></i></div><button data-act=editinfo>${t('editprofile')} →</button></div></aside>
 <main class=main>${inner}</main></div>${bnav(active)}`}
@@ -254,7 +290,7 @@ const rowB=(i,ti,sub,go)=>`<button class=row data-go="${go}"><span class=i>${ic(
 const V={
 home:()=>{const s=PD&&PD.stats||{videos:0,friends:0,hours:0};
  return shell('home',`<div class="mhero mo"><div class=cover></div><div class=mtop>${HOME?`<a class=pillb href="${esc(HOME)}">${ic('left',18)}${t('profile')}</a>`:`<span class="pillb nl">${t('profile')}</span>`}<button class=bell data-go=notifications aria-label="Notifications">${ic('bell',20)}${REQ.length?'<i></i>':''}</button></div></div>
-<div class="mid mo">${Nova.avatar(P,112)}<h2>${esc(P.full_name||'Your name')}</h2>${isVer()?`<span class=vf>${ic('badge',15)}${t('verified')}</span>`:''}<span class=pl2>${PLAN.pro?'Pro Plan':'Free Plan'}</span></div>
+<div class="mid mo">${avtap(108)}<h2>${esc(P.full_name||'Your name')}</h2>${isVer()?`<span class=vf>${ic('badge',15)}${t('verified')}</span>`:''}<span class=pl2>${PLAN.pro?'Pro Plan':'Free Plan'}</span></div>
 <div class="hstats mo"><div><b>${s.videos}</b><span>Videos</span></div><div><b>${s.friends}</b><span>${t('friends')}</span></div><div><b>${s.hours}</b><span>Hours</span></div></div>
 <div class="mh2 mo">${t('myaccount')}</div>
 <div class=mo>${NAV.map(([r,i,k])=>`<button class=mrow data-go=${r}><span class=mi>${ic(i,19)}</span><span class=nl>${t(k)}</span>${r==='notifications'&&REQ.length?`<em class=bd>${REQ.length}</em>`:''}<span class=go>${ic('right',16)}</span></button>`).join('')}
@@ -274,7 +310,7 @@ support:()=>shell('support',mbar(t('support'))+panel(t('support'),'We are happy 
 <button class="btn pri" data-act=ticket>Send</button><p id=tout class=mu style="margin:10px 0 0"></p>
 <div class=danger><h3>${t('delete')}</h3><p>This permanently deletes your account, profile, gallery and friends. It cannot be undone.</p><label class=fld><span class=l>Type DELETE to confirm</span><input id=cf autocomplete=off></label><button class=dng data-act=del>${t('delete')}</button><p id=dout class=mu style="margin:10px 0 0"></p></div></div>`)),
 setup:()=>`<div class=setup><div class=stepper><i></i>Almost there</div><h1>Set up your profile</h1><p class=lead>Choose a username and, if you like, a profile photo. Friends use your username to find you.</p>
-<div class=card><div class=pad style="display:grid;justify-items:center;gap:10px;text-align:center"><div class=avwrap id=avw>${Nova.avatar(P,96)}<button class=cam data-act=pickAv aria-label="Upload profile photo">${ic('camera',16)}</button></div><button class="btn sec sm" data-act=pickAv>Upload photo</button><p class=avnote>Optional · JPG, PNG or WebP</p></div>
+<div class=card><div class=pad style="display:grid;justify-items:center;gap:10px;text-align:center">${avtap(96)}<p class=avnote>Tap the photo to add one (optional)</p></div>
 <div class=pbody style="padding-top:0"><label class=fld><span class=l>Display name</span><input id=fn maxlength=40 autocomplete=name value="${esc(P.full_name||U.email.split('@')[0])}"></label>
 <label class=fld style="margin:0"><span class=l>Username <em>required</em></span><div class=pre><b>@</b><input id=un maxlength=24 autocomplete=off autocapitalize=none spellcheck=false placeholder="yourname" autofocus></div><div class=hint id=uh></div></label></div></div>
 <button class="btn pri blk" id=go data-act=setupGo disabled>Continue</button><p style="text-align:center;margin-top:14px"><button class=link data-act=out>Sign out</button></p></div>`
@@ -320,8 +356,8 @@ async function uploadAvatar(file){
  const url=sb.storage.from('avatars').getPublicUrl(path).data.publicUrl;
  const {error}=await sb.from('profiles').update({avatar_url:url}).eq('id',U.id);if(error){sb.storage.from('avatars').remove([path]);throw error}
  dropOld(P.avatar_url);P.avatar_url=url;inv()}
-function avActs(){return `<button class="btn sec sm" data-act=pickAv>Change photo</button>${P.avatar_url?'<button class="btn sec sm" data-act=rmAv>Remove</button>':''}`}
-function paintAv(){const w=$('#avw');if(!w)return;const s=w.querySelector('.avt'),sz=parseInt(s.style.width)||88;s.outerHTML=Nova.avatar(P,sz);const a=$('#ava');if(a)a.innerHTML=avActs()}
+function avActs(){return P.avatar_url?'<button class=link data-act=rmAv>Remove photo</button>':''}
+function paintAv(){document.querySelectorAll('.avtap').forEach(b=>{const a=b.querySelector('.avt');if(a)a.outerHTML=Nova.avatar(P,+b.dataset.s,b.dataset.c||'')});const a=$('#ava');if(a)a.innerHTML=avActs()}
 const refreshBehind=()=>{if((location.hash||'').slice(1)!=='setup')route()};
 
 function initSetup(){
@@ -342,10 +378,10 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-go]
  if(d.act=='out'){await sb.auth.signOut();location.href='index.html'}
  if(d.act=='emoji'){const o=document.createElement('div');o.className='ov';o.innerHTML=`<div class=sheet><div class=em>${EMOJI.map(x=>`<button>${x}</button>`).join('')}</div></div>`;
   o.onclick=async ev=>{if(ev.target.tagName=='BUTTON')await Nova.set('quick',ev.target.textContent);o.remove();route()};document.body.append(o)}
- if(d.act=='pickAv')$('#avf').click();
+ if(d.act=='pickAv'){AVT=el;$('#avf').click()}
  if(d.act=='rmAv'&&await ask('Remove profile photo?','Your initials will be shown instead.','Remove')){
   const old=P.avatar_url,{error}=await sb.from('profiles').update({avatar_url:null}).eq('id',U.id);if(error)return Nova.toast(error.message,'err');
-  dropOld(old);P.avatar_url=null;inv();paintAv();refreshBehind();Nova.toast('Photo removed')}
+  dropOld(old);P.avatar_url=null;inv();paintAv();Nova.toast('Photo removed')}
  if(d.act=='setupGo'){const name=$('#fn').value.trim();if(!UN.ok||name.length<2)return;
   if(await saveProfile(el,{full_name:name,username:UN.val})){Nova.toast(`Welcome, @${P.username}`);location.hash=DESK.matches?'info':'home'}}
  if(d.act=='ticket'){const {error}=await sb.from('support_tickets').insert({user_id:U.id,email:U.email,subject:$('#sj').value,message:$('#ms').value});
@@ -353,8 +389,8 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-go]
  if(d.act=='del'){if($('#cf').value!=='DELETE')return $('#dout').textContent='Type DELETE exactly.';const {error}=await sb.rpc('delete_my_account');if(error)return $('#dout').textContent=error.message;await sb.auth.signOut();location.href='index.html'}
 });
 document.addEventListener('change',async e=>{const x=e.target;
- if(x.id==='avf'){const f=x.files[0];x.value='';if(!f)return;const w=$('#avw');w&&w.classList.add('busy');
-  try{await uploadAvatar(f);paintAv();refreshBehind();Nova.toast('Profile photo updated')}catch(er){Nova.toast(er.message||'Upload failed','err')}w&&w.classList.remove('busy');return}
+ if(x.id==='avf'){const f=x.files[0];x.value='';if(!f)return;const w=AVT;w&&w.classList.add('busy');
+  try{await uploadAvatar(f);paintAv();Nova.toast('Profile photo updated')}catch(er){Nova.toast(er.message||'Upload failed','err')}w&&w.classList.remove('busy');return}
  const k=x.dataset?.k;if(!k)return;
  if(k=='hideMature'&&!x.checked){x.checked=true;if(await ask('Enable 🔞 Mature Content','Explicit 18+ content may be shown. Only turn this on if you are 18 or older.',t('yes'),false)){await Nova.set('hideMature',false);route()}return}
  await Nova.set(k,x.checked)});

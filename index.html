@@ -115,6 +115,22 @@ a.btn{text-decoration:none}
   input{font-size:16px} /* stops iOS zoom on focus */
 }
 @media (min-width:1024px){ .card{padding:28px} }
+
+/* ===== v2 refinement (same look as the account pages) ===== */
+:root:not([data-theme="dark"]){--border:#e6eaf1;--fg:#0b1324;--muted:#64748b;--input:#dfe5ee}
+.card{border-radius:14px;padding:30px}
+h1{font-size:21px;letter-spacing:-.015em}.sub{color:#7a8799;font-size:13.5px}
+label{font-size:13px;font-weight:700}
+input{height:44px;border-radius:8px;font-size:14px}
+.btn{height:42px;border-radius:8px;font-size:13.5px}
+.btn.primary{box-shadow:0 2px 8px color-mix(in srgb,var(--primary) 30%,transparent)}
+.link,.foot a{color:var(--primary);font-weight:600}
+.foot{color:var(--muted);font-size:13.5px}
+.icon-big{background:#eaf1fe;color:var(--primary)}
+:root[data-theme="dark"] .icon-big{background:#16264a}
+@media (max-width:899px){
+  .card{border:0;box-shadow:0 1px 2px #0f172a0a,0 8px 24px #0f172a0d;border-radius:16px}
+}
 </style>
 </head>
 <body>
