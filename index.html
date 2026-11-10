@@ -3,49 +3,50 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="light">
 <meta name="theme-color" content="#ffffff">
 <script src="theme.js"></script>
-<link rel="icon" type="image/png" href="../../Pipespec.png">
-<link rel="apple-touch-icon" href="../../Pipespec.png">
 <title>Login</title>
 <link rel="preload" as="script" crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <style>
 :root{
-  --bg:#ffffff; --fg:#09090b; --muted:#71717a; --border:#e4e4e7; --input:#e4e4e7;
-  --primary:#18181b; --primary-fg:#fafafa; --ring:rgba(24,24,27,.15);
-  --danger:#dc2626; --danger-bg:#fef2f2; --ok:#15803d; --ok-bg:#f0fdf4; --hover:#f4f4f5;
+  --bg:#ffffff; --page:#f4f4f2; --fg:#0f172a; --muted:#64748b; --border:#e2e8f0; --input:#dbe2ec;
+  --primary:#2563eb; --primary-fg:#ffffff; --ring:rgba(37,99,235,.2);
+  --danger:#dc2626; --danger-bg:#fef2f2; --ok:#15803d; --ok-bg:#f0fdf4; --hover:#f1f5f9;
   --radius:10px;
 }
 :root[data-theme="dark"]{
-    --bg:#09090b; --fg:#fafafa; --muted:#a1a1aa; --border:#27272a; --input:#27272a;
-    --primary:#fafafa; --primary-fg:#18181b; --ring:rgba(250,250,250,.18);
-    --danger:#f87171; --danger-bg:#2a1214; --ok:#4ade80; --ok-bg:#0f2417; --hover:#18181b;
+    --bg:#111a2b; --page:#080d18; --fg:#f1f5f9; --muted:#94a3b8; --border:#202c42; --input:#2a3853;
+    --primary:#3b82f6; --primary-fg:#ffffff; --ring:rgba(59,130,246,.3);
+    --danger:#f87171; --danger-bg:#2a1214; --ok:#4ade80; --ok-bg:#0f2417; --hover:#1a2740;
   }
 *{box-sizing:border-box;margin:0}
 html{-webkit-text-size-adjust:100%}
 body{
   font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  background:var(--bg);color:var(--fg);font-size:14px;line-height:1.5;
+  background:var(--page);color:var(--fg);font-size:14px;line-height:1.5;
   min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;
   padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
 }
+@media (min-width:900px){
+  body{background:radial-gradient(900px 620px at 0% 0%,#d6e6ff 0%,transparent 65%),radial-gradient(1000px 720px at 88% 102%,#a4ece2 0%,transparent 62%),radial-gradient(700px 520px at 100% 38%,#bfe9fb 0%,transparent 60%),linear-gradient(180deg,#f7faff,#f1fbf9);background-attachment:fixed}
+  :root[data-theme="dark"] body{background:radial-gradient(900px 620px at 0% 0%,#10244a 0%,transparent 65%),radial-gradient(1000px 720px at 88% 102%,#0b3a3d 0%,transparent 62%),#080d18;background-attachment:fixed}
+}
 .card{
-  width:100%;max-width:384px;border:1px solid var(--border);border-radius:12px;
-  padding:24px;background:var(--bg);
+  width:100%;max-width:400px;border:1px solid var(--border);border-radius:16px;
+  padding:28px;background:var(--bg);box-shadow:0 1px 2px #0f172a0a,0 10px 30px #0f172a0d;
 }
 .card.wide{max-width:440px}
-h1{font-size:20px;font-weight:600;letter-spacing:-.01em;line-height:1.3}
+h1{font-size:22px;font-weight:800;letter-spacing:-.01em;line-height:1.3}
 .sub{color:var(--muted);margin-top:6px;margin-bottom:20px}
 form{display:flex;flex-direction:column;gap:16px}
 .field{display:flex;flex-direction:column;gap:8px}
 .row{display:flex;justify-content:space-between;align-items:center;gap:8px}
 label{font-weight:500;font-size:14px}
 input{
-  width:100%;height:40px;padding:0 12px;border:1px solid var(--input);border-radius:8px;
+  width:100%;height:44px;padding:0 12px;border:1px solid var(--input);border-radius:10px;
   background:transparent;color:var(--fg);font:inherit;font-size:14px;outline:none;
   transition:border-color .15s, box-shadow .15s;
 }
@@ -61,7 +62,7 @@ input[aria-invalid="true"]{border-color:var(--danger)}
 .eye:hover{color:var(--fg);background:var(--hover)}
 .eye svg{width:18px;height:18px}
 .btn{
-  height:40px;border-radius:8px;font:inherit;font-weight:500;font-size:14px;cursor:pointer;
+  height:44px;border-radius:10px;font:inherit;font-weight:700;font-size:14px;cursor:pointer;
   display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;
   border:1px solid var(--input);background:transparent;color:var(--fg);transition:background .15s, opacity .15s;
 }
@@ -254,27 +255,6 @@ a.btn{text-decoration:none}
   <p class="foot"><a href="?v=login" data-go="login">Back to login</a></p>
 </main>
 
-<!-- ============ DASHBOARD (after login) ============ -->
-<main class="card" id="view-app" hidden>
-  <h1>You're signed in</h1>
-  <div class="profile">
-    <div class="avatar" id="p-avatar"></div>
-    <div style="min-width:0">
-      <div class="pname" id="p-name"></div>
-      <div class="pmail" id="p-email"></div>
-    </div>
-  </div>
-  <div class="meta">
-    <div>Login methods: <b id="p-prov"></b></div>
-    <div>Member since: <b id="p-since"></b></div>
-    <div>Plan: <span class="planbadge" id="p-plan">Free Plan</span> <span id="p-plan-end"></span></div>
-  </div>
-  <div class="btn-row">
-    <a class="btn primary" href="profile.html">Open profile</a>
-    <button class="btn" type="button" id="btn-logout">Log out</button>
-  </div>
-</main>
-
 <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
 <script>
@@ -360,8 +340,8 @@ a.btn{text-decoration:none}
   wireStrength($("#form-signup")); wireStrength($("#form-reset"));
 
   /* ---------- views / routing ---------- */
-  const views = ["login", "signup", "forgot", "reset", "check", "app"];
-  const titles = { login: "Login", signup: "Sign up", forgot: "Forgot password", reset: "Reset password", check: "Check your email", app: "Account" };
+  const views = ["login", "signup", "forgot", "reset", "check"];
+  const titles = { login: "Login", signup: "Sign up", forgot: "Forgot password", reset: "Reset password", check: "Check your email" };
   function show(name, push = true) {
     views.forEach(v => ($("#view-" + v).hidden = v !== name));
     document.title = titles[name] + (CFG.APP_NAME ? " · " + CFG.APP_NAME : "");
@@ -474,7 +454,7 @@ a.btn{text-decoration:none}
     busy(btn, false);
     if (error) return showAlert(fReset, "err", friendly(error));
     recoveryMode = false; fReset.reset();
-    await loadApp(); show("app", false);
+    goProfile();
   });
 
   /* ---------- GOOGLE (same email => same user, linked by Supabase) ---------- */
@@ -487,43 +467,19 @@ a.btn{text-decoration:none}
     if (error) { busy(b, false); $$("[data-gicon]", b).forEach(s => (s.innerHTML = GOOGLE)); showAlert(form, "err", friendly(error)); }
   }));
 
-  /* ---------- APP / PROFILE ---------- */
-  async function loadApp() {
-    const { data: { user } } = await sb.auth.getUser(); if (!user) return;
-    const { data: prof } = await sb.from("profiles").select("full_name,avatar_url,providers,created_at").eq("id", user.id).maybeSingle();
-    const name = (prof && prof.full_name) || user.user_metadata.full_name || user.user_metadata.name || user.email.split("@")[0];
-    const avatar = (prof && prof.avatar_url) || user.user_metadata.avatar_url || user.user_metadata.picture;
-    $("#p-name").textContent = name; $("#p-email").textContent = user.email;
-    const av = $("#p-avatar"); av.textContent = "";
-    if (avatar) { const img = new Image(); img.alt = ""; img.referrerPolicy = "no-referrer"; img.src = avatar; av.appendChild(img); }
-    else av.textContent = name.trim().charAt(0).toUpperCase();
-    const provs = ((prof && prof.providers && prof.providers.length) ? prof.providers : (user.app_metadata.providers || [])).map(p => p === "email" ? "Email & password" : p.charAt(0).toUpperCase() + p.slice(1));
-    $("#p-prov").textContent = provs.join(" + ") || "—";
-    try {
-      const { data: sub } = await sb.from("subscriptions").select("status,current_period_end").maybeSingle();
-      const active = sub && sub.status === "active" && new Date(sub.current_period_end) > new Date();
-      const pb = $("#p-plan"); pb.textContent = active ? "Pro Plan" : "Free Plan"; pb.classList.toggle("pro", !!active);
-      $("#p-plan-end").textContent = active ? "until " + new Date(sub.current_period_end).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "";
-    } catch (_) {}
-    $("#p-since").textContent = new Date((prof && prof.created_at) || user.created_at).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  /* ---------- after login: straight into the website (no "signed in" page) ---------- */
+  function goProfile() {
+    let next = null;
+    try { next = sessionStorage.getItem("postLoginRedirect"); if (next) sessionStorage.removeItem("postLoginRedirect"); } catch (_) {}
+    location.replace(next && /^[a-z0-9_-]+\.html$/i.test(next) ? next : "profile.html");
   }
-  $("#btn-logout").addEventListener("click", async () => { await sb.auth.signOut(); });
 
   /* ---------- auth state ---------- */
   sb.auth.onAuthStateChange((event, session) => {
     if (event === "PASSWORD_RECOVERY") { recoveryMode = true; show("reset", false); return; }
     if (event === "SIGNED_OUT") { show("login", false); history.replaceState({}, "", location.pathname); return; }
     if ((event === "SIGNED_IN" || event === "INITIAL_SESSION" || event === "USER_UPDATED") && session && !recoveryMode) {
-      setTimeout(async () => {
-        let next = null;
-        try { next = sessionStorage.getItem("postLoginRedirect"); if (next) sessionStorage.removeItem("postLoginRedirect"); } catch (_) {}
-        if (next && /^[a-z0-9_-]+\.html$/i.test(next)) { location.replace(next); return; }
-        try {
-          const t = +localStorage.getItem("ps_return_home");
-          if (t && Date.now() - t < 6 * 3600e3) { localStorage.removeItem("ps_return_home"); location.replace("../../index.html"); return; }
-        } catch (_) {}
-        await loadApp(); show("app", false); if (location.search) history.replaceState({}, "", location.pathname);
-      }, 0);
+      setTimeout(goProfile, 0);
     }
   });
 

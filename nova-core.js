@@ -24,6 +24,12 @@
       translate:'Traducir mensajes automáticamente', mute:'Silenciar si suena otro audio', hideloc:'Ocultar ubicación', hidelocd:'No aparecerás en el mapa', privacy:'Privacidad', contact:'Contáctanos', delete:'Eliminar cuenta', signout:'Cerrar sesión',
       save:'Guardar', cancel:'Cancelar', no:'NO', yes:'SÍ', bio:'Bio', gallery:'Galería', stats:'Estadísticas', friends:'Amigos', joined:'Fecha de registro', privpol:'Política de privacidad', datapol:'Política de datos', tos:'Términos del servicio', noshare:'No compartir mis datos con terceros' }
   };
+  Object.assign(T.en, { info:'Profile Info', accstats:'Account Stats', activity:'Watch Activity', privdata:'Privacy & Data', myaccount:'My Account', dashboard:'Dashboard', hello:'Hello,',
+    verified:'Verified', editprofile:'Edit Profile', savechanges:'Save Changes', edit:'Edit', complete:'Profile completeness', nonotif:'No new notifications', addphotos:'Add photos', preview:'Preview' });
+  Object.assign(T.hi, { info:'प्रोफ़ाइल जानकारी', accstats:'खाता आँकड़े', activity:'देखने की गतिविधि', privdata:'गोपनीयता और डेटा', myaccount:'मेरा खाता', dashboard:'डैशबोर्ड', hello:'नमस्ते,',
+    verified:'सत्यापित', editprofile:'प्रोफ़ाइल संपादित करें', savechanges:'बदलाव सहेजें', edit:'संपादित करें', complete:'प्रोफ़ाइल पूर्णता', nonotif:'कोई नई सूचना नहीं', addphotos:'फ़ोटो जोड़ें', preview:'पूर्वावलोकन' });
+  Object.assign(T.es, { info:'Info del perfil', accstats:'Estadísticas de la cuenta', activity:'Actividad de visualización', privdata:'Privacidad y datos', myaccount:'Mi cuenta', dashboard:'Panel', hello:'Hola,',
+    verified:'Verificado', editprofile:'Editar perfil', savechanges:'Guardar cambios', edit:'Editar', complete:'Perfil completado', nonotif:'Sin notificaciones nuevas', addphotos:'Añadir fotos', preview:'Vista previa' });
   const LANGS = { en:'English', hi:'हिन्दी', es:'Español' };
   const Nova = {
     sb: window.supabase.createClient(url, key), S: load(), T, LANGS,
@@ -95,7 +101,18 @@
     music:'<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
     ghost:'<path d="M9 10h.01M15 10h.01"/><path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"/>',
     chat:'<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
-    xmark:'<path d="M4 4l16 16M20 4 4 20"/>'
+    xmark:'<path d="M4 4l16 16M20 4 4 20"/>',
+    home:'<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+    chart:'<line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/>',
+    sparkles:'<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/>',
+    settings:'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+    clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+    play:'<polygon points="6 3 20 12 6 21 6 3"/>',
+    calendar:'<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    userplus:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/>',
+    at:'<circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/>',
+    key:'<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>',
+    badge:'<path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="m9 12 2 2 4-4"/>'
   };
   Nova.ic = (n, s = 18) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P_[n] || ''}</svg>`;
   Nova.hasIcon = n => !!P_[n];

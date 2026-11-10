@@ -77,3 +77,10 @@ const { data: ok } = await Nova.sb.rpc('can_invite', { target: friendUserId });
 - Deleting an account removes database rows. Uploaded gallery files stay in Storage; remove the `<user id>/` folder in Dashboard → Storage if needed.
 - The Privacy, Data and Terms pages are generated from `config.js`. They are a good starting point, not legal advice — have a lawyer review them before launch.
 - Not built: Friends "Trending" tab, Longest Session / Largest Hosted Room stats, payments (the plan badge reads `subscriptions`, which your payment webhook should fill).
+
+## 8. Update: new account pages + gallery fix
+- **Run `fix-gallery-permissions.sql` once** (Supabase -> SQL Editor). It fixes `permission denied for table gallery` (and the same missing grants on friends, history, support and plan tables). It is also appended to `schema.sql` as Part 5.
+- The "You're signed in" page is gone: login goes straight to `profile.html`.
+- `profile.html` is now a My Account area: Profile Info, Account Stats, Gallery, Friends, Social, Settings, Language, Support, Notification, Watch Activity, Privacy & Data. Desktop = sidebar, phone = list + bottom nav.
+- Profile Info shows photo, name, username, email and bio only. Edit opens as a popup on every device. Social links have their own popup.
+- Optional: set `HOME_URL` in `config.js` to show the "Dashboard" link / back pill.
