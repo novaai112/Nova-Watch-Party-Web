@@ -373,3 +373,94 @@ alter table public.subscriptions enable row level security;
 drop policy if exists "sub own select" on public.subscriptions;
 create policy "sub own select" on public.subscriptions for select to authenticated using (auth.uid() = user_id);
 -- DONE (part 3). Next: README.md
+
+-- =====================================================================
+--  PART 4: PRODUCTION PROFILE  (required username, availability check,
+--          avatar storage, gallery limits, social links validation)
+--  Safe to re-run.
+-- =====================================================================
+
+-- Unique username, case-insensitive
+create unique index if not exists profiles_username_lower_idx on public.profiles (lower(username));
+
+-- Field limits (NOT VALID = applies to new/changed rows, never breaks old data)
+alter table public.profiles drop constraint if exists bio_length;
+alter table public.profiles add constraint bio_length check (bio is null or char_length(bio) <= 300) not valid;
+alter table public.profiles drop constraint if exists name_length;
+alter table public.profiles add constraint name_length check (full_name is null or char_length(full_name) between 1 and 60) not valid;
+alter table public.profiles drop constraint if exists socials_shape;
+alter table public.profiles add constraint socials_shape check (jsonb_typeof(socials) = 'object' and pg_column_size(socials) < 4000) not valid;
+
+-- Reserved + format rules enforced on the server (the browser check is only a convenience)
+create or replace function public.enforce_username()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if new.username is not null and (tg_op = 'INSERT' or new.username is distinct from old.username) then
+    new.username := lower(new.username);
+    if new.username !~ '^[a-z0-9_.]{3,24}$' or new.username ~ '^[._]|[._]$|[._]{2}'
+       or new.username = any (array['admin','administrator','root','support','help','nova','system','moderator','mod','staff','official','null','undefined','api','www','settings','login','logout','signup','profile','user','users','me']) then
+      raise exception 'invalid username' using errcode = '23514';
+    end if;
+  end if;
+  return new;
+end; $$;
+drop trigger if exists profiles_enforce_username on public.profiles;
+create trigger profiles_enforce_username before insert or update of username on public.profiles
+  for each row execute function public.enforce_username();
+
+-- Live "is this username free?" check used by the profile page
+create or replace function public.username_available(p_username text)
+returns boolean language sql security definer stable set search_path = '' as $$
+  select coalesce(p_username, '') ~ '^[a-z0-9_.]{3,24}$'
+     and p_username !~ '^[._]|[._]$|[._]{2}'
+     and p_username <> all (array['admin','administrator','root','support','help','nova','system','moderator','mod','staff','official','null','undefined','api','www','settings','login','logout','signup','profile','user','users','me'])
+     and not exists (select 1 from public.profiles
+                     where lower(username) = lower(p_username)
+                       and id <> coalesce(auth.uid(), '00000000-0000-0000-0000-000000000000'::uuid));
+$$;
+revoke all on function public.username_available(text) from public, anon;
+grant execute on function public.username_available(text) to authenticated;
+
+-- Do not bring a removed Google photo / name back on every login
+create or replace function public.handle_user_updated()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  update public.profiles p
+     set email = new.email,
+         providers = coalesce(array(select jsonb_array_elements_text(new.raw_app_meta_data -> 'providers')), p.providers),
+         last_sign_in_at = new.last_sign_in_at
+   where p.id = new.id;
+  return new;
+end; $$;
+
+-- Storage: profile photos (public read, owner write) + safer limits for both buckets
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('avatars', 'avatars', true, 2097152, array['image/jpeg','image/png','image/webp'])
+on conflict (id) do update set file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+update storage.buckets set file_size_limit = 5242880, allowed_mime_types = array['image/jpeg','image/png','image/webp'] where id = 'gallery';
+
+drop policy if exists "avatars upload own" on storage.objects;
+drop policy if exists "avatars update own" on storage.objects;
+drop policy if exists "avatars remove own" on storage.objects;
+create policy "avatars upload own" on storage.objects for insert to authenticated
+  with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "avatars update own" on storage.objects for update to authenticated
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "avatars remove own" on storage.objects for delete to authenticated
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- Gallery: max 30 photos per user, and the table is private (others see it only through
+-- public_profile(), which respects the 👁️/🙈 visibility switch)
+create or replace function public.gallery_limit()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if (select count(*) from public.gallery where user_id = new.user_id) >= 30 then
+    raise exception 'Gallery limit reached (30 photos)';
+  end if;
+  return new;
+end; $$;
+drop trigger if exists gallery_limit_trg on public.gallery;
+create trigger gallery_limit_trg before insert on public.gallery for each row execute function public.gallery_limit();
+drop policy if exists "gallery select" on public.gallery;
+create policy "gallery select" on public.gallery for select to authenticated using (auth.uid() = user_id);
+-- DONE (part 4)

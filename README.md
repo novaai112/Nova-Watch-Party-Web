@@ -15,7 +15,14 @@ Static website + Supabase. No build step. Deploy the folder to Vercel (or any st
 
 ## 1. Database
 Supabase Dashboard → SQL Editor → New query → paste **all of `schema.sql`** → Run.
-It creates: `profiles` (+ settings), `gallery` (+ `gallery` storage bucket), `friendships`, `watch_history`, `support_tickets`, `subscriptions`, the views `public_profiles` and `map_users`, and the functions `public_profile`, `log_watch`, `set_like`, `can_invite`, `delete_my_account`.
+It creates (Part 4 = username check, avatar bucket, gallery limits): `profiles` (+ settings), `gallery` (+ `gallery` storage bucket), `friendships`, `watch_history`, `support_tickets`, `subscriptions`, the views `public_profiles` and `map_users`, and the functions `public_profile`, `log_watch`, `set_like`, `can_invite`, `delete_my_account`.
+
+### Profile flow (new)
+- After login, a user **without a username** is sent to a one-time **Set up your profile** screen (username required, photo optional). Nothing else in the profile opens until it is done.
+- The username is checked live (format, reserved words, availability via `username_available`) and enforced again in the database, so two people can never get the same one.
+- **Edit profile** (`profile.html#editprofile`): change photo (auto-cropped square, compressed, old file deleted), remove photo, name, username, country, bio (300 chars), **multi-photo gallery** (select many or drag & drop, max 30, compressed, per-photo delete), and **social links** (11 platforms + website; paste a handle or a full link).
+- Photos go to two Storage buckets: `avatars` and `gallery` (both created by `schema.sql`).
+- Re-run `schema.sql` once if you already ran an older version: Part 4 is safe to repeat.
 
 ## 2. Auth settings (Dashboard → Authentication)
 - **URL Configuration → Site URL:** `https://nova-watch-party.vercel.app/`

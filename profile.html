@@ -1,37 +1,107 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Nova — Account</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Nova — Profile</title>
 <script src="theme.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <style>
-:root{--bg1:#1b1140;--bg2:#5b2a6e;--bg3:#a8623a;--card:rgba(255,255,255,.09);--tx:#fff;--mu:#c9c3e6;--ac:#c9b6ff;--onac:#1b1140;--chip:#ffffff20;--chip2:#ffffff30;--inp:#00000040;--sheet:#0b0716}
-[data-theme=light]{--bg1:#f6f2ff;--bg2:#e4d9ff;--bg3:#ffe2cc;--card:rgba(255,255,255,.78);--tx:#1b1140;--mu:#5d557f;--ac:#6b3fd6;--onac:#fff;--chip:#1b114014;--chip2:#1b114026;--inp:#fff;--sheet:#fff}
-*{box-sizing:border-box}body{margin:0;min-height:100vh;color:var(--tx);font:16px/1.4 system-ui,sans-serif;background:linear-gradient(160deg,var(--bg1),var(--bg2) 55%,var(--bg3)) fixed}
-#app{max-width:520px;margin:0 auto;padding:max(12px,env(safe-area-inset-top)) 14px 40px}
-.bar{display:flex;align-items:center;justify-content:space-between;padding:8px 0;position:relative}.bar h1{font-size:18px;margin:0}
-button,.btn{font:inherit;color:inherit;background:none;border:0;cursor:pointer}.ib{width:36px;height:36px;border-radius:50%;background:var(--card);font-size:18px}
-.card{background:var(--card);border-radius:20px;margin:10px 0;overflow:hidden;backdrop-filter:blur(8px)}
-.row{display:flex;align-items:center;gap:14px;padding:15px 16px;width:100%;text-align:left;border-top:1px solid rgba(255,255,255,.07)}.row:first-child{border:0}
-.row .i{width:26px;text-align:center;font-size:20px}.row .m{flex:1}.row small{display:block;color:var(--mu);font-size:13px}
-h2{font-size:15px;margin:18px 4px 6px}input[type=checkbox]{width:24px;height:24px;accent-color:var(--ac)}
-.sw{appearance:none;width:46px!important;height:26px!important;border-radius:13px;background:var(--chip2);position:relative}.sw:checked{background:var(--ac)}
-.sw:after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.2s}.sw:checked:after{left:23px}
-.av{width:62px;height:62px;border-radius:50%;object-fit:cover;background:var(--chip2);display:grid;place-items:center;font-size:26px}
-input,textarea,select{width:100%;padding:12px;border-radius:12px;border:1px solid #ffffff30;background:var(--inp);color:var(--tx);font:inherit;margin:4px 0 10px}
-.pri{background:var(--ac);color:var(--onac);padding:12px 20px;border-radius:14px;font-weight:600}.dng{background:#d33;padding:12px 20px;border-radius:14px}
-.ov{position:fixed;inset:0;background:#0009;display:flex;align-items:flex-end;justify-content:center;z-index:9}.ov.c{align-items:center}
-.sheet{background:var(--sheet);border-radius:24px 24px 0 0;padding:16px;width:100%;max-width:520px}.ov.c .sheet{border-radius:24px;margin:16px}
-.em{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;font-size:30px;text-align:center}.em button{padding:6px;border-radius:12px}
-.menu{position:absolute;right:0;top:46px;background:var(--sheet);border-radius:14px;z-index:5;min-width:150px}
-.gal{display:flex;gap:8px;overflow-x:auto;padding:10px}.gal img,.gal button{width:110px;height:140px;border-radius:14px;object-fit:cover;flex:none;background:var(--chip);font-size:34px}
-.pad{padding:14px 16px}.dot{width:14px;height:14px;border-radius:50%;background:#2c2;display:inline-block;margin-right:6px}.legal p{color:var(--mu)}
+:root{--bg:#f6f6f9;--bg2:#fff;--card:#fff;--line:#e6e6ee;--tx:#14141c;--mu:#6b6b7d;--ac:#5b47e0;--onac:#fff;--chip:#14141c0d;--chip2:#14141c17;--inp:#fff;--sheet:#fff;--ok:#059669;--bad:#dc2626;--shadow:0 1px 2px #14141c0f,0 4px 16px #14141c0a}
+[data-theme=dark]{--bg:#0b0b10;--bg2:#14141c;--card:#14141c;--line:#262631;--tx:#f4f4f7;--mu:#9a9aae;--ac:#8b7bff;--onac:#0b0b10;--chip:#ffffff12;--chip2:#ffffff1f;--inp:#0e0e14;--sheet:#14141c;--ok:#34d399;--bad:#f87171;--shadow:0 1px 2px #0006}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100vh;min-height:100dvh;color:var(--tx);background:var(--bg);font:15px/1.5 Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+#app{max-width:640px;margin:0 auto;padding:max(8px,env(safe-area-inset-top)) 16px calc(110px + env(safe-area-inset-bottom))}
+.ic{flex:none;vertical-align:middle}
+button,.btn{font:inherit;color:inherit;background:none;border:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+button:focus-visible,input:focus-visible,textarea:focus-visible,a:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 0;position:sticky;top:0;z-index:4;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);margin:0 -16px;padding-left:16px;padding-right:16px}
+.bar h1{font-size:17px;font-weight:600;margin:0;letter-spacing:-.01em}
+.ib{width:38px;height:38px;border-radius:50%;background:var(--card);border:1px solid var(--line);display:inline-grid;place-items:center;color:var(--tx);transition:background .15s}
+.ib:hover{background:var(--chip)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;margin:12px 0;overflow:hidden;box-shadow:var(--shadow)}
+.pad{padding:16px}
+.sh{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px 6px}.sh b{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600}.shr{display:flex;align-items:center;gap:6px}
+.sh+.pad,.sh+.gal,.sh+.gg{padding-top:8px}
+.row{display:flex;align-items:center;gap:14px;padding:14px 16px;width:100%;text-align:left;border-top:1px solid var(--line);transition:background .15s}
+.row:first-child,.sh+.row{border-top:0}button.row:hover,label.row:hover{background:var(--chip)}
+.row .i{width:34px;height:34px;border-radius:10px;background:var(--chip);display:grid;place-items:center;flex:none;color:var(--ac)}
+.row .m{flex:1;min-width:0}.row small{display:block;color:var(--mu);font-size:13px;line-height:1.35}.row .go{color:var(--mu)}
+h2{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);margin:22px 4px 8px}
+.sw{appearance:none;-webkit-appearance:none;width:44px;height:26px;border-radius:13px;background:var(--chip2);position:relative;cursor:pointer;transition:background .2s;flex:none;margin:0}
+.sw:checked{background:var(--ac)}.sw:after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0004;transition:.2s}.sw:checked:after{left:21px}
+input[type=checkbox]{accent-color:var(--ac)}
+.fld{display:block;margin:0 0 16px}.fld>span.l{display:flex;justify-content:space-between;font-size:13px;font-weight:500;margin-bottom:6px}.fld .l em{font-style:normal;color:var(--mu);font-weight:400}
+input[type=text],input[type=url],input:not([type]),textarea{width:100%;height:44px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:var(--inp);color:var(--tx);font:inherit;transition:border-color .15s,box-shadow .15s}
+textarea{height:auto;padding:12px 14px;resize:vertical;min-height:96px;line-height:1.5}
+input:focus,textarea:focus{outline:0;border-color:var(--ac);box-shadow:0 0 0 3px color-mix(in srgb,var(--ac) 22%,transparent)}
+input.bad{border-color:var(--bad)}input::placeholder,textarea::placeholder{color:var(--mu);opacity:.7}
+.pre{display:flex;align-items:stretch}.pre>b{display:grid;place-items:center;padding:0 12px;border:1px solid var(--line);border-right:0;border-radius:10px 0 0 10px;background:var(--chip);color:var(--mu);font-weight:500;font-size:14px;white-space:nowrap}.pre input{border-radius:0 10px 10px 0}
+.hint{display:flex;align-items:center;gap:6px;min-height:20px;margin-top:6px;font-size:13px;color:var(--mu)}.hint.ok{color:var(--ok)}.hint.bad{color:var(--bad)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 20px;border-radius:10px;font-weight:600;transition:opacity .15s,transform .05s}
+.btn:active{transform:scale(.98)}.btn[disabled]{opacity:.45;cursor:not-allowed}
+.pri{background:var(--ac);color:var(--onac);display:inline-flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 20px;border-radius:10px;font-weight:600}.pri:hover:not([disabled]){opacity:.92}
+.btn.sec{background:var(--card);border:1px solid var(--line);color:var(--tx)}.btn.sec:hover{background:var(--chip)}
+.btn.sm{height:36px;padding:0 14px;font-size:14px}.btn.blk{width:100%}
+.dng{background:var(--bad);color:#fff;padding:0 20px;height:44px;border-radius:10px;font-weight:600}
+.link{color:var(--ac);font-weight:500}
+.avt{border-radius:50%;object-fit:cover;display:inline-grid;place-items:center;flex:none;background:linear-gradient(135deg,var(--ac),#c084fc);color:#fff;font-weight:600}
+.avt.ring{box-shadow:0 0 0 4px var(--card)}
+.ov{position:fixed;inset:0;background:#000a;display:flex;align-items:flex-end;justify-content:center;z-index:30;padding:0}.ov.c{align-items:center}
+.sheet{background:var(--sheet);border:1px solid var(--line);border-radius:20px 20px 0 0;padding:20px;width:100%;max-width:520px}.ov.c .sheet{border-radius:18px;margin:16px}
+.sheet h3{margin:0 0 6px;font-size:18px}.sheet p{margin:0 0 18px;color:var(--mu)}.acts{display:flex;gap:10px;justify-content:flex-end}
+.em{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;font-size:28px;text-align:center}.em button{padding:6px;border-radius:12px}.em button:hover{background:var(--chip)}
+.menu{position:absolute;right:16px;top:52px;background:var(--sheet);border:1px solid var(--line);box-shadow:var(--shadow);border-radius:12px;z-index:6;min-width:170px;overflow:hidden}
+.gal{display:flex;gap:10px;overflow-x:auto;padding:10px 16px 14px}.gal img{width:110px;height:140px;border-radius:12px;object-fit:cover;flex:none;background:var(--chip)}
+.dot{width:10px;height:10px;border-radius:50%;background:#22c55e;display:inline-block;margin-right:6px}.legal p{color:var(--mu)}
+/* hero */
+.hero{overflow:hidden}.cover{height:96px;background:linear-gradient(120deg,var(--ac),#c084fc 55%,#f0abfc);opacity:.9}
+.hbody{display:flex;align-items:flex-end;gap:14px;padding:0 16px;margin-top:-40px;flex-wrap:wrap}.hinfo{flex:1;min-width:150px;padding-bottom:2px}
+.hname{margin:0;font-size:21px;font-weight:700;letter-spacing:-.02em;text-transform:none;color:var(--tx)}.hsub{color:var(--mu);font-size:14px}
+.tools{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:14px 16px}
+.bio{margin:0;padding:6px 16px 16px;white-space:pre-wrap;overflow-wrap:anywhere}.mu{color:var(--mu)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;padding:8px 16px 16px}
+.chip{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--tx);text-decoration:none;font-size:14px;font-weight:500;transition:background .15s,border-color .15s}
+a.chip:hover{background:var(--chip);border-color:var(--ac)}.chip .ic{color:var(--ac)}
+/* gallery grid */
+.gg{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;padding:10px 16px 16px}
+.gt{position:relative;aspect-ratio:1;border-radius:12px;overflow:hidden;background:var(--chip)}.gt img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .2s}
+button.gt:hover img{transform:scale(1.04)}
+.gt .x{position:absolute;top:6px;right:6px;width:28px;height:28px;border-radius:50%;background:#000b;color:#fff;display:grid;place-items:center;opacity:0;transition:opacity .15s}
+.gt:hover .x,.gt:focus-within .x{opacity:1}@media(hover:none){.gt .x{opacity:1}}
+.gt.up{display:grid;place-items:center;border:1px dashed var(--line)}
+.dz{margin:6px 16px 0;border:1.5px dashed var(--line);border-radius:14px;padding:22px 16px;text-align:center;color:var(--mu);transition:border-color .15s,background .15s;cursor:pointer;display:block;width:calc(100% - 32px)}
+.dz:hover,.dz.over{border-color:var(--ac);background:color-mix(in srgb,var(--ac) 7%,transparent);color:var(--tx)}.dz b{color:var(--ac)}.dz small{display:block;margin-top:2px;font-size:13px}
+/* avatar editor */
+.avedit{display:flex;align-items:center;gap:18px;padding:18px 16px;flex-wrap:wrap}.avwrap{position:relative;flex:none}
+.avwrap .cam{position:absolute;right:-2px;bottom:-2px;width:34px;height:34px;border-radius:50%;background:var(--ac);color:var(--onac);display:grid;place-items:center;border:3px solid var(--card)}
+.avwrap.busy .avt{opacity:.45}.avwrap.busy:after{content:"";position:absolute;inset:0;margin:auto;width:26px;height:26px;border-radius:50%;border:3px solid var(--chip2);border-top-color:var(--ac);animation:sp .7s linear infinite}
+.avact{display:flex;gap:8px;flex-wrap:wrap}.avnote{flex-basis:100%;margin:0;font-size:13px;color:var(--mu)}
+/* social rows */
+.soc{display:flex;align-items:flex-start;gap:12px;margin-bottom:14px}.soc:last-child{margin-bottom:0}
+.soc .si{width:44px;height:44px;border-radius:10px;background:var(--chip);color:var(--ac);display:grid;place-items:center;flex:none}
+.soc .sb{flex:1;min-width:0}.soc .hint{margin-top:4px;min-height:0}.soc .hint:empty{display:none}
+/* save bar, toast, spinner */
+.savebar{position:fixed;left:50%;bottom:max(16px,env(safe-area-inset-bottom));transform:translate(-50%,24px);opacity:0;pointer-events:none;transition:.2s;z-index:10;display:flex;align-items:center;gap:12px;background:var(--sheet);border:1px solid var(--line);box-shadow:0 8px 30px #0003;padding:10px 10px 10px 18px;border-radius:14px;width:min(calc(100% - 32px),560px)}
+.savebar.show{transform:translate(-50%,0);opacity:1;pointer-events:auto}.savebar span{flex:1;font-size:14px;color:var(--mu)}
+#toasts{position:fixed;top:max(14px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:50;display:flex;flex-direction:column;gap:8px;align-items:center;width:calc(100% - 32px);pointer-events:none}
+.toast{display:flex;align-items:center;gap:10px;background:var(--sheet);border:1px solid var(--line);box-shadow:0 8px 30px #0003;padding:11px 16px;border-radius:12px;font-size:14px;font-weight:500;animation:in .2s ease-out;max-width:420px}
+.toast .ic{color:var(--ok)}.toast.err .ic{color:var(--bad)}
+.spin{width:14px;height:14px;border-radius:50%;border:2px solid var(--chip2);border-top-color:var(--ac);display:inline-block;animation:sp .7s linear infinite}
+.sk{background:linear-gradient(90deg,var(--chip),var(--chip2),var(--chip));background-size:200% 100%;animation:sh 1.2s infinite;border-radius:12px}
+@keyframes sp{to{transform:rotate(360deg)}}@keyframes sh{to{background-position:-200% 0}}@keyframes in{from{opacity:0;transform:translateY(-6px)}}
+.lb{position:fixed;inset:0;background:#000e;z-index:40;display:grid;place-items:center;padding:16px}.lb img{max-width:100%;max-height:100%;border-radius:10px}.lb .ib{position:absolute;top:max(16px,env(safe-area-inset-top));right:16px;background:#fff2;color:#fff;border-color:transparent}
+/* onboarding */
+.setup{max-width:440px;margin:0 auto;padding-top:6vh}.setup h1{font-size:26px;letter-spacing:-.02em;margin:0 0 6px}.setup .lead{color:var(--mu);margin:0 0 22px}
+.stepper{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mu);margin-bottom:14px}.stepper i{width:28px;height:4px;border-radius:2px;background:var(--ac)}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style></head><body><div id="app"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script><script src="nova-core.js"></script>
 <script>
 const {sb,t,esc}=Nova,app=document.getElementById('app');let U,P={};
 const EMOJI="👍 ❤️ 😂 😮 😢 😡 👏 🙏 🔥 🎉 😍 😎 🤣 💯 🥳 👌 🤘 👎 😴 🎵 💔 😘 🤔 🙌 ✨ 🤯 🥰 😭".split(' ');
-const bar=(title,back=true,menu=false)=>`<div class=bar>${back?'<button class=ib data-go="back">‹</button>':'<span></span>'}<h1>${title}</h1>${menu?'<button class=ib data-act=menu>⋮</button>':'<span style="width:36px"></span>'}</div>`;
-const row=(i,ti,sub,go,right='›')=>`<button class=row data-go="${go}"><span class=i>${i}</span><span class=m>${t(ti)}${sub?`<small>${sub}</small>`:''}</span><span>${right}</span></button>`;
-const chk=(i,k,ti,d,cls='')=>`<label class=row><span class=i>${i}</span><span class=m>${t(ti)}<small>${t(d)}</small></span><input type=checkbox class="${cls}" data-k=${k} ${Nova.S[k]?'checked':''}></label>`;
+const bar=(title,back=true,menu=false)=>`<div class=bar>${back?`<button class=ib data-go="back" aria-label="Back">${Nova.ic('left')}</button>`:'<span style="width:38px"></span>'}<h1>${title}</h1>${menu?`<button class=ib data-act=menu aria-label="More options">${Nova.ic('more')}</button>`:'<span style="width:38px"></span>'}</div>`;
+const L=k=>Nova.T.en[k]?t(k):k;
+const row=(i,ti,sub,go)=>`<button class=row data-go="${go}"><span class=i>${Nova.ic(i)}</span><span class=m>${esc(L(ti))}${sub?`<small>${esc(sub)}</small>`:''}</span><span class=go>${Nova.ic('right')}</span></button>`;
+const chk=(i,k,ti,d)=>`<label class=row><span class=i>${Nova.ic(i)}</span><span class=m>${t(ti)}<small>${t(d)}</small></span><input type=checkbox class=sw data-k=${k} ${Nova.S[k]?'checked':''}></label>`;
 const CF=window.APP_CONFIG||{},APP=esc(CF.APP_NAME||'the app'),CO=esc(CF.COMPANY_NAME||'the Company'),EM=esc(CF.SUPPORT_EMAIL||''),PH=esc(CF.SUPPORT_PHONE||''),HR=esc(CF.SUPPORT_HOURS||''),AD=esc(CF.COMPANY_ADDRESS||''),JU=esc(CF.JURISDICTION||'India'),RF=+CF.REFUND_DAYS||0;
 const POL={privacy:['privpol',[
 ['Who we are',`${APP} is operated by ${CO}, ${AD}. Questions: ${EM}.`],
@@ -62,51 +132,169 @@ terms:['tos',[
 ['Contact',`${CO}, ${AD}. ${EM}.`]]]};
 const V={
 home:()=>`${bar(t('profile'),false,true)}
-<button class="card row" data-go=profile style="border-radius:22px"><span class=av>${P.avatar_url?`<img class=av src="${esc(P.avatar_url)}">`:'👤'}</span><span class=m><b>${esc(P.full_name||'Your name')}</b><small>${esc(U.email)}</small></span><span>›</span></button>
-<h2>${t('terms')}</h2><div class=card>${row('⚙️','settings','','settings')}${row('🔗','social','','social')}${row('🌐','language',Nova.LANGS[Nova.S.lang],'language')}${row('❓','support','','support')}</div>
-<h2>${t('acct')}</h2><div class=card><label class=row><span class=i>🔔</span><span class=m>${t('notification')}</span><input type=checkbox class=sw data-k=notif ${Nova.S.notif?'checked':''}></label>${row('🗂️','mydata','','privacy')}</div>`,
+<button class="card row" data-go=profile style="padding:16px">${Nova.avatar(P,56)}<span class=m><b style="font-size:16px">${esc(P.full_name||'Your name')}</b><small>@${esc(P.username||'')} · ${esc(U.email)}</small></span><span class=go>${Nova.ic('right')}</span></button>
+<h2>Profile</h2><div class=card>${row('pencil','Edit profile','Photo, username, bio, gallery','editprofile')}${row('link','Social links','Instagram, YouTube, GitHub and more','editprofile/socials')}</div>
+<h2>Preferences</h2><div class=card>${row('sliders',t('settings'),'','settings')}${row('globe',t('language'),Nova.LANGS[Nova.S.lang],'language')}${row('help',t('support'),'','support')}</div>
+<h2>Account &amp; privacy</h2><div class=card><label class=row><span class=i>${Nova.ic('bell')}</span><span class=m>${t('notification')}</span><input type=checkbox class=sw data-k=notif ${Nova.S.notif?'checked':''}></label>${row('db',t('mydata'),'','privacy')}</div>`,
 settings:()=>`${bar(t('settings'))}<div class=card>
-<button class=row data-act=emoji><span class=i>😀</span><span class=m>${t('quick')}<small>${t('quickd')}</small></span><span style="font-size:32px">${Nova.S.quick}</span></button>
-${chk('👥','restrict','restrict','restrictd')}${chk('🙈','hideMature','mature','matured')}${chk('📳','haptic','haptic','hapticd')}${chk('🖼️','floating','floating','floatingd')}
-${chk('🈯','translate','translate','translated')}${chk('🔇','mute','mute','muted')}${chk('📍','hideLoc','hideloc','hidelocd')}
-${row('🌐','language',Nova.LANGS[Nova.S.lang],'language')}${row('🔒','privacy','','privacy')}</div>`,
-language:()=>`${bar(t('language'))}<div class=card>${Object.entries(Nova.LANGS).map(([c,n])=>`<button class=row data-lang=${c}><span class=m>${n}</span><span>${Nova.S.lang==c?'✓':''}</span></button>`).join('')}</div><p class=pad style="color:var(--mu)">More languages: add a block to <code>T</code> in nova-core.js and an entry to <code>LANGS</code>.</p>`,
-privacy:()=>`${bar(t('privacy'))}<div class=card>${['privacy','data','terms'].map(k=>`<button class=row data-go="policy/${k}"><span class=m>${t(POL[k][0])}</span><span>›</span></button>`).join('')}
+<button class=row data-act=emoji><span class=i>${Nova.ic('smile')}</span><span class=m>${t('quick')}<small>${t('quickd')}</small></span><span style="font-size:28px">${Nova.S.quick}</span></button>
+${chk('users','restrict','restrict','restrictd')}${chk('shield','hideMature','mature','matured')}${chk('phone','haptic','haptic','hapticd')}${chk('pip','floating','floating','floatingd')}
+${chk('globe','translate','translate','translated')}${chk('mute','mute','mute','muted')}${chk('pin','hideLoc','hideloc','hidelocd')}
+${row('globe',t('language'),Nova.LANGS[Nova.S.lang],'language')}${row('lock',t('privacy'),'','privacy')}</div>`,
+language:()=>`${bar(t('language'))}<div class=card>${Object.entries(Nova.LANGS).map(([c,n])=>`<button class=row data-lang=${c}><span class=m>${n}</span><span style="color:var(--ac)">${Nova.S.lang==c?Nova.ic('check'):''}</span></button>`).join('')}</div>`,
+privacy:()=>`${bar(t('privacy'))}<div class=card>${['privacy','data','terms'].map(k=>`<button class=row data-go="policy/${k}"><span class=m>${t(POL[k][0])}</span><span class=go>${Nova.ic('right')}</span></button>`).join('')}
 <label class=row><span class=m>${t('noshare')}</span><input type=checkbox class=sw data-k=noShare ${Nova.S.noShare?'checked':''}></label></div>`,
 policy:k=>`${bar(t(POL[k][0]))}<div class="card pad legal">${POL[k][1].map(([h,p])=>`<h3 style='margin:14px 0 4px'>${h}</h3><p>${p}</p>`).join('')}<p><small>Last updated: 10 November 2026</small></p></div>`,
-social:()=>`${bar(t('social'))}<div class="card pad">${t('soon')}</div>`,
-support:()=>`${bar(t('support'))}<div class=card>${row('✉️','contact','','contact')}${row('🗑️','delete','','delete')}</div><div class='card pad' style='color:var(--mu)'>${EM?`✉️ <a style='color:var(--ac)' href='mailto:${EM}'>${EM}</a><br>`:''}${PH?`📞 ${PH}<br>`:''}${HR?`🕘 ${HR}`:''}</div>`,
-contact:()=>`${bar(t('contact'))}<div class="card pad"><input id=sj placeholder="Subject" maxlength=150><textarea id=ms rows=6 placeholder="How can we help?" maxlength=4000></textarea><button class=pri data-act=ticket>Send</button><p id=out></p></div>`,
-delete:()=>`${bar(t('delete'))}<div class="card pad"><p>This permanently deletes your account, profile, gallery and friends. It cannot be undone.</p><input id=cf placeholder="Type DELETE to confirm"><button class=dng data-act=del>${t('delete')}</button><p id=out></p></div>`,
-profile:()=>`${bar(t('profile'))}<div class="card pad"><div style="display:flex;gap:14px;align-items:center"><span class=av>${P.avatar_url?`<img class=av src="${esc(P.avatar_url)}">`:'👤'}</span><div><b style="font-size:20px">${esc(P.full_name||'')}</b><br><span style="color:var(--mu)">@${esc(P.username||'set-username')}</span></div></div></div>
-<h2>${t('bio')}</h2><div class="card pad"><input id=fn placeholder="Name" value="${esc(P.full_name||'')}"><input id=un placeholder="username (a-z 0-9 _ .)" value="${esc(P.username||'')}"><input id=co placeholder="Country" value="${esc(P.country||'')}"><textarea id=bi rows=3 placeholder="Bio" maxlength=200>${esc(P.bio||'')}</textarea><button class=pri data-act=saveProfile>${t('save')}</button> <span id=out></span></div>
-<h2>${t('gallery')} (${(P._g||[]).length})</h2><div class="card gal"><button data-act=upl>＋</button>${(P._g||[]).map(g=>`<img src="${sb.storage.from('gallery').getPublicUrl(g.path).data.publicUrl}">`).join('')}</div><input type=file id=file accept="image/*" hidden>
-<h2>${t('stats')}</h2><div class=card><div class=row><span class=m><span class=dot></span>Online</span></div><div class=row><span class=m>${t('joined')}</span><span>${new Date(P.created_at).toLocaleDateString()}</span></div><div class=row><span class=m>${t('friends')}</span><span>${P._f||0}</span></div></div>`};
-async function route(){const h=(location.hash||'#home').slice(1).split('/');const f=V[h[0]]||V.home;app.innerHTML=f(h[1]);Nova.applyLang();}
-async function loadP(){const {data}=await sb.from('profiles').select('*').eq('id',U.id).single();P=data||{};
+social:()=>{location.replace('#editprofile/socials');return ''},
+support:()=>`${bar(t('support'))}<div class=card>${row('mail',t('contact'),'','contact')}${row('trash',t('delete'),'','delete')}</div><div class='card pad' style='color:var(--mu)'>${EM?`<a class=link href='mailto:${EM}'>${EM}</a><br>`:''}${PH?`${PH}<br>`:''}${HR?`${HR}`:''}</div>`,
+contact:()=>`${bar(t('contact'))}<div class="card pad"><label class=fld><span class=l>Subject</span><input id=sj maxlength=150></label><label class=fld><span class=l>Message</span><textarea id=ms rows=6 placeholder="How can we help?" maxlength=4000></textarea></label><button class="btn pri" data-act=ticket>Send</button><p id=out class=mu></p></div>`,
+delete:()=>`${bar(t('delete'))}<div class="card pad"><p>This permanently deletes your account, profile, gallery and friends. It cannot be undone.</p><label class=fld><span class=l>Type DELETE to confirm</span><input id=cf autocomplete=off></label><button class=dng data-act=del>${t('delete')}</button><p id=out class=mu></p></div>`,
+
+/* ---------- first-time setup (shown after login until a username exists) ---------- */
+setup:()=>`<div class=setup><div class=stepper><i></i>Almost there</div><h1>Set up your profile</h1><p class=lead>Choose a username and, if you like, a profile photo. Friends use your username to find you.</p>
+<div class=card><div class=avedit style="flex-direction:column;text-align:center;gap:10px"><div class=avwrap id=avw>${Nova.avatar(P,96)}<button class=cam data-act=pickAv aria-label="Upload profile photo">${Nova.ic('camera',16)}</button></div><button class="btn sec sm" data-act=pickAv>Upload photo</button><p class=avnote style="flex:none">Optional · JPG, PNG or WebP</p></div>
+<div class=pad style="padding-top:4px"><label class=fld><span class=l>Display name</span><input id=fn maxlength=40 autocomplete=name value="${esc(P.full_name||U.email.split('@')[0])}"></label>
+<label class=fld style="margin:0"><span class=l>Username <em>required</em></span><div class=pre><b>@</b><input id=un maxlength=24 autocomplete=off autocapitalize=none spellcheck=false placeholder="yourname" autofocus></div><div class=hint id=uh></div></label></div></div>
+<button class="btn pri blk" id=go data-act=setupGo disabled>Continue</button>
+<p style="text-align:center;margin-top:14px"><button class="link" data-act=out>Sign out</button></p></div>`,
+
+/* ---------- edit profile ---------- */
+editprofile:()=>{const S=P.socials||{};return `${bar('Edit profile')}<div id=ed>
+<section class=card><div class=avedit><div class=avwrap id=avw>${Nova.avatar(P,88)}<button class=cam data-act=pickAv aria-label="Change profile photo">${Nova.ic('camera',16)}</button></div><div class=avact id=ava>${avActs()}</div><p class=avnote>JPG, PNG or WebP. Automatically cropped to a square.</p></div></section>
+<section class=card><div class=sh><b>${Nova.ic('user',17)}Details</b></div><div class=pad>
+<label class=fld><span class=l>Display name</span><input id=fn maxlength=40 autocomplete=name value="${esc(P.full_name||'')}"></label>
+<label class=fld><span class=l>Username</span><div class=pre><b>@</b><input id=un maxlength=24 autocomplete=off autocapitalize=none spellcheck=false value="${esc(P.username||'')}"></div><div class=hint id=uh></div></label>
+<label class=fld><span class=l>Country <em>optional</em></span><input id=co maxlength=40 autocomplete=country-name value="${esc(P.country||'')}"></label>
+<label class=fld style="margin:0"><span class=l>Bio <em id=bc></em></span><textarea id=bi maxlength=${MAXB} placeholder="Tell people a little about yourself">${esc(P.bio||'')}</textarea></label></div></section>
+<section class=card id=gsec>${gHTML()}</section>
+<section class=card id=sec-socials><div class=sh><b>${Nova.ic('link',17)}Social links</b></div><div class=pad><p class=mu style="margin:0 0 16px;font-size:13px">Add a username or paste a profile link. Leave a field empty to remove it.</p>
+${Object.entries(Nova.SOC).map(([k,s])=>soc(k,s.n,s.i,S[k])).join('')}${soc('website','Website','globe',S.website)}</div></section>
+<div class=savebar id=svb><span>You have unsaved changes</span><button class="btn sec sm" data-act=discard>Discard</button><button class="btn pri sm" data-act=save id=svbtn>Save changes</button></div></div>`}
+};
+const $=s=>document.querySelector(s),MAXG=30,MAXB=300,inv=()=>Nova.invalidate&&Nova.invalidate();
+let UN={ok:false,val:''},DIRTY=false;
+const gUrl=p=>sb.storage.from('gallery').getPublicUrl(p).data.publicUrl;
+function avActs(){return `<button class="btn sec sm" data-act=pickAv>Change photo</button>${P.avatar_url?'<button class="btn sec sm" data-act=rmAv>Remove</button>':''}`}
+function soc(k,n,i,v){return `<div class=soc><span class=si>${Nova.ic(i,20)}</span><div class=sb><div style="font-size:13px;font-weight:500;margin-bottom:5px">${n}</div><div class=pre>${k==='website'?'':'<b>@</b>'}<input data-s=${k} value="${esc(v||'')}" maxlength=200 aria-label="${n}" autocapitalize=none spellcheck=false placeholder="${k==='website'?'https://yourwebsite.com':k==='discord'?'username':'username or link'}" ${k==='website'?'style="border-radius:10px"':''}></div><div class=hint></div></div></div>`}
+function gHTML(){const g=P._g||[];return `<div class=sh><b>${Nova.ic('image',17)}Photo gallery</b><span class=mu style="font-size:13px">${g.length} / ${MAXG}</span></div>
+<label class=dz id=dz for=gf>${Nova.ic('upload',22)}<div><b>Add photos</b> or drag &amp; drop</div><small>Select several at once · photos are optimised automatically</small></label>
+<div class=gg id=gg>${g.map(x=>`<div class=gt><img src="${gUrl(x.path)}" alt="" loading=lazy><button class=x data-act=delG data-id="${x.id}" data-p="${esc(x.path)}" aria-label="Delete photo">${Nova.ic('x',15)}</button></div>`).join('')}</div>`}
+
+async function route(){
+ if(!U)return;const h=(location.hash||'#home').slice(1).split('/');
+ if(!P.username&&h[0]!=='setup'){location.replace('#setup');return}
+ if(P.username&&h[0]==='setup'){location.replace('#home');return}
+ app.innerHTML=(V[h[0]]||V.home)(h[1]);Nova.applyLang();
+ if(h[0]==='editprofile')initEd(h[1]);if(h[0]==='setup')initSetup();
+}
+async function loadP(){const {data,error}=await sb.from('profiles').select('*').eq('id',U.id).single();if(error)throw error;P=data||{};
  P._g=(await sb.from('gallery').select('*').eq('user_id',U.id).order('created_at',{ascending:false})).data||[];
- P._f=(await sb.from('friendships').select('*',{count:'exact',head:true}).eq('status','accepted').or(`user_id.eq.${U.id},friend_id.eq.${U.id}`)).count;}
-const dlg=(h)=>{const d=document.createElement('div');d.className='ov c';d.innerHTML=`<div class=sheet>${h}</div>`;document.body.append(d);return d};
+ P._f=(await sb.from('friendships').select('*',{count:'exact',head:true}).eq('status','accepted').or(`user_id.eq.${U.id},friend_id.eq.${U.id}`)).count}
+const ask=(title,text,ok='Delete',danger=true)=>new Promise(r=>{const o=document.createElement('div');o.className='ov c';o.setAttribute('role','dialog');o.setAttribute('aria-modal','true');
+ o.innerHTML=`<div class=sheet><h3>${esc(title)}</h3><p>${esc(text)}</p><div class=acts><button class="btn sec" data-n>Cancel</button><button class="btn ${danger?'':'pri'}" ${danger?'style="background:var(--bad);color:#fff"':''} data-y>${esc(ok)}</button></div></div>`;
+ o.onclick=e=>{if(e.target===o||e.target.closest('[data-n]')){o.remove();r(false)}else if(e.target.closest('[data-y]')){o.remove();r(true)}};document.body.append(o);o.querySelector('[data-n]').focus()});
+
+/* ---------- avatar ---------- */
+const dropOld=u=>{const m=/\/avatars\/([^?]+)/.exec(u||'');if(m)sb.storage.from('avatars').remove([decodeURIComponent(m[1])])};
+async function uploadAvatar(file){
+ if(file.size>15e6)throw new Error('That image is larger than 15 MB');
+ const blob=await Nova.imgBlob(file,512,.88,true),path=`${U.id}/avatar_${Date.now()}.jpg`;
+ const up=await sb.storage.from('avatars').upload(path,blob,{contentType:'image/jpeg',cacheControl:'31536000'});if(up.error)throw up.error;
+ const url=sb.storage.from('avatars').getPublicUrl(path).data.publicUrl;
+ const {error}=await sb.from('profiles').update({avatar_url:url}).eq('id',U.id);if(error){sb.storage.from('avatars').remove([path]);throw error}
+ dropOld(P.avatar_url);P.avatar_url=url;inv()}
+function paintAv(){const w=$('#avw');if(!w)return;const s=w.querySelector('.avt'),sz=parseInt(s.style.width)||88;s.outerHTML=Nova.avatar(P,sz);const a=$('#ava');if(a)a.innerHTML=avActs()}
+
+/* ---------- gallery (multi upload) ---------- */
+async function addGallery(files){
+ files=[...files].filter(f=>/^image\//i.test(f.type)||/\.(jpe?g|png|webp|gif)$/i.test(f.name));if(!files.length)return Nova.toast('Please choose image files','err');
+ const room=MAXG-P._g.length;if(room<=0)return Nova.toast(`Gallery is full (${MAXG} photos)`,'err');
+ if(files.length>room){Nova.toast(`Only ${room} more photo${room>1?'s':''} fit — extra files skipped`,'err');files=files.slice(0,room)}
+ const grid=$('#gg'),rows=[];let fail=0;
+ const queue=files.map(f=>{const t=document.createElement('div');t.className='gt up';t.innerHTML='<i class=spin></i>';grid.prepend(t);return {f,t}});
+ const worker=async()=>{for(let j;(j=queue.shift());){try{if(j.f.size>15e6)throw new Error('large');
+   const blob=await Nova.imgBlob(j.f,1600,.85,false),p=`${U.id}/${Date.now()}_${Math.random().toString(36).slice(2,8)}.jpg`;
+   const r=await sb.storage.from('gallery').upload(p,blob,{contentType:'image/jpeg',cacheControl:'31536000'});if(r.error)throw r.error;rows.push({user_id:U.id,path:p})}
+  catch(e){fail++;j.t.remove()}}};
+ await Promise.all([worker(),worker(),worker()]);
+ if(rows.length){const {error}=await sb.from('gallery').insert(rows);if(error){sb.storage.from('gallery').remove(rows.map(r=>r.path));fail+=rows.length;rows.length=0;Nova.toast(error.message,'err')}}
+ await loadP();inv();const g=$('#gsec');if(g)g.innerHTML=gHTML();
+ if(rows.length)Nova.toast(`${rows.length} photo${rows.length>1?'s':''} added${fail?` · ${fail} failed`:''}`,fail?'err':'');else if(fail)Nova.toast('Upload failed. Check the file type and size.','err')}
+
+/* ---------- editor wiring ---------- */
+function initEd(sub){
+ const ed=$('#ed'),svb=$('#svb');DIRTY=false;
+ UN=Nova.unameField($('#un'),$('#uh'),P.username);
+ const bc=()=>$('#bc').textContent=`${$('#bi').value.length} / ${MAXB}`;bc();
+ ed.addEventListener('input',e=>{const x=e.target;if(x.id==='bi')bc();
+  if(x.dataset.s){const r=Nova.parseSocial(x.dataset.s,x.value),h=x.closest('.sb').querySelector('.hint');x.classList.toggle('bad',!!r.err);h.className='hint '+(r.err?'bad':'');h.textContent=r.err||''}
+  DIRTY=true;svb.classList.add('show')});
+ ed.addEventListener('dragover',e=>{if(e.target.closest('#dz')){e.preventDefault();$('#dz').classList.add('over')}});
+ ed.addEventListener('dragleave',e=>{if(e.target.closest('#dz'))$('#dz').classList.remove('over')});
+ ed.addEventListener('drop',e=>{const z=e.target.closest('#dz');if(!z)return;e.preventDefault();z.classList.remove('over');addGallery(e.dataTransfer.files)});
+ if(sub==='socials')requestAnimationFrame(()=>$('#sec-socials').scrollIntoView({block:'start'}));
+}
+function initSetup(){
+ const go=$('#go'),upd=s=>{const u=s||UN;go.disabled=!(u.ok&&!u.pending&&$('#fn').value.trim().length>=2)};
+ UN=Nova.unameField($('#un'),$('#uh'),null,upd);$('#fn').addEventListener('input',upd);
+}
+async function saveProfile(btn,{name,un,country,bio,socials}){
+ const lab=btn.innerHTML;btn.disabled=true;btn.innerHTML='<i class=spin></i> Saving…';
+ const body={full_name:name,username:un};if(country!==undefined)body.country=country||null;if(bio!==undefined)body.bio=bio||null;if(socials)body.socials=socials;
+ const {error}=await sb.from('profiles').update(body).eq('id',U.id);btn.disabled=false;btn.innerHTML=lab;
+ if(error){const taken=error.code==='23505',h=$('#uh');
+  if(h){h.className='hint bad';h.innerHTML=Nova.ic('alert',14)+'<span>'+(taken?'That username was just taken. Try another.':'This username is not allowed.')+'</span>'}
+  Nova.toast(taken||/username/i.test(error.message)?(taken?'Username already taken':'Invalid username'):error.message,'err');return false}
+ await loadP();inv();return true}
+async function saveEditor(btn){
+ const name=$('#fn').value.trim();
+ if(name.length<2){$('#fn').focus();return Nova.toast('Please enter your name (2–40 characters)','err')}
+ if(UN.pending)return Nova.toast('Still checking the username…','err');
+ if(!UN.ok){$('#un').focus();return Nova.toast(UN.val?'Choose a valid, available username':'A username is required','err')}
+ const socials={};let bad=null;
+ document.querySelectorAll('[data-s]').forEach(i=>{const r=Nova.parseSocial(i.dataset.s,i.value);if(r.err){if(!bad)bad=i}else if(r.v)socials[i.dataset.s]=r.v});
+ if(bad){bad.focus();return Nova.toast('Fix the highlighted social link','err')}
+ if(await saveProfile(btn,{name,un:UN.val,country:$('#co').value.trim(),bio:$('#bi').value.trim(),socials})){DIRTY=false;Nova.toast('Profile saved');route()}}
+
+/* ---------- events ---------- */
 document.addEventListener('click',async e=>{const el=e.target.closest('[data-go],[data-act],[data-lang]');if(!el){if(!e.target.closest('.menu'))document.querySelector('.menu')?.remove();return}
- const d=el.dataset;if(d.go)d.go=='back'?history.back():location.hash=d.go;
+ const d=el.dataset;
+ if(d.go){if(d.go=='back'){history.length>1?history.back():location.hash='home'}else location.hash=d.go}
  if(d.lang){await Nova.set('lang',d.lang);route()}
- if(d.act=='menu'){const m=document.createElement('div');m.className='menu';m.innerHTML=`<button class=row data-act=out>${t('signout')}</button>`;el.parentNode.append(m);e.stopPropagation()}
+ if(d.act=='menu'){const m=document.createElement('div');m.className='menu';m.innerHTML=`<button class=row data-act=out>${Nova.ic('logout',18)}<span class=m>${t('signout')}</span></button>`;el.parentNode.append(m);e.stopPropagation()}
  if(d.act=='out'){await sb.auth.signOut();location.href='login.html'}
  if(d.act=='emoji'){const o=document.createElement('div');o.className='ov';o.innerHTML=`<div class=sheet><div class=em>${EMOJI.map(x=>`<button>${x}</button>`).join('')}</div></div>`;
   o.onclick=async ev=>{if(ev.target.tagName=='BUTTON')await Nova.set('quick',ev.target.textContent);o.remove();route()};document.body.append(o)}
- if(d.act=='saveProfile'){const u=document.getElementById('un').value.trim().toLowerCase()||null;
-  const {error}=await sb.from('profiles').update({full_name:fn.value.trim(),username:u,country:co.value.trim(),bio:bi.value.trim()}).eq('id',U.id);
-  out.textContent=error?(error.message.includes('username')?'Invalid or taken username':error.message):'Saved ✓';if(!error)await loadP()}
- if(d.act=='upl'){file.click();file.onchange=async()=>{const f=file.files[0];if(!f||f.size>5e6)return alert('Max 5 MB image');
-  const p=`${U.id}/${Date.now()}_${f.name.replace(/[^\w.]/g,'_')}`;const r=await sb.storage.from('gallery').upload(p,f);
-  if(r.error)return alert(r.error.message);await sb.from('gallery').insert({user_id:U.id,path:p});await loadP();route()}}
- if(d.act=='ticket'){const {error}=await sb.from('support_tickets').insert({user_id:U.id,email:U.email,subject:sj.value,message:ms.value});out.textContent=error?'Please fill subject (3+) and message (10+ chars).':'Sent. We will reply by email.'}
+ if(d.act=='pickAv')$('#avf').click();
+ if(d.act=='rmAv'&&await ask('Remove profile photo?','Your initials will be shown instead.','Remove')){
+  const old=P.avatar_url,{error}=await sb.from('profiles').update({avatar_url:null}).eq('id',U.id);if(error)return Nova.toast(error.message,'err');
+  dropOld(old);P.avatar_url=null;inv();paintAv();Nova.toast('Photo removed')}
+ if(d.act=='delG'&&await ask('Delete this photo?','It will be removed from your gallery for good.')){
+  const {error}=await sb.from('gallery').delete().eq('id',d.id);if(error)return Nova.toast(error.message,'err');
+  sb.storage.from('gallery').remove([d.p]);await loadP();inv();$('#gsec').innerHTML=gHTML();Nova.toast('Photo deleted')}
+ if(d.act=='save')saveEditor(el);
+ if(d.act=='discard'){DIRTY=false;route()}
+ if(d.act=='setupGo'){const name=$('#fn').value.trim();if(!UN.ok||name.length<2)return;
+  if(await saveProfile(el,{name,un:UN.val})){Nova.toast(`Welcome, @${P.username}`);location.hash='profile'}}
+ if(d.act=='ticket'){const {error}=await sb.from('support_tickets').insert({user_id:U.id,email:U.email,subject:sj.value,message:ms.value});out.textContent=error?'Please fill subject (3+) and message (10+ characters).':'Sent. We will reply by email.'}
  if(d.act=='del'){if(cf.value!=='DELETE')return out.textContent='Type DELETE exactly.';const {error}=await sb.rpc('delete_my_account');if(error)return out.textContent=error.message;await sb.auth.signOut();location.href='login.html'}
 });
-document.addEventListener('change',async e=>{const k=e.target.dataset?.k;if(!k)return;
- if(k=='hideMature'&&!e.target.checked){e.target.checked=true;const o=dlg(`<h2 style="font-size:22px;margin:0 0 24px">Enable 🔞 Mature Content</h2><div style="text-align:right"><button class=row style="display:inline;width:auto" data-n>${t('no')}</button> <button class=row style="display:inline;width:auto" data-y>${t('yes')}</button></div>`);
-  o.onclick=async ev=>{if(ev.target.dataset.y!==undefined){await Nova.set('hideMature',false);route()}if(ev.target.dataset.y!==undefined||ev.target.dataset.n!==undefined||ev.target==o)o.remove()};return}
- await Nova.set(k,e.target.checked)});
-window.onhashchange=route;
-(async()=>{const {data}=await sb.auth.getSession();if(!data.session){try{sessionStorage.setItem('postLoginRedirect','profile.html')}catch(_){}return location.href='login.html'}U=data.session.user;await Nova.sync(U.id);await loadP();route()})();
-</script><script src="nova-profile.js"></script></body></html>
+document.addEventListener('change',async e=>{const x=e.target;
+ if(x.id==='avf'){const f=x.files[0];x.value='';if(!f)return;const w=$('#avw');w&&w.classList.add('busy');
+  try{await uploadAvatar(f);paintAv();Nova.toast('Profile photo updated')}catch(er){Nova.toast(er.message||'Upload failed','err')}w&&w.classList.remove('busy');return}
+ if(x.id==='gf'){const fs=[...x.files];x.value='';if(fs.length)addGallery(fs);return}
+ const k=x.dataset?.k;if(!k)return;
+ if(k=='hideMature'&&!x.checked){x.checked=true;if(await ask('Enable 🔞 Mature Content','Explicit 18+ content may be shown. Only turn this on if you are 18 or older.',t('yes'),false)){await Nova.set('hideMature',false);route()}return}
+ await Nova.set(k,x.checked)});
+window.addEventListener('hashchange',()=>{route();scrollTo(0,0)});
+window.addEventListener('beforeunload',e=>{if(DIRTY){e.preventDefault();e.returnValue=''}});
+sb.auth.onAuthStateChange(ev=>{if(ev==='SIGNED_OUT')location.href='login.html'});
+(async()=>{app.innerHTML='<div class="sk" style="height:56px;margin:12px 0"></div><div class="sk" style="height:200px;margin:12px 0"></div><div class="sk" style="height:120px"></div>';
+ const {data}=await sb.auth.getSession();if(!data.session){try{sessionStorage.setItem('postLoginRedirect','profile.html')}catch(_){}return location.href='login.html'}
+ U=data.session.user;await Nova.sync(U.id);
+ try{await loadP()}catch(er){app.innerHTML='<div class="card pad"><p>We could not load your profile. Check your connection and try again.</p><button class="btn pri" onclick="location.reload()">Try again</button></div>';return}
+ route()})();
+</script><script src="nova-profile.js"></script>
+<input type="file" id="avf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" hidden>
+<input type="file" id="gf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" multiple hidden>
+</body></html>

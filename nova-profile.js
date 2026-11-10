@@ -7,15 +7,12 @@
   if (typeof V === 'undefined') return;
 
   let PD = null, PREVIEW = false, NSFW = false, TAB = 'top', REQ = [], FAILED = null, LOADING = null;
-  const SOC = { instagram:['📸','https://instagram.com/'], x:['𝕏','https://x.com/'], tiktok:['🎵','https://tiktok.com/@'], snapchat:['👻','https://snapchat.com/add/'],
-    youtube:['▶️','https://youtube.com/@'], facebook:['📘','https://facebook.com/'], telegram:['✈️','https://t.me/'], github:['💻','https://github.com/'],
-    linkedin:['💼','https://linkedin.com/in/'], twitch:['🎮','https://twitch.tv/'], discord:['💬',''] };
   const STOP = new Set('the and for with from this that official video full song hd new feat lyrical lyric audio you your are was not'.split(' '));
   const COL = ['#9ad6d4','#c9b6ff','#ffb36b','#7aa2ff','#ff8fb1','#8fe3a1','#e8d36b','#b0b0c8'];
   const okUrl = u => /^https?:\/\//i.test(u || '') ? esc(u) : '';
   const hasData = id => PD && PD.id === id;
 
-  const _edit = V.profile; V.editprofile = () => { PD = null; return _edit(); };                       // old form page (name, username, bio, gallery upload)
+  Nova.invalidate = () => { PD = null; FAILED = null; LOADING = null; };   // call after profile edits so the view refetches
   async function fetchPD(id) {
     const { data } = await sb.rpc('public_profile', { p_uid: id, p_preview: PREVIEW, p_nsfw: NSFW });
     PD = data; FAILED = data ? null : id;
@@ -27,24 +24,25 @@
   }
   const reload = async () => { const id = PD ? PD.id : U.id; await fetchPD(id); route(); };
 
+  const SOC = Nova.SOC;
   const sec = (k, ic, ti, body, extra = '') => {
     if (!PD.s[k]) return '';
-    const eye = PD.own ? `<button class=ib data-vis=${k} title="Visible to others">${PD.visibility[k] === false ? '🙈' : '👁️'}</button>` : '';
-    return `<div class=card><div class=row style="justify-content:space-between"><b>${ic} ${ti}</b><span>${extra}${eye}</span></div>${body}</div>`;
+    const eye = PD.own ? `<button class=ib data-vis=${k} title="${PD.visibility[k] === false ? 'Hidden from others' : 'Visible to others'}" aria-label="Toggle visibility for ${esc(ti)}">${Nova.ic(PD.visibility[k] === false ? 'eyeoff' : 'eye', 17)}</button>` : '';
+    return `<section class=card><div class=sh><b>${Nova.hasIcon(ic) ? Nova.ic(ic, 17) : ''}${ti}</b><span class=shr>${extra}${eye}</span></div>${body}</section>`;
   };
-  const av = (u, s) => u.avatar_url || u.avatar ? `<img src="${okUrl(u.avatar_url || u.avatar)}" style="width:${s}px;height:${s}px;border-radius:50%;object-fit:cover">`
-    : `<span style="width:${s}px;height:${s}px;border-radius:50%;background:var(--chip2);display:grid;place-items:center;font-size:${s / 2.2}px">${esc((u.full_name || u.name || '?')[0])}</span>`;
+  const av = (u, s) => Nova.avatar(u, s);
 
   function render() {
     if (!PD) return `${bar(t('profile'))}<p class=pad>${FAILED ? 'Profile not found.' : 'Loading…'}</p>`;
     const d = PD, own = d.own, can = !Nova.S.hideMature;
     let h = `${bar(own || PREVIEW ? t('profile') : '@' + esc(d.username || ''))}
-<div class="card pad"><div style="display:flex;gap:14px;align-items:center">${av(d, 76)}<div style="flex:1"><b style="font-size:22px">${esc(d.name || '')}</b><br><span style="color:var(--mu)">@${esc(d.username || 'username')} ${esc(d.country || '')}</span></div>
-${d.id === U.id ? '<button class=ib data-go=editprofile>✏️</button>' : ''}</div>
-${d.id === U.id ? `<div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class=pri data-pv style="padding:8px 14px">${PREVIEW ? 'Exit preview' : 'Preview'}</button>
-<label style="display:flex;gap:8px;align-items:center;${can ? '' : 'opacity:.5'}" title="${can ? '' : 'Turn off Hide Mature Content in Settings first'}">Include 🔞 NSFW <input type=checkbox class=sw data-nsfw ${NSFW && can ? 'checked' : ''} ${can ? '' : 'disabled'}></label></div>` : ''}</div>`;
-    h += sec('bio', '📝', t('bio'), `<p class=pad>${esc(d.bio) || '<span style="color:var(--mu)">No bio yet</span>'}</p>`);
-    h += sec('gallery', '🖼️', `${t('gallery')} (${(d.gallery || []).length})`, `<div class=gal>${(d.gallery || []).map(p => `<img src="${sb.storage.from('gallery').getPublicUrl(p).data.publicUrl}" loading=lazy>`).join('') || '<p class=pad style="color:var(--mu)">No photos</p>'}</div>`);
+<div class="card hero"><div class=cover></div><div class=hbody>${Nova.avatar(d, 92, 'ring')}<div class=hinfo><h2 class=hname>${esc(d.name || '')}</h2><div class=hsub>@${esc(d.username || '')}${d.country ? ' · ' + esc(d.country) : ''}</div></div>
+${d.id === U.id && !PREVIEW ? `<button class="btn sec sm" data-go=editprofile>${Nova.ic('pencil', 15)}Edit profile</button>` : ''}</div>
+${d.id === U.id ? `<div class=tools><button class="btn pri sm" data-pv>${PREVIEW ? 'Exit preview' : 'Preview as visitor'}</button>
+<label style="display:flex;gap:10px;align-items:center;font-size:14px;${can ? '' : 'opacity:.5'}" title="${can ? '' : 'Turn off Hide Mature Content in Settings first'}">Include 🔞 NSFW <input type=checkbox class=sw data-nsfw ${NSFW && can ? 'checked' : ''} ${can ? '' : 'disabled'}></label></div>` : '<div style="height:16px"></div>'}</div>`;
+    h += sec('bio', 'user', t('bio'), d.bio ? `<p class=bio>${esc(d.bio)}</p>` : `<p class="bio mu">${own ? 'You have not written a bio yet. <button class=link data-go=editprofile>Add one</button>' : 'No bio yet'}</p>`);
+    const gl = d.gallery || [];
+    h += sec('gallery', 'image', `${t('gallery')} (${gl.length})`, `<div class=gg>${gl.map((p, i) => `<button class=gt data-lb="${esc(sb.storage.from('gallery').getPublicUrl(p).data.publicUrl)}" aria-label="Open photo ${i + 1}"><img src="${esc(sb.storage.from('gallery').getPublicUrl(p).data.publicUrl)}" alt="" loading=lazy></button>`).join('') || `<p class="mu" style="grid-column:1/-1;margin:0">${own ? 'No photos yet. <button class=link data-go=editprofile>Add photos</button>' : 'No photos'}</p>`}</div>`);
     if (d.stats) h += sec('stats', '📊', t('stats'), `<div class=row><span class=m>${t('joined')}</span><span>${new Date(d.joined).toLocaleDateString()}</span></div>
 <div class=row><span class=m>Watch time</span><span>${d.stats.hours} hours</span></div><div class=row><span class=m>Videos watched</span><span>${d.stats.videos}</span></div><div class=row><span class=m>${t('friends')}</span><span>${d.stats.friends}</span></div>`);
     if (d.friends) {
@@ -73,9 +71,13 @@ ${REQ.map(r => `<div class=row><span class=m>${esc(r.full_name || r.username)} <
 <div>${d.interests.map((x, i) => `<div><span style="color:${COL[i % 8]}">●</span> ${esc(x.name)} ${Math.round(x.n / tot * 100)}%</div>`).join('')}</div></div>`);
     }
     if (d.socials) {
-      const own_ = own ? `<div class=pad>${Object.entries(SOC).map(([k, [ic]]) => `<input data-s=${k} placeholder="${ic} ${k} username" value="${esc(d.socials[k] || '')}" maxlength=40>`).join('')}<button class=pri data-savesoc>${t('save')}</button></div>` : '';
-      const links = Object.entries(d.socials).filter(([k, v]) => SOC[k] && v).map(([k, v]) => SOC[k][1] ? `<a href="${esc(SOC[k][1] + encodeURIComponent(v))}" target=_blank rel=noopener style="font-size:30px;text-decoration:none;margin:6px">${SOC[k][0]}</a>` : `<span title="${esc(v)}" style="font-size:30px;margin:6px">${SOC[k][0]}</span>`).join('');
-      h += sec('socials', '🔗', t('socials'), `<div class=pad style="text-align:center">${links || '<span style="color:var(--mu)">No links</span>'}</div>${own_}`);
+      const chips = Object.entries(d.socials).filter(([k, v]) => (SOC[k] || k === 'website') && v).map(([k, v]) => {
+        const info = k === 'website' ? { n: 'Website', u: '', i: 'globe' } : SOC[k];
+        const href = k === 'website' ? okUrl(v) : info.u ? esc(info.u + encodeURIComponent(v)) : '';
+        const label = k === 'website' ? esc(String(v).replace(/^https?:\/\//, '')) : info.u ? esc(info.n) : `${esc(info.n)} · ${esc(v)}`;
+        return href ? `<a class=chip href="${href}" target=_blank rel="noopener noreferrer">${Nova.ic(info.i, 16)}${label}</a>` : `<span class=chip title="${esc(v)}">${Nova.ic(info.i, 16)}${label}</span>`;
+      }).join('');
+      h += sec('socials', 'link', t('socials'), `<div class=chips>${chips || `<span class=mu>${own ? 'No links yet. <button class=link data-go=editprofile/socials>Add social links</button>' : 'No links'}</span>`}</div>`, own ? `<button class="btn sec sm" data-go=editprofile/socials>${Nova.ic('pencil', 14)}Edit</button>` : '');
     }
     return h;
   }
@@ -84,7 +86,7 @@ ${REQ.map(r => `<div class=row><span class=m>${esc(r.full_name || r.username)} <
   V.user = id => show(id);
 
   document.addEventListener('click', async e => {
-    const el = e.target.closest('[data-vis],[data-pv],[data-tab],[data-add],[data-acc],[data-dec],[data-savesoc],[data-clear]'); if (!el) return; const d = el.dataset;
+    const el = e.target.closest('[data-vis],[data-pv],[data-tab],[data-add],[data-acc],[data-dec],[data-clear],[data-lb]'); if (!el) return; const d = el.dataset;
     if (d.vis) { const v = { ...PD.visibility, [d.vis]: PD.visibility[d.vis] === false }; await sb.from('profiles').update({ visibility: v }).eq('id', U.id); await reload(); }
     if (d.pv !== undefined) { PREVIEW = !PREVIEW; await reload(); }
     if (d.tab) { TAB = d.tab; route(); }
@@ -98,8 +100,9 @@ ${REQ.map(r => `<div class=row><span class=m>${esc(r.full_name || r.username)} <
     }
     if (d.acc) { await sb.from('friendships').update({ status: 'accepted' }).eq('user_id', d.acc).eq('friend_id', U.id); await reload(); }
     if (d.dec) { await sb.from('friendships').delete().eq('user_id', d.dec).eq('friend_id', U.id); await reload(); }
-    if (d.savesoc !== undefined) { const s = {}; document.querySelectorAll('[data-s]').forEach(i => { const v = i.value.trim().replace(/^@/, ''); if (/^[\w.\-]{1,40}$/.test(v)) s[i.dataset.s] = v; });
-      await sb.from('profiles').update({ socials: s }).eq('id', U.id); await reload(); }
+    if (d.lb) { const o = document.createElement('div'); o.className = 'lb'; o.setAttribute('role', 'dialog'); o.innerHTML = `<button class=ib aria-label="Close">${Nova.ic('x', 18)}</button><img src="${d.lb}" alt="">`;
+      const close = () => { o.remove(); document.removeEventListener('keydown', k); }, k = ev => ev.key === 'Escape' && close();
+      o.onclick = close; document.addEventListener('keydown', k); document.body.append(o); }
   });
   document.addEventListener('change', async e => { if (e.target.dataset && e.target.dataset.nsfw !== undefined) { NSFW = e.target.checked; await reload(); } });
 })();
