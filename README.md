@@ -7,7 +7,7 @@ Static website + Supabase. No build step. Deploy the folder to Vercel (or any st
 |---|---|
 | `config.js` | Your Supabase URL/anon key + company info (also feeds the policy pages and Support page) |
 | `theme.js` | Light/dark theme (`data-theme`), used by login and profile |
-| `login.html` | Sign up, log in, Google, forgot/reset password. "Open profile" goes to `profile.html` |
+| `index.html` | Sign up, log in, Google, forgot/reset password. "Open profile" goes to `profile.html` |
 | `profile.html` | Profile home, Settings, Language, Privacy + policies, Support, Social |
 | `nova-core.js` | Shared: Supabase client, settings, haptics, auto-translate, languages. Load on **every** page |
 | `nova-profile.js` | Profile sections: friends, videos, keywords, channels, interests, socials, preview, hide toggles |
@@ -32,7 +32,7 @@ It creates (Part 4 = username check, avatar bucket, gallery limits): `profiles` 
 
 ## 3. Deploy
 Upload the folder to Vercel (or `npx serve .` locally). Keep all files in the same folder.
-Flow: `login.html` → "Open profile" → `profile.html`. If a logged-out user opens `profile.html` they are sent to login and brought back after.
+Flow: `index.html` → "Open profile" → `profile.html`. If a logged-out user opens `profile.html` they are sent to login and brought back after.
 
 ## 4. Connect your video / room / chat pages
 Add to each page: `config.js`, the supabase-js script, `nova-core.js` (and `nova-profile.js` on the player page).

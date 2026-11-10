@@ -262,7 +262,7 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-go]
  if(d.go){if(d.go=='back'){history.length>1?history.back():location.hash='home'}else location.hash=d.go}
  if(d.lang){await Nova.set('lang',d.lang);route()}
  if(d.act=='menu'){const m=document.createElement('div');m.className='menu';m.innerHTML=`<button class=row data-act=out>${Nova.ic('logout',18)}<span class=m>${t('signout')}</span></button>`;el.parentNode.append(m);e.stopPropagation()}
- if(d.act=='out'){await sb.auth.signOut();location.href='login.html'}
+ if(d.act=='out'){await sb.auth.signOut();location.href='index.html'}
  if(d.act=='emoji'){const o=document.createElement('div');o.className='ov';o.innerHTML=`<div class=sheet><div class=em>${EMOJI.map(x=>`<button>${x}</button>`).join('')}</div></div>`;
   o.onclick=async ev=>{if(ev.target.tagName=='BUTTON')await Nova.set('quick',ev.target.textContent);o.remove();route()};document.body.append(o)}
  if(d.act=='pickAv')$('#avf').click();
@@ -277,7 +277,7 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-go]
  if(d.act=='setupGo'){const name=$('#fn').value.trim();if(!UN.ok||name.length<2)return;
   if(await saveProfile(el,{name,un:UN.val})){Nova.toast(`Welcome, @${P.username}`);location.hash='profile'}}
  if(d.act=='ticket'){const {error}=await sb.from('support_tickets').insert({user_id:U.id,email:U.email,subject:sj.value,message:ms.value});out.textContent=error?'Please fill subject (3+) and message (10+ characters).':'Sent. We will reply by email.'}
- if(d.act=='del'){if(cf.value!=='DELETE')return out.textContent='Type DELETE exactly.';const {error}=await sb.rpc('delete_my_account');if(error)return out.textContent=error.message;await sb.auth.signOut();location.href='login.html'}
+ if(d.act=='del'){if(cf.value!=='DELETE')return out.textContent='Type DELETE exactly.';const {error}=await sb.rpc('delete_my_account');if(error)return out.textContent=error.message;await sb.auth.signOut();location.href='index.html'}
 });
 document.addEventListener('change',async e=>{const x=e.target;
  if(x.id==='avf'){const f=x.files[0];x.value='';if(!f)return;const w=$('#avw');w&&w.classList.add('busy');
@@ -288,9 +288,9 @@ document.addEventListener('change',async e=>{const x=e.target;
  await Nova.set(k,x.checked)});
 window.addEventListener('hashchange',()=>{route();scrollTo(0,0)});
 window.addEventListener('beforeunload',e=>{if(DIRTY){e.preventDefault();e.returnValue=''}});
-sb.auth.onAuthStateChange(ev=>{if(ev==='SIGNED_OUT')location.href='login.html'});
+sb.auth.onAuthStateChange(ev=>{if(ev==='SIGNED_OUT')location.href='index.html'});
 (async()=>{app.innerHTML='<div class="sk" style="height:56px;margin:12px 0"></div><div class="sk" style="height:200px;margin:12px 0"></div><div class="sk" style="height:120px"></div>';
- const {data}=await sb.auth.getSession();if(!data.session){try{sessionStorage.setItem('postLoginRedirect','profile.html')}catch(_){}return location.href='login.html'}
+ const {data}=await sb.auth.getSession();if(!data.session){try{sessionStorage.setItem('postLoginRedirect','profile.html')}catch(_){}return location.href='index.html'}
  U=data.session.user;await Nova.sync(U.id);
  try{await loadP()}catch(er){app.innerHTML='<div class="card pad"><p>We could not load your profile. Check your connection and try again.</p><button class="btn pri" onclick="location.reload()">Try again</button></div>';return}
  route()})();
