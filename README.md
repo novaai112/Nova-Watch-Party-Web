@@ -67,7 +67,7 @@ const { data: ok } = await Nova.sb.rpc('can_invite', { target: friendUserId });
 - **Profile 👁️ / 🙈** hides a section from other people. The database never sends hidden sections to others. **Preview** shows what others see.
 - **Restrict Invitations** is enforced by `can_invite`. **Hide Location** by `map_users`.
 - **Language:** English, Hindi, Spanish built in. Add one: copy a block inside `T` in `nova-core.js` and add it to `LANGS`.
-- **Chat:** The Chats icon is in the mobile bottom navigation. Search accepted friends by their database username, start one-to-one or group chats, exchange live messages, mention group/friend usernames, and send images, video, audio, PDF, and text files (up to 20 MB each). Voice notes use the browser microphone and are limited to three minutes. Chat media is stored in the private `chat-media` bucket and signed links expire after one hour.
+- **Chat:** The Chats icon is in the mobile bottom navigation. Search accepted friends by their database username, start one-to-one or group chats, exchange live messages, mention group/friend usernames, and send images, video, audio, PDF, and text files (up to 20 MB each). The media picker supports camera/gallery/files and opens Google Images, Yandex Images, GIPHY, or KLIPY searches in a new tab; paste a direct HTTPS media-file URL to share externally hosted media. External links are not copied into private storage. Voice notes use the browser microphone and are limited to three minutes. Uploaded chat media is stored in the private `chat-media` bucket and signed links expire after one hour.
 - **People:** The Friends page has Friends, Recents, Requests, and Blocked tabs. Recents lists every other profile from your latest direct and group conversations. Username search shows each result's friend/request/blocked state. Blocking removes the friendship and pending requests, prevents new requests and conversations in either direction, and hides shared conversation history from both users. Unblocking does not restore a friendship.
 
 ## 6. Test checklist (use two accounts)
@@ -78,7 +78,7 @@ const { data: ok } = await Nova.sb.rpc('can_invite', { target: friendUserId });
 5. Hide a section on A, open A's profile from B — it is gone.
 6. Contact us creates a row in `support_tickets`. Delete Account (type DELETE) removes the user.
 7. After running `chat-schema.sql`, search users by username; test friend requests, the Friends/Recents/Requests/Blocked tabs, block/unblock and verify blocked users cannot request or open shared chats.
-8. Accept a friend request on two accounts, exchange messages, and verify updates arrive without refreshing. Test group creation, @username suggestions, image/video/audio/file uploads and microphone permissions.
+8. Accept a friend request on two accounts, exchange messages, and verify updates arrive without refreshing. Test group creation, @username suggestions, image/video/audio/file uploads, direct HTTPS media links, the camera/gallery/provider picker, and microphone permissions. Verify incoming bubbles remain left-aligned and outgoing bubbles right-aligned with the chat surface transparent.
 
 ## 7. Notes
 - The anon key in `config.js` is meant to be public. Never put the `service_role` key in any file here.

@@ -7,7 +7,7 @@
   const ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,video/ogg,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/wav,audio/x-wav,application/pdf,text/plain';
   const MIME = new Set(ACCEPT.split(','));
   let liveChannel = null, activeThread = null, threadMembers = [], profiles = {}, messages = [], oldestMessage = null;
-  let pendingFiles = [], mentionedUsers = new Map(), recorder = null, recordedChunks = [];
+  let pendingFiles = [], pendingRemote = [], mentionedUsers = new Map(), recorder = null, recordedChunks = [];
 
   const person = id => profiles[id] || { id, username: 'unknown', full_name: 'Unknown user' };
   const friendlyError = error => {
@@ -328,7 +328,9 @@
       target.innerHTML = `<header class=chat-head><div class=chat-head-person>${conversation.is_group ? `<span class=chat-group-avatar>${ic('users',20)}</span>` : linkedAvatar(person(threadMembers.find(m => m.user_id !== U.id)?.user_id), 42)}<span><b>${esc(titleFor(conversation, threadMembers))}</b><small>${conversation.is_group ? `${threadMembers.length} members` : `@${esc(person(threadMembers.find(m => m.user_id !== U.id)?.user_id).username)}`}</small></span></div></header>
         <div id=chatMessages class=chat-messages><p class=chat-loading>Loading messages…</p></div><div id=mentionList class=mention-list hidden></div>
         <div id=pendingFiles class=pending-files></div><div class=chat-compose>
-          <label class="icon-btn attach-btn" title="Attach media or file">${ic('paperclip')}<input type=file id=chatFiles accept="${ACCEPT}" multiple hidden aria-label="Attach media or file"></label>
+          <button class="icon-btn attach-btn" data-chat-media title="Attach media or file" aria-label="Attach media or file">${ic('paperclip')}</button>
+          <input type=file id=chatFiles accept="${ACCEPT}" multiple hidden aria-label="Choose photos, videos, audio, or files">
+          <input type=file id=chatCamera accept="image/*" capture="environment" hidden aria-label="Take a photo">
           <textarea id=chatInput rows=1 maxlength=5000 placeholder="Message… Use @ to mention a friend" aria-label="Message"></textarea>
           <button class="icon-btn record-btn" data-chat-record title="Record a voice message" aria-label="Record a voice message">${ic('mic')}</button>
           <button class="icon-btn send-btn" data-chat-send title="Send message" aria-label="Send message">${ic('send')}</button>
@@ -341,6 +343,15 @@
 
   async function formatAttachments(attachments) {
     const list = await Promise.all((attachments || []).map(async attachment => {
+      if (attachment.url) {
+        const remote = safeRemoteMedia(attachment.url);
+        if (!remote) throw new Error('A shared media link is invalid or no longer supported.');
+        const href = esc(remote.url), name = esc(attachment.name || remote.name);
+        if (remote.type.startsWith('image/')) return `<a class=message-image href="${href}" target=_blank rel=noopener><img src="${href}" alt="${name}" loading=lazy></a>`;
+        if (remote.type.startsWith('video/')) return `<video class=message-video controls preload=metadata src="${href}"></video>`;
+        if (remote.type.startsWith('audio/')) return `<audio class=message-audio controls preload=metadata src="${href}"></audio>`;
+        throw new Error('A shared media link has an unsupported media type.');
+      }
       const { data, error } = await sb.storage.from('chat-media').createSignedUrl(attachment.path, 3600);
       if (error) throw error;
       const href = esc(data.signedUrl), mime = attachment.type || '';
@@ -478,27 +489,108 @@
   function renderPending() {
     const target = document.getElementById('pendingFiles');
     if (!target) return;
-    target.innerHTML = pendingFiles.map((file, index) => `<span>${ic(file.type.startsWith('audio/') ? 'mic' : 'file',15)}${esc(file.name)}<button data-remove-file="${index}" aria-label="Remove ${esc(file.name)}">${ic('x',13)}</button></span>`).join('');
+    target.innerHTML = [
+      ...pendingFiles.map((file, index) => `<span>${ic(file.type.startsWith('audio/') ? 'mic' : 'file',15)}${esc(file.name)}<button data-remove-file="${index}" aria-label="Remove ${esc(file.name)}">${ic('x',13)}</button></span>`),
+      ...pendingRemote.map((item, index) => `<span>${ic(item.type.startsWith('audio/') ? 'mic' : item.type.startsWith('video/') ? 'file' : 'image',15)}${esc(item.name)}<button data-remove-remote="${index}" aria-label="Remove ${esc(item.name)}">${ic('x',13)}</button></span>`)
+    ].join('');
   }
 
   function addFiles(files) {
     for (const file of files) {
       if (!MIME.has((file.type || '').split(';')[0].toLowerCase())) { Nova.toast(`${file.name}: this file type is not supported.`, 'err'); continue; }
       if (file.size > MAX_FILE) { Nova.toast(`${file.name} is larger than 20 MB.`, 'err'); continue; }
-      if (pendingFiles.length >= MAX_ATTACHMENTS) { Nova.toast(`You can attach up to ${MAX_ATTACHMENTS} files per message.`, 'err'); break; }
+      if (pendingFiles.length + pendingRemote.length >= MAX_ATTACHMENTS) { Nova.toast(`You can attach up to ${MAX_ATTACHMENTS} items per message.`, 'err'); break; }
       pendingFiles.push(file);
     }
     renderPending();
   }
 
+  function safeRemoteMedia(value) {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'https:' || url.username || url.password) return null;
+      const extension = url.pathname.split('.').pop().toLowerCase();
+      const types = {
+        jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif',
+        mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/mp4', ogv: 'video/ogg',
+        mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', weba: 'audio/webm'
+      };
+      const type = types[extension];
+      if (!type) return null;
+      const name = decodeURIComponent(url.pathname.split('/').pop() || `${type.split('/')[0]} media`);
+      return { url: url.href, name: name.slice(0, 180), type };
+    } catch { return null; }
+  }
+
+  function addRemoteMedia(value) {
+    const media = safeRemoteMedia(value.trim());
+    if (!media) {
+      Nova.toast('Paste a direct HTTPS link to an image, GIF, video, or audio file.', 'err');
+      return;
+    }
+    if (pendingFiles.length + pendingRemote.length >= MAX_ATTACHMENTS) {
+      Nova.toast(`You can attach up to ${MAX_ATTACHMENTS} items per message.`, 'err');
+      return;
+    }
+    if (pendingRemote.some(item => item.url === media.url)) {
+      Nova.toast('That media link is already attached.', 'err');
+      return;
+    }
+    pendingRemote.push(media);
+    renderPending();
+    document.getElementById('mediaUrlInput').value = '';
+  }
+
+  function providerSearchUrl(provider, query) {
+    const encoded = encodeURIComponent(query.trim());
+    const urls = {
+      google: `https://www.google.com/search?tbm=isch&q=${encoded}`,
+      yandex: `https://yandex.com/images/search?text=${encoded}`,
+      giphy: `https://giphy.com/search/${encoded}`,
+      klipy: `https://klipy.com/search?q=${encoded}`
+    };
+    return urls[provider] || '';
+  }
+
+  function openProviderSearch(provider, query) {
+    const url = providerSearchUrl(provider, query);
+    if (!url) return;
+    const link = document.createElement('a');
+    link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.hidden = true;
+    document.body.append(link); link.click(); link.remove();
+  }
+
+  function openMediaPicker() {
+    closeMediaPicker();
+    const overlay = document.createElement('div');
+    overlay.className = 'ov c media-overlay'; overlay.id = 'chatMediaPicker';
+    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'chatMediaTitle');
+    overlay.innerHTML = `<div class="modal media-modal"><div class=mh>${ic('paperclip',18)}<b id=chatMediaTitle>Share media</b><button class=mx data-close-media aria-label="Close">${ic('x',18)}</button></div><div class=mb>
+      <p class=chat-hint>Choose a source. Camera and gallery uploads stay private to this conversation.</p>
+      <div class=media-source-grid><button class="btn sec" data-media-action="camera">${ic('camera',18)} Camera</button><button class="btn sec" data-media-action="gallery">${ic('image',18)} Gallery / files</button></div>
+      <label class=fld><span class=l>Search images or GIFs</span><input id=mediaSearchInput type=search maxlength=160 placeholder="Search Google, Yandex, GIPHY, or KLIPY"></label>
+      <div class=media-provider-grid><button class="btn sec" data-media-search="google">Google Images</button><button class="btn sec" data-media-search="yandex">Yandex Images</button><button class="btn sec" data-media-search="giphy">GIPHY</button><button class="btn sec" data-media-search="klipy">KLIPY</button></div>
+      <p class=chat-hint>Search opens the selected provider in a new tab. Copy a direct media-file link, then paste it below.</p>
+      <label class=fld><span class=l>Paste direct media link</span><input id=mediaUrlInput type=url inputmode=url autocomplete=off placeholder="https://…/image.gif"></label>
+      <p class=chat-hint>HTTPS image, GIF, video, or audio file links only. External links are hosted by their provider, not in private Nova storage.</p>
+      <div class=macts><button class="btn sec" data-close-media>Close</button><button class="btn pri" data-media-add-url>Add link to message</button></div>
+    </div></div>`;
+    overlay.addEventListener('mousedown', event => { if (event.target === overlay) closeMediaPicker(); });
+    document.body.append(overlay);
+    overlay.querySelector('#mediaSearchInput').focus();
+  }
+
+  function closeMediaPicker() { document.getElementById('chatMediaPicker')?.remove(); }
+
   async function sendMessage(button) {
     const input = document.getElementById('chatInput');
-    const body = input?.value.trim() || '', files = [...pendingFiles];
-    if ((!body && !files.length) || !activeThread) return;
+    const body = input?.value.trim() || '', files = [...pendingFiles], remoteFiles = [...pendingRemote];
+    if ((!body && !files.length && !remoteFiles.length) || !activeThread) return;
     setBusy(button, true);
     const uploaded = [];
     try {
-      const attachments = [];
+      const attachments = remoteFiles.map(({ url, name, type }) => ({ url, name, type }));
       for (const file of files) {
         const extension = file.name.includes('.') ? file.name.split('.').pop().replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) : 'bin';
         const fileId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -512,7 +604,7 @@
       const mentions = [...new Set([...body.matchAll(/@([\p{L}\p{N}_.-]+)/gu)].map(match => mentionedUsers.get(match[1].toLowerCase())).filter(id => id && threadMembers.some(m => m.user_id === id)))];
       const { error } = await sb.from('chat_messages').insert({ conversation_id: activeThread, sender_id: U.id, body, mentions, attachments });
       if (error) throw error;
-      input.value = ''; pendingFiles = []; mentionedUsers.clear(); renderPending(); await loadMessages(true);
+      input.value = ''; pendingFiles = []; pendingRemote = []; mentionedUsers.clear(); closeMediaPicker(); renderPending(); await loadMessages(true);
     } catch (error) {
       if (uploaded.length) {
         const { error: cleanupError } = await sb.storage.from('chat-media').remove(uploaded);
@@ -548,7 +640,7 @@
   }
 
   document.addEventListener('click', async event => {
-    const el = event.target.closest('[data-chat-compose],[data-open-chat],[data-chat-retry],[data-select-friend],[data-remove-friend],[data-create-chat],[data-close-chat-compose],[data-chat-send],[data-chat-record],[data-chat-older],[data-mention],[data-remove-file],[data-people-tab],[data-people-add],[data-people-accept],[data-people-decline],[data-people-cancel],[data-people-remove],[data-people-block],[data-people-unblock],[data-people-retry]');
+    const el = event.target.closest('[data-chat-compose],[data-open-chat],[data-chat-retry],[data-select-friend],[data-remove-friend],[data-create-chat],[data-close-chat-compose],[data-chat-send],[data-chat-record],[data-chat-media],[data-chat-older],[data-mention],[data-remove-file],[data-remove-remote],[data-close-media],[data-media-action],[data-media-search],[data-media-add-url],[data-people-tab],[data-people-add],[data-people-accept],[data-people-decline],[data-people-cancel],[data-people-remove],[data-people-block],[data-people-unblock],[data-people-retry]');
     if (!el) return;
     const d = el.dataset;
     if (d.peopleTab) { peopleTab = d.peopleTab; route(); }
@@ -573,9 +665,20 @@
     if (d.createChat !== undefined) createConversation(el);
     if (d.chatSend !== undefined) sendMessage(el);
     if (d.chatRecord !== undefined) startRecording(el);
+    if (d.chatMedia !== undefined) openMediaPicker();
+    if (d.closeMedia !== undefined) closeMediaPicker();
+    if (d.mediaAction === 'gallery') document.getElementById('chatFiles')?.click();
+    if (d.mediaAction === 'camera') document.getElementById('chatCamera')?.click();
+    if (d.mediaSearch) {
+      const query = document.getElementById('mediaSearchInput')?.value.trim();
+      if (!query) { Nova.toast('Enter a search term first.', 'err'); return; }
+      openProviderSearch(d.mediaSearch, query);
+    }
+    if (d.mediaAddUrl !== undefined) addRemoteMedia(document.getElementById('mediaUrlInput')?.value || '');
     if (d.chatOlder !== undefined) loadOlder();
     if (d.mention) insertMention(d.mention);
     if (d.removeFile !== undefined) { pendingFiles.splice(Number(d.removeFile), 1); renderPending(); }
+    if (d.removeRemote !== undefined) { pendingRemote.splice(Number(d.removeRemote), 1); renderPending(); }
   });
 
   document.addEventListener('input', event => {
@@ -591,9 +694,10 @@
   });
 
   document.addEventListener('change', event => {
-    if (event.target.id === 'chatFiles') {
+    if (event.target.id === 'chatFiles' || event.target.id === 'chatCamera') {
       addFiles([...event.target.files]);
       event.target.value = '';
+      closeMediaPicker();
     }
   });
 
@@ -601,7 +705,20 @@
     if (event.target.id === 'chatInput' && event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault(); sendMessage(document.querySelector('[data-chat-send]'));
     }
-    if (event.key === 'Escape') closeCompose();
+    if (event.target.id === 'mediaSearchInput' && event.key === 'Enter') {
+      event.preventDefault();
+      if (event.target.value.trim()) openProviderSearch('google', event.target.value);
+    }
+    if (event.target.id === 'mediaUrlInput' && event.key === 'Enter') {
+      event.preventDefault(); addRemoteMedia(event.target.value);
+    }
+    if (event.key === 'Escape') { closeCompose(); closeMediaPicker(); }
+  });
+
+  document.addEventListener('paste', event => {
+    if (event.target.id !== 'chatInput') return;
+    const files = [...(event.clipboardData?.files || [])];
+    if (files.length) addFiles(files);
   });
 
   window.addEventListener('hashchange', () => {
