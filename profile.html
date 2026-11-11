@@ -2,6 +2,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Nova — My Account</title>
 <meta name="theme-color" content="#f4f4f2">
 <script src="theme.js"></script>
+<script src="translator.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <style>
@@ -84,6 +85,8 @@ a{color:inherit}.mu{color:var(--mu)}
 .gt .x{position:absolute;top:6px;right:6px;width:30px;height:30px;border-radius:50%;background:#000b;color:#fff;display:grid;place-items:center;opacity:0;transition:opacity .15s;z-index:2}
 .gt:hover .x,.gt:focus-within .x{opacity:1}@media(hover:none){.gt .x{opacity:1}}
 .gt.up{display:grid;place-items:center;border:1px dashed var(--line)}
+.gt.gadd{display:grid;place-items:center;border:1.5px dashed var(--line);color:var(--ac);background:var(--soft);transition:border-color .15s,background .15s}
+.gt.gadd:hover{border-color:var(--ac);background:var(--onbg)}.gt.gadd .ic{width:28px;height:28px}
 .gerr{display:flex;gap:8px;align-items:flex-start;margin:20px 24px 0;padding:12px 14px;border-radius:12px;background:color-mix(in srgb,var(--bad) 8%,transparent);color:var(--bad);font-size:13px}
 /* friends */
 .addf{display:flex;gap:10px}.addf .pre{flex:1}.addf .btn{flex:none}
@@ -114,18 +117,27 @@ input[type=checkbox]{accent-color:var(--ac)}
 .legal h3{margin:16px 0 4px;font-size:15px}.legal p{margin:0;color:var(--mu)}
 /* forms */
 .fld{display:block;margin:0 0 16px}.fld>span.l{display:flex;justify-content:space-between;font-size:14px;font-weight:700;margin-bottom:7px}.fld .l em{font-style:normal;color:var(--mu);font-weight:500;font-size:13px}
-input[type=text],input[type=url],input:not([type]),textarea{width:100%;height:46px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:var(--inp);color:var(--tx);font:inherit;transition:border-color .15s,box-shadow .15s}
+input[type=text],input[type=url],input[type=password],input[type=email],input:not([type]),select,textarea{width:100%;height:46px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:var(--inp);color:var(--tx);font:inherit;transition:border-color .15s,box-shadow .15s}
 input:disabled{background:var(--soft);color:var(--mu);cursor:not-allowed}
 textarea{height:auto;padding:12px 14px;resize:vertical;min-height:100px;line-height:1.5}
-input:focus,textarea:focus{outline:0;border-color:var(--ac);box-shadow:0 0 0 3px color-mix(in srgb,var(--ac) 22%,transparent)}
+input:focus,select:focus,textarea:focus{outline:0;border-color:var(--ac);box-shadow:0 0 0 3px color-mix(in srgb,var(--ac) 22%,transparent)}
 input.bad{border-color:var(--bad)}input::placeholder,textarea::placeholder{color:var(--mu);opacity:.7}
 .pre{display:flex;align-items:stretch}.pre>b{display:grid;place-items:center;padding:0 13px;border:1px solid var(--line);border-right:0;border-radius:10px 0 0 10px;background:var(--soft);color:var(--mu);font-weight:600;white-space:nowrap}.pre input{border-radius:0 10px 10px 0}
 .hint{display:flex;align-items:center;gap:6px;min-height:20px;margin-top:6px;font-size:13px;color:var(--mu)}.hint:empty{display:none}.hint.ok{color:var(--ok)}.hint.bad{color:var(--bad)}
 .note{margin:-8px 0 16px;font-size:12.5px;color:var(--mu)}
 .soc{display:flex;align-items:flex-end;gap:12px;margin-bottom:14px}.soc .si{width:44px;height:44px;border-radius:11px;background:var(--onbg);color:var(--ac);display:grid;place-items:center;flex:none}
+.soc-remove{width:44px;height:44px;border-radius:11px;background:var(--onbg);color:var(--ac);display:grid;place-items:center;flex:none}
+.soc-add{margin-top:4px}
 .soc .sb{flex:1;min-width:0}.soc .sl{font-size:13px;font-weight:700;margin-bottom:5px}.soc .hint{margin-top:4px;min-height:0}
+.secrows{display:grid;gap:14px;padding:22px 24px}
+.secrow{display:flex;align-items:center;gap:16px;min-height:86px;padding:16px 20px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+.secico{width:44px;height:44px;border-radius:12px;background:var(--onbg);color:var(--ac);display:grid;place-items:center;flex:none}
+.secico.red{background:#fee2e2;color:#dc2626}.secico.green{background:#d1fae5;color:#059669}.secico.purple{background:#f3e8ff;color:#9333ea}
+.secinfo{min-width:0;flex:1}.secinfo b{display:block;font-size:14px}.secinfo small{display:block;color:var(--mu);margin-top:2px;overflow-wrap:anywhere}
+.status{padding:5px 12px;border-radius:999px;background:var(--okb);color:var(--okt);font-size:12px;font-weight:700}.status.bad{background:color-mix(in srgb,var(--bad) 12%,transparent);color:var(--bad)}
+.sec-danger{padding:20px;border:1px solid #fecaca;border-radius:14px;background:#fff1f2;color:#b91c1c}
+.sec-danger b{display:block}.sec-danger p{margin:4px 0 14px;font-size:13px;color:#dc2626}
 .mav{display:flex;align-items:center;gap:16px;margin-bottom:20px;flex-wrap:wrap}.avwrap{position:relative;flex:none}
-.avwrap .cam{position:absolute;right:-2px;bottom:-2px;width:30px;height:30px;border-radius:50%;background:var(--ac);color:var(--onac);display:grid;place-items:center;border:3px solid var(--sheet)}
 .avwrap.busy .avt{opacity:.45}.avwrap.busy:after{content:"";position:absolute;inset:0;margin:auto;width:26px;height:26px;border-radius:50%;border:3px solid var(--chip2);border-top-color:var(--ac);animation:sp .7s linear infinite}
 .avact{display:flex;gap:8px;flex-wrap:wrap}.avnote{flex-basis:100%;margin:0;font-size:13px;color:var(--mu)}
 /* popup */
@@ -181,6 +193,7 @@ input.bad{border-color:var(--bad)}input::placeholder,textarea::placeholder{color
  .idstrip{padding:20px 16px}.fgrid{grid-template-columns:1fr;padding:16px;gap:12px}
  .tiles{grid-template-columns:1fr 1fr;padding:0 16px 16px}.pbody{padding:16px}.row{padding:14px 16px}
  .dz{margin:16px 16px 0}.gg{padding:16px}.gerr{margin:16px 16px 0}
+ .secrows{padding:16px;gap:10px}.secrow{padding:14px;min-height:76px;gap:12px}.secico{width:40px;height:40px}
  .addf{flex-direction:column}.addf .btn{width:100%}
  .actg{justify-content:flex-end}
 }
@@ -209,9 +222,7 @@ textarea{height:auto}.pre>b{border-radius:8px 0 0 8px;border-color:#dfe5ee}.pre 
 .cred{border-radius:12px}
 /* tap-to-change profile photo */
 .avtap{position:relative;display:inline-grid;place-items:center;padding:0;border-radius:50%;cursor:pointer;flex:none;line-height:0}
-.avtap .avcam{position:absolute;right:-1px;bottom:-1px;width:24px;height:24px;border-radius:50%;background:var(--ac);color:#fff;display:grid;place-items:center;border:2px solid var(--card);opacity:.95;transition:transform .15s}
-.avtap:hover .avcam{transform:scale(1.1)}.avtap:hover .avt{filter:brightness(.93)}.avtap.s .avcam{width:15px;height:15px;border-width:1px}
-.mid .avtap .avcam{width:30px;height:30px;right:2px;bottom:2px;border-color:#fff}
+.avtap:hover .avt{filter:brightness(.93)}
 .avtap.busy .avt{opacity:.45}.avtap.busy:after{content:"";position:absolute;inset:0;margin:auto;width:22px;height:22px;border-radius:50%;border:3px solid var(--chip2);border-top-color:var(--ac);animation:sp .7s linear infinite}
 .mav .avtap{margin-right:2px}
 @media(max-width:899px){
@@ -269,13 +280,13 @@ terms:['tos',[
 const inv=()=>{PD=null};
 const isVer=()=>!!(U&&(U.email_confirmed_at||U.confirmed_at));
 const skel=()=>'<div class="sk" style="height:56px;margin:12px 0"></div><div class="sk" style="height:230px;margin:12px 0"></div><div class="sk" style="height:140px"></div>';
-const avtap=(sz,cls='')=>`<button class="avtap${sz<44?' s':''}" data-act=pickAv data-s=${sz} data-c="${cls}" aria-label="Change profile photo" title="Tap to change photo">${Nova.avatar(P,sz,cls)}<span class=avcam>${ic('camera',sz>=100?15:12)}</span></button>`;
+const avtap=(sz,cls='')=>`<button class="avtap${sz<44?' s':''}" data-act=pickAv data-s=${sz} data-c="${cls}" aria-label="Change profile photo" title="Tap to change photo">${Nova.avatar(P,sz,cls)}</button>`;
 let AVT=null;
 const planPill=()=>`<span class="pill pl">${ic('sparkles',11)}${PLAN.pro?'Pro Plan':'Free Plan'}</span>`;
 
 /* one navigation list drives the desktop sidebar AND the mobile list */
 const NAV=[['info','user','info','#2563eb'],['stats','chart','accstats','#16a34a'],['gallery','image','gallery','#db2777'],['friends','users','friends','#0d9488'],['social','link','social','#7c3aed'],
- ['settings','settings','settings','#475569'],['language','globe','language','#0891b2'],['support','help','support','#0d9488'],['notifications','bell','notification','#2563eb'],['activity','play','activity','#ea580c'],['privacy','shield','privdata','#dc2626']];
+ ['settings','settings','settings','#475569'],['language','globe','language','#0891b2'],['privacy','shield','privdata','#dc2626'],['security','lock','security','#dc2626'],['support','help','support','#0d9488'],['notifications','bell','notification','#2563eb'],['activity','play','activity','#ea580c']];
 const BN=[['friends','users'],['gallery','image'],['stats','chart'],['settings','settings'],['home','user']];
 
 const mbar=(title,right='',back='home')=>`<div class="mbar mo"><button class=ib data-go=${back} aria-label="Back">${ic('left')}</button><h1>${title}</h1>${right||'<span style="width:40px"></span>'}</div>`;
@@ -307,16 +318,22 @@ settings:()=>shell('settings',mbar(t('settings'))+panel(t('settings'),'Control h
 <button class=row data-act=emoji><span class=i>${ic('smile')}</span><span class=m>${t('quick')}<small>${t('quickd')}</small></span><span style="font-size:28px">${Nova.S.quick}</span></button>
 ${chk('users','restrict','restrict','restrictd')}${chk('shield','hideMature','mature','matured')}${chk('phone','haptic','haptic','hapticd')}${chk('pip','floating','floating','floatingd')}
 ${chk('globe','translate','translate','translated')}${chk('mute','mute','mute','muted')}${chk('pin','hideLoc','hideloc','hidelocd')}
-${rowB('globe',t('language'),Nova.LANGS[Nova.S.lang],'language')}${rowB('lock',t('privdata'),'','privacy')}</div>`)),
-language:()=>shell('language',mbar(t('language'))+panel(t('language'),'Choose the app language','',`<div class=rows>${Object.entries(Nova.LANGS).map(([c,n])=>`<button class=row data-lang=${c}><span class=i>${ic('globe')}</span><span class=m>${n}</span><span style="color:var(--ac)">${Nova.S.lang==c?ic('check'):''}</span></button>`).join('')}</div>`)),
+ </div>`)),
+language:()=>shell('language',mbar(t('language'))+panel(t('language'),'Choose the app language','',`<div class=rows>${Object.entries(Nova.LANGS).map(([c,n])=>`<button class=row data-lang=${c}><span class=i>${ic('globe')}</span><span class="m langName">${n}</span><span style="color:var(--ac)">${Nova.S.lang==c?ic('check'):''}</span></button>`).join('')}</div>`)),
 privacy:()=>shell('privacy',mbar(t('privdata'))+panel(t('privdata'),'Policies and data controls','',`<div class=rows>${['privacy','data','terms'].map(k=>rowB('shield',t(POL[k][0]),'',`policy/${k}`)).join('')}
 <label class=row><span class=i>${ic('db')}</span><span class=m>${t('noshare')}</span><input type=checkbox class=sw data-k=noShare ${Nova.S.noShare?'checked':''}></label></div>`)),
+security:()=>shell('security',mbar(t('security'))+panel(t('security'),'Manage password and account security','',`<div class=secrows>
+<div class=secrow><span class="secico red">${ic('lock',21)}</span><span class=secinfo><b>${t('password')}</b><small>${t('passwordHint')}</small></span><button class="btn sec sm" data-act=changePassword>${t('change')}</button></div>
+<div class=secrow><span class="secico green">${ic('mail',21)}</span><span class=secinfo><b>${t('emailVerification')}</b><small>${esc(U.email||'')}</small></span><span class=status>${isVer()?t('verified'):t('notVerified')}</span></div>
+<div class=secrow><span class="secico">${ic('shield',21)}</span><span class=secinfo><b>${t('accountStatus')}</b><small>${t('accountActive')}</small></span><span class=status>${t('active')}</span></div>
+<div class=secrow><span class="secico purple">${ic('phone',21)}</span><span class=secinfo><b>${t('twoFactor')}</b><small>${t('twoFactorHint')}</small></span><span class="status" style="background:var(--chip);color:var(--mu)">${t('comingSoon')}</span></div>
+<div class=sec-danger><b>${t('dangerZone')}</b><p>${t('deleteWarning')}</p><button class="btn dng" data-act=openDelete>${t('deleteAccount')}</button></div>
+</div>`)),
 policy:k=>{if(!POL[k])k='privacy';return shell('privacy',mbar(t(POL[k][0]),'','privacy')+panel(t(POL[k][0]),'','',`<div class="pbody legal">${POL[k][1].map(([h,p])=>`<h3>${h}</h3><p>${p}</p>`).join('')}<p style="margin-top:18px"><small>Last updated: 10 November 2026</small></p></div>`))},
 support:()=>shell('support',mbar(t('support'))+panel(t('support'),'We are happy to help','',`<div class=pbody>
 <div class=infogrid>${EM?`<a class="fc lnk" href="mailto:${EM}"><span class=fi>${ic('mail',18)}</span><div class=fv><small>Email</small><b>${EM}</b></div></a>`:''}${PH?`<div class=fc><span class=fi>${ic('phone',18)}</span><div class=fv><small>Phone</small><b>${PH}</b></div></div>`:''}${HR?`<div class=fc><span class=fi>${ic('clock',18)}</span><div class=fv><small>Hours</small><b>${HR}</b></div></div>`:''}</div>
 <h3 class=sub>${t('contact')}</h3><label class=fld><span class=l>Subject</span><input id=sj maxlength=150></label><label class=fld><span class=l>Message</span><textarea id=ms rows=5 placeholder="How can we help?" maxlength=4000></textarea></label>
-<button class="btn pri" data-act=ticket>Send</button><p id=tout class=mu style="margin:10px 0 0"></p>
-<div class=danger><h3>${t('delete')}</h3><p>This permanently deletes your account, profile, gallery and friends. It cannot be undone.</p><label class=fld><span class=l>Type DELETE to confirm</span><input id=cf autocomplete=off></label><button class=dng data-act=del>${t('delete')}</button><p id=dout class=mu style="margin:10px 0 0"></p></div></div>`)),
+<button class="btn pri" data-act=ticket>Send</button><p id=tout class=mu style="margin:10px 0 0"></p></div>`)),
 setup:()=>`<div class=setup><div class=stepper><i></i>Almost there</div><h1>Set up your profile</h1><p class=lead>Choose a username and, if you like, a profile photo. Friends use your username to find you.</p>
 <div class=card><div class=pad style="display:grid;justify-items:center;gap:10px;text-align:center">${avtap(96)}<p class=avnote>Tap the photo to add one (optional)</p></div>
 <div class=pbody style="padding-top:0"><label class=fld><span class=l>Display name</span><input id=fn maxlength=40 autocomplete=name value="${esc(P.full_name||U.email.split('@')[0])}"></label>
@@ -355,6 +372,23 @@ async function route(){
 const ask=(title,text,ok='Delete',danger=true)=>new Promise(r=>{const o=document.createElement('div');o.className='ov c';o.style.zIndex=70;o.setAttribute('role','dialog');o.setAttribute('aria-modal','true');
  o.innerHTML=`<div class=sheet><h3>${esc(title)}</h3><p>${esc(text)}</p><div class=acts><button class="btn sec" data-n>${t('cancel')}</button><button class="btn ${danger?'':'pri'}" ${danger?'style="background:var(--bad);color:#fff"':''} data-y>${esc(ok)}</button></div></div>`;
  o.onclick=e=>{if(e.target===o||e.target.closest('[data-n]')){o.remove();r(false)}else if(e.target.closest('[data-y]')){o.remove();r(true)}};document.body.append(o);o.querySelector('[data-n]').focus()});
+function openSecurityModal(title,body,icon){
+ const current=document.getElementById('mdl');if(current)current.remove();
+ const o=document.createElement('div');o.className='ov c';o.id='mdl';o.setAttribute('role','dialog');o.setAttribute('aria-modal','true');
+ o.innerHTML=`<div class=modal><div class=mh>${ic(icon,18)}<b>${title}</b><button class=mx data-close aria-label="Close">${ic('x',18)}</button></div><div class=mb>${body}</div></div>`;
+ o.addEventListener('mousedown',e=>{if(e.target===o){o.remove();document.body.classList.remove('lock')}});
+ document.body.append(o);document.body.classList.add('lock');
+}
+function closeSecurityModal(){const modal=document.getElementById('mdl');if(modal)modal.remove();document.body.classList.remove('lock')}
+function openPasswordModal(){
+ openSecurityModal(t('changePassword'),`<label class=fld><span class=l>${t('newPassword')}</span><input id=securityPassword type=password autocomplete=new-password minlength=8 placeholder="${t('passwordRequirement')}"></label>
+<label class=fld><span class=l>${t('confirmPassword')}</span><input id=securityPasswordConfirm type=password autocomplete=new-password minlength=8 placeholder="${t('confirmPassword')}"></label>
+<div class=macts><button class="btn sec" data-close>${t('cancel')}</button><button class="btn pri" data-act=savePassword>${t('updatePassword')}</button></div>`,'lock');
+}
+function openDeleteModal(){
+ openSecurityModal(t('deleteAccount'),`<p>${t('deleteWarning')}</p><label class=fld><span class=l>${t('typeDelete')}</span><input id=deleteConfirm autocomplete=off></label>
+<div class=macts><button class="btn sec" data-close>${t('cancel')}</button><button class="btn dng" data-act=confirmDelete>${t('deleteAccount')}</button></div>`,'trash');
+}
 
 const dropOld=u=>{const m=/\/avatars\/([^?]+)/.exec(u||'');if(m)sb.storage.from('avatars').remove([decodeURIComponent(m[1])])};
 async function uploadAvatar(file){
@@ -384,6 +418,24 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-go]
  if(d.go){if(d.go=='back'){history.length>1?history.back():location.hash='home'}else location.hash=d.go}
  if(d.lang){await Nova.set('lang',d.lang);route()}
  if(d.act=='out'){await sb.auth.signOut();location.href='index.html'}
+ if(d.act=='changePassword')openPasswordModal();
+ if(d.act=='openDelete')openDeleteModal();
+ if(d.act=='savePassword'){
+  const password=$('#securityPassword').value,confirm=$('#securityPasswordConfirm').value;
+  if(password.length<8||!/\d/.test(password)||!/[^\p{L}\p{N}]/u.test(password))return Nova.toast(t('passwordRequirement'),'err');
+  if(password!==confirm)return Nova.toast(t('passwordMismatch'),'err');
+  el.disabled=true;
+  try{const {error}=await sb.auth.updateUser({password});if(error)throw error;closeSecurityModal();Nova.toast(t('passwordUpdated'))}
+  catch(er){Nova.toast(er.message||t('passwordFailed'),'err')}
+  finally{el.disabled=false}
+ }
+ if(d.act=='confirmDelete'){
+  if($('#deleteConfirm').value!=='DELETE')return Nova.toast(t('typeDelete'),'err');
+  el.disabled=true;
+  const {error}=await sb.rpc('delete_my_account');
+  if(error){el.disabled=false;return Nova.toast(error.message,'err')}
+  await sb.auth.signOut();location.href='index.html';
+ }
  if(d.act=='emoji'){const o=document.createElement('div');o.className='ov';o.innerHTML=`<div class=sheet><div class=em>${EMOJI.map(x=>`<button>${x}</button>`).join('')}</div></div>`;
   o.onclick=async ev=>{if(ev.target.tagName=='BUTTON')await Nova.set('quick',ev.target.textContent);o.remove();route()};document.body.append(o)}
  if(d.act=='pickAv'){AVT=el;$('#avf').click()}
@@ -394,7 +446,6 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-go]
   if(await saveProfile(el,{full_name:name,username:UN.val})){Nova.toast(`Welcome, @${P.username}`);location.hash=DESK.matches?'info':'home'}}
  if(d.act=='ticket'){const {error}=await sb.from('support_tickets').insert({user_id:U.id,email:U.email,subject:$('#sj').value,message:$('#ms').value});
   $('#tout').textContent=error?(/permission denied/i.test(error.message)?'Permission denied. Run fix-gallery-permissions.sql in Supabase once.':'Please fill subject (3+) and message (10+ characters).'):'Sent. We will reply by email.';if(!error){$('#sj').value='';$('#ms').value=''}}
- if(d.act=='del'){if($('#cf').value!=='DELETE')return $('#dout').textContent='Type DELETE exactly.';const {error}=await sb.rpc('delete_my_account');if(error)return $('#dout').textContent=error.message;await sb.auth.signOut();location.href='index.html'}
 });
 document.addEventListener('change',async e=>{const x=e.target;
  if(x.id==='avf'){const f=x.files[0];x.value='';if(!f)return;const w=AVT;w&&w.classList.add('busy');

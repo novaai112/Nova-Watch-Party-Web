@@ -25,15 +25,36 @@
       save:'Guardar', cancel:'Cancelar', no:'NO', yes:'SÍ', bio:'Bio', gallery:'Galería', stats:'Estadísticas', friends:'Amigos', joined:'Fecha de registro', privpol:'Política de privacidad', datapol:'Política de datos', tos:'Términos del servicio', noshare:'No compartir mis datos con terceros' }
   };
   Object.assign(T.en, { info:'Profile Info', accstats:'Account Stats', activity:'Watch Activity', privdata:'Privacy & Data', myaccount:'My Account', dashboard:'Dashboard', hello:'Hello,',
-    verified:'Verified', editprofile:'Edit Profile', savechanges:'Save Changes', edit:'Edit', complete:'Profile completeness', nonotif:'No new notifications', addphotos:'Add photos', preview:'Preview' });
+    verified:'Verified', editprofile:'Edit Profile', savechanges:'Save Changes', edit:'Edit', complete:'Profile completeness', nonotif:'No new notifications', addphotos:'Add photos', preview:'Preview',
+    security:'Security Settings', password:'Password', passwordHint:'Change your account password', change:'Change', emailVerification:'Email Verification',
+    notVerified:'Not verified', accountStatus:'Account Status', accountActive:'Account is active', active:'Active', twoFactor:'Two-Factor Authentication',
+    twoFactorHint:'SMS and authenticator app', comingSoon:'Coming soon', dangerZone:'Danger Zone',
+    deleteWarning:'Permanently delete your account. This action is irreversible.', deleteAccount:'Delete My Account',
+    changePassword:'Change Password', newPassword:'New Password', confirmPassword:'Confirm New Password',
+    passwordRequirement:'Min 8 characters, 1 number, 1 symbol', passwordMismatch:'Passwords do not match',
+    updatePassword:'Update Password', passwordUpdated:'Password updated', passwordFailed:'Could not update password', typeDelete:'Type DELETE to confirm' });
   Object.assign(T.hi, { info:'प्रोफ़ाइल जानकारी', accstats:'खाता आँकड़े', activity:'देखने की गतिविधि', privdata:'गोपनीयता और डेटा', myaccount:'मेरा खाता', dashboard:'डैशबोर्ड', hello:'नमस्ते,',
-    verified:'सत्यापित', editprofile:'प्रोफ़ाइल संपादित करें', savechanges:'बदलाव सहेजें', edit:'संपादित करें', complete:'प्रोफ़ाइल पूर्णता', nonotif:'कोई नई सूचना नहीं', addphotos:'फ़ोटो जोड़ें', preview:'पूर्वावलोकन' });
+    verified:'सत्यापित', editprofile:'प्रोफ़ाइल संपादित करें', savechanges:'बदलाव सहेजें', edit:'संपादित करें', complete:'प्रोफ़ाइल पूर्णता', nonotif:'कोई नई सूचना नहीं', addphotos:'फ़ोटो जोड़ें', preview:'पूर्वावलोकन',
+    security:'सुरक्षा सेटिंग्स', password:'पासवर्ड', passwordHint:'अपने खाते का पासवर्ड बदलें', change:'बदलें', emailVerification:'ईमेल सत्यापन',
+    notVerified:'सत्यापित नहीं', accountStatus:'खाते की स्थिति', accountActive:'खाता सक्रिय है', active:'सक्रिय', twoFactor:'दो-चरण प्रमाणीकरण',
+    twoFactorHint:'SMS और प्रमाणक ऐप', comingSoon:'जल्द आ रहा है', dangerZone:'खतरे का क्षेत्र',
+    deleteWarning:'अपना खाता स्थायी रूप से हटाएँ। यह कार्रवाई पूर्ववत नहीं की जा सकती।', deleteAccount:'मेरा खाता हटाएँ',
+    changePassword:'पासवर्ड बदलें', newPassword:'नया पासवर्ड', confirmPassword:'नए पासवर्ड की पुष्टि करें',
+    passwordRequirement:'कम से कम 8 अक्षर, 1 संख्या, 1 प्रतीक', passwordMismatch:'पासवर्ड मेल नहीं खाते',
+    updatePassword:'पासवर्ड अपडेट करें', passwordUpdated:'पासवर्ड अपडेट किया गया', passwordFailed:'पासवर्ड अपडेट नहीं हो सका', typeDelete:'पुष्टि के लिए DELETE लिखें' });
   Object.assign(T.es, { info:'Info del perfil', accstats:'Estadísticas de la cuenta', activity:'Actividad de visualización', privdata:'Privacidad y datos', myaccount:'Mi cuenta', dashboard:'Panel', hello:'Hola,',
-    verified:'Verificado', editprofile:'Editar perfil', savechanges:'Guardar cambios', edit:'Editar', complete:'Perfil completado', nonotif:'Sin notificaciones nuevas', addphotos:'Añadir fotos', preview:'Vista previa' });
-  const LANGS = { en:'English', hi:'हिन्दी', es:'Español' };
+    verified:'Verificado', editprofile:'Editar perfil', savechanges:'Guardar cambios', edit:'Editar', complete:'Perfil completado', nonotif:'Sin notificaciones nuevas', addphotos:'Añadir fotos', preview:'Vista previa',
+    security:'Configuración de seguridad', password:'Contraseña', passwordHint:'Cambia la contraseña de tu cuenta', change:'Cambiar', emailVerification:'Verificación de correo',
+    notVerified:'No verificado', accountStatus:'Estado de la cuenta', accountActive:'La cuenta está activa', active:'Activo', twoFactor:'Autenticación de dos factores',
+    twoFactorHint:'SMS y aplicación de autenticación', comingSoon:'Próximamente', dangerZone:'Zona de peligro',
+    deleteWarning:'Elimina tu cuenta permanentemente. Esta acción es irreversible.', deleteAccount:'Eliminar mi cuenta',
+    changePassword:'Cambiar contraseña', newPassword:'Nueva contraseña', confirmPassword:'Confirmar nueva contraseña',
+    passwordRequirement:'Mínimo 8 caracteres, 1 número y 1 símbolo', passwordMismatch:'Las contraseñas no coinciden',
+    updatePassword:'Actualizar contraseña', passwordUpdated:'Contraseña actualizada', passwordFailed:'No se pudo actualizar la contraseña', typeDelete:'Escribe DELETE para confirmar' });
+  const LANGS = window.NovaTranslate ? window.NovaTranslate.LANGUAGES : { en:'English', hi:'हिन्दी', es:'Español' };
   const Nova = {
     sb: window.supabase.createClient(url, key), S: load(), T, LANGS,
-    t(k) { return (T[Nova.S.lang] || {})[k] || T.en[k] || k; },
+    t(k) { return T.en[k] || k; },
     async set(k, v) {
       Nova.S[k] = v; localStorage.setItem('nova_settings', JSON.stringify(Nova.S));
       const { data } = await Nova.sb.auth.getSession();
@@ -56,7 +77,11 @@
     audioRule(video) {
       document.addEventListener('visibilitychange', () => { if (document.hidden && Nova.S.mute && video) video.muted = true; else if (video) video.muted = false; });
     },
-    applyLang() { document.documentElement.lang = Nova.S.lang; document.querySelectorAll('[data-i18n]').forEach(e => e.textContent = Nova.t(e.dataset.i18n)); },
+    applyLang() {
+      document.documentElement.lang = Nova.S.lang;
+      document.querySelectorAll('[data-i18n]').forEach(e => e.textContent = Nova.t(e.dataset.i18n));
+      if (window.NovaTranslate) window.NovaTranslate.setLanguage(Nova.S.lang);
+    },
     esc: s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]))
   };
   /* ---------- shared UI helpers (icons, avatar, toast, socials, username, image tools) ---------- */

@@ -30,14 +30,15 @@
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeM(); });
 
   /* ---------- shared fragments ---------- */
-  const gridG = (list, own) => `<div class=gg>${list.map((x, i) => {
+  const gridItems = (list, own) => list.map((x, i) => {
     const path = typeof x === 'string' ? x : x.path, u = esc(gUrl(path));
     return `<div class=gt><button class=gtb data-lb="${u}" aria-label="Open photo ${i + 1}"><img src="${u}" alt="" loading=lazy></button>${own ? `<button class=x data-act=delG data-id="${x.id}" data-p="${esc(path)}" aria-label="Delete photo">${ic('x', 15)}</button>` : ''}</div>`;
-  }).join('')}</div>`;
+  }).join('');
+  const gridG = (list, own) => `<div class=gg>${gridItems(list, own)}</div>`;
   function gHTML() {
     const g = P._g || [];
     return `${P._gerr ? `<div class=gerr>${ic('alert', 16)}<span>Gallery is not ready: ${esc(P._gerr)}. Run <b>fix-gallery-permissions.sql</b> in Supabase once.</span></div>` : ''}
-<label class=dz id=dz for=gf><div>${ic('upload', 24)}</div><div><b>Add photos</b> or drag &amp; drop</div><small>Select several at once · up to ${MAXG} photos · optimised automatically</small></label>${gridG(g, true)}`;
+${g.length ? `<div class=gg>${g.length<MAXG?`<label class="gt gadd" for=gf aria-label="Add photos" title="Add photos">${ic('plus',28)}</label>`:''}${gridItems(g,true)}</div>` : `<label class=dz id=dz for=gf><div>${ic('upload',24)}</div><div><b>Add photos</b> or drag &amp; drop</div><small>Select several at once · up to ${MAXG} photos · optimised automatically</small></label>`}`;
   }
   const kwHTML = titles => {
     const c = {}; (titles || []).join(' ').toLowerCase().match(/[\p{L}\p{N}]{3,}/gu)?.forEach(w => { if (!STOP.has(w) && !/^\d+$/.test(w)) c[w] = (c[w] || 0) + 1; });
@@ -138,9 +139,36 @@ ${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.
     if (await saveProfile(btn, { full_name: name, username: UN.val, bio: $('#bi').value.trim() || null })) { closeM(); Nova.toast('Profile saved'); route(); }
   }
   function editSoc() {
-    const S = P.socials || {}, row = (k, n, i, v) => `<div class=soc><span class=si>${ic(i, 20)}</span><div class=sb><div class=sl>${n}</div><div class=pre>${k === 'website' ? '' : '<b>@</b>'}<input data-s=${k} value="${esc(v || '')}" maxlength=200 aria-label="${n}" autocapitalize=none spellcheck=false placeholder="${k === 'website' ? 'https://yourwebsite.com' : k === 'discord' ? 'username' : 'username or link'}"></div><div class=hint></div></div></div>`;
-    modal('Edit Social Links', `<p class=note style="margin:0 0 16px">Add a username or paste a profile link. Leave a field empty to remove it.</p>${Object.entries(SOC).map(([k, s]) => row(k, s.n, s.i, S[k])).join('')}${row('website', 'Website', 'globe', S.website)}
+    const S = { ...(P.socials || {}) };
+    const platforms = [...Object.entries(SOC), ['website', { n: 'Website', i: 'globe' }]];
+    const active = new Set(platforms.filter(([k]) => !!S[k]).map(([k]) => k));
+    const row = (k, s, v) => `<div class=soc data-social-row="${k}" data-social-name="${esc(s.n)}"><span class=si>${ic(s.i,20)}</span><div class=sb><div class=sl>${esc(s.n)}</div><div class=pre>${k==='website'?'':'<b>@</b>'}<input data-s="${k}" value="${esc(v||'')}" maxlength=200 aria-label="${esc(s.n)}" autocapitalize=none spellcheck=false placeholder="${k==='website'?'https://yourwebsite.com':k==='discord'?'username':'username or link'}"></div><div class=hint></div></div><button class=soc-remove type=button data-remove-social="${k}" aria-label="Remove ${esc(s.n)}">${ic('x',18)}</button></div>`;
+    const selected = () => platforms.filter(([k]) => active.has(k)).map(([k,s]) => row(k,s,S[k])).join('');
+    const picker = () => `<label class="fld soc-add"><span class=l>Add a social profile</span><select id=socialPicker class=sel><option value="">Choose a platform…</option>${platforms.filter(([k])=>!active.has(k)).map(([k,s])=>`<option value="${k}">${esc(s.n)}</option>`).join('')}</select></label>`;
+    modal('Edit Social Links', `<p class=note style="margin:0 0 16px">Only selected profiles are shown. Add a profile to make its icon appear on your page.</p><div id=socialRows>${selected()}</div>${picker()}
 <div class=macts><button class="btn sec" data-close>${t('cancel')}</button><button class="btn pri" data-act=savesoc>${t('savechanges')}</button></div>`);
+    const rows = document.getElementById('socialRows');
+    rows.addEventListener('click', e => {
+      const remove = e.target.closest('[data-remove-social]');
+      if (!remove) return;
+      const key = remove.dataset.removeSocial, socialRow = remove.closest('[data-social-row]');
+      active.delete(key);
+      if (socialRow) socialRow.remove();
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = platforms.find(([k]) => k === key)[1].n;
+      document.getElementById('socialPicker').append(option);
+      e.stopPropagation();
+    });
+    document.getElementById('socialPicker').addEventListener('change', e => {
+      const key=e.target.value, item=platforms.find(([k])=>k===key);
+      if(!item||active.has(key))return;
+      active.add(key);
+      S[key]='';
+      document.getElementById('socialRows').insertAdjacentHTML('beforeend',row(key,item[1],''));
+      e.target.outerHTML=picker();
+      document.getElementById('socialPicker').focus();
+    });
   }
   async function saveSoc(btn) {
     const socials = {}; let bad = null;

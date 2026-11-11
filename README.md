@@ -7,6 +7,7 @@ Static website + Supabase. No build step. Deploy the folder to Vercel (or any st
 |---|---|
 | `config.js` | Your Supabase URL/anon key + company info (also feeds the policy pages and Support page) |
 | `theme.js` | Light/dark theme (`data-theme`), used by login and profile |
+| `translator.js` | On-demand translation of interface text and accessibility labels into 100+ languages |
 | `index.html` | Sign up, log in, Google, forgot/reset password. "Open profile" goes to `profile.html` |
 | `profile.html` | Profile home, Settings, Language, Privacy + policies, Support, Social |
 | `nova-core.js` | Shared: Supabase client, settings, haptics, auto-translate, languages. Load on **every** page |
@@ -83,4 +84,7 @@ const { data: ok } = await Nova.sb.rpc('can_invite', { target: friendUserId });
 - The "You're signed in" page is gone: login goes straight to `profile.html`.
 - `profile.html` is now a My Account area: Profile Info, Account Stats, Gallery, Friends, Social, Settings, Language, Support, Notification, Watch Activity, Privacy & Data. Desktop = sidebar, phone = list + bottom nav.
 - Profile Info shows photo, name, username, email and bio only. Edit opens as a popup on every device. Social links have their own popup.
+- Security Settings has popup flows for changing the signed-in user's password and confirming account deletion. Language and Privacy & Data remain separate destinations rather than duplicate Settings rows.
+- The gallery uses a compact add-photo tile when it already contains photos; the upload drop zone is shown only while the gallery is empty.
+- The language picker offers 100+ language codes. Selected interface text is translated on demand through MyMemory's public endpoint and cached in the browser; email addresses, names, bios, and other marked personal content are excluded. Public translation services can rate-limit requests or have incomplete language support, in which case the original text remains visible with a notice.
 - Optional: set `HOME_URL` in `config.js` to show the "Dashboard" link / back pill.
