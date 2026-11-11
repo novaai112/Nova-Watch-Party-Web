@@ -255,6 +255,15 @@ textarea{height:auto}.pre>b{border-radius:8px 0 0 8px;border-color:#dfe5ee}.pre 
 .friend-results{max-height:42vh;overflow:auto;margin-top:10px}.friend-search-row{display:flex;align-items:center;gap:10px;width:100%;padding:9px;border-radius:10px;text-align:left}.friend-search-row>span{flex:1;display:grid;gap:3px}.friend-search-row small{color:var(--mu)}.friend-search-row i{color:var(--ac)}
 .selected-friends{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}.selected-friends:empty{display:none}.selected-friends>span{display:flex;align-items:center;gap:5px;padding:6px 8px;border-radius:999px;background:var(--chip);color:var(--tx)}.selected-friends button{display:grid;place-items:center}
 .chat-error{color:var(--bad);padding:10px}
+.people-page{max-width:760px;margin:0 auto;padding:10px;border-radius:16px;background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow);overflow:hidden}
+.people-search{margin:0 0 12px}.people-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;padding:5px;margin-bottom:8px;border-radius:14px;background:var(--chip)}
+.people-tabs button{min-width:0;display:flex;align-items:center;justify-content:center;gap:5px;padding:9px 5px;border-radius:10px;color:var(--mu);font-weight:700;font-size:12px}
+.people-tabs button.on{background:var(--card);color:var(--ac);box-shadow:0 1px 5px #0f172a15}.people-tabs i{min-width:17px;height:17px;padding:0 4px;display:grid;place-items:center;border-radius:999px;background:var(--bad);color:white;font-style:normal;font-size:10px}
+.people-row{display:flex;align-items:center;gap:8px;min-height:70px;padding:8px 3px;border-bottom:1px solid var(--line)}.people-identity{min-width:0;flex:1;display:flex;align-items:center;gap:10px;text-align:left;color:var(--tx)}
+.people-identity>span{min-width:0;display:grid;gap:3px}.people-identity b,.people-identity small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.people-identity small{font-size:11px;color:var(--mu)}.people-identity .people-subtitle{font-size:10px}
+.people-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:none}.people-actions .btn{min-width:0;padding:0 10px}.people-status{font-size:11px;color:var(--okt);font-weight:700}.people-decline{width:34px;height:34px;color:var(--bad);background:var(--chip)}
+.people-section-title{margin:16px 3px 6px;font-size:12px;font-weight:800;color:var(--mu);text-transform:uppercase;letter-spacing:.06em}
+.people-list{min-height:210px}.people-list .chat-empty{padding:42px 12px}
 @media(max-width:899px){.chat-page{margin:0 -4px;border-radius:14px}.chat-thread{height:calc(100dvh - 205px);min-height:300px;max-height:740px}.chat-toolbar{padding:10px 8px}.chat-row{padding:12px 10px}.chat-messages{padding:12px 9px}.chat-compose{padding:8px 7px}.chat-hint{padding-bottom:8px}}
 :root:not([data-theme=dark]){--page:#f3f8fb;--line:#e4ebf1;--tx:#102035;--mu:#66788d;--soft:#f5f9fc;--onbg:#e8f1ff}
 body{background:radial-gradient(900px 620px at 0% 0%,#dceaff 0%,transparent 65%),radial-gradient(1000px 720px at 88% 102%,#d2f3e8 0%,transparent 62%),radial-gradient(700px 520px at 100% 38%,#e0f2fb 0%,transparent 60%),linear-gradient(180deg,#f8fbff,#f1f9f7);background-attachment:fixed}
@@ -327,6 +336,8 @@ function shell(active,inner){
 
 const chk=(i,k,ti,d)=>`<label class=row><span class=i>${ic(i)}</span><span class=m>${t(ti)}<small>${t(d)}</small></span><input type=checkbox class=sw data-k=${k} ${Nova.S[k]?'checked':''}></label>`;
 const rowB=(i,ti,sub,go)=>`<button class=row data-go="${go}"><span class=i>${ic(i)}</span><span class=m>${esc(ti)}${sub?`<small>${esc(sub)}</small>`:''}</span><span class=go>${ic('right')}</span></button>`;
+const normalizeLanguageSearch=value=>String(value).normalize('NFD').replace(/\p{Diacritic}/gu,'').toLocaleLowerCase();
+const languageSearchTerms=(code,name)=>{const terms=[code,name,code.replace(/[-_]/g,' ')];if(typeof Intl.DisplayNames==='function'){for(const locale of ['en',code]){try{const label=new Intl.DisplayNames([locale],{type:'language'}).of(code);if(label&&label!==code)terms.push(label)}catch(_){}}}return esc(normalizeLanguageSearch(terms.join(' ')))};
 
 /* views here: home, settings, language, privacy, policy, support, setup. The rest are in nova-profile.js */
 const V={
@@ -342,7 +353,7 @@ settings:()=>shell('settings',mbar(t('settings'))+panel(t('settings'),'Control h
 ${chk('users','restrict','restrict','restrictd')}${chk('shield','hideMature','mature','matured')}${chk('phone','haptic','haptic','hapticd')}${chk('pip','floating','floating','floatingd')}
 ${chk('globe','translate','translate','translated')}${chk('mute','mute','mute','muted')}${chk('pin','hideLoc','hideloc','hidelocd')}
  </div>`)),
-language:()=>shell('language',mbar(t('language'))+panel(t('language'),'Choose the app language','',`<label class="lang-search"><span>${ic('search')}</span><input id=languageSearch type=search autocomplete=off placeholder="Search languages" aria-label="Search languages"></label><div class=rows id=languageRows>${Object.entries(Nova.LANGS).map(([c,n])=>`<button class=row data-lang=${c} data-language="${esc((c+' '+n).toLowerCase())}"><span class=i>${ic('globe')}</span><span class="m langName">${esc(n)} <small>${esc(c)}</small></span><span style="color:var(--ac)">${Nova.S.lang==c?ic('check'):''}</span></button>`).join('')}<p class=language-empty hidden>No matching languages</p></div>`)),
+language:()=>shell('language',mbar(t('language'))+panel(t('language'),'Choose the app language','',`<label class="lang-search"><span>${ic('search')}</span><input id=languageSearch type=search autocomplete=off placeholder="Search languages" aria-label="Search languages"></label><div class=rows id=languageRows>${Object.entries(Nova.LANGS).map(([c,n])=>`<button class=row data-lang=${c} data-language="${languageSearchTerms(c,n)}"><span class=i>${ic('globe')}</span><span class="m langName">${esc(n)} <small>${esc(c)}</small></span><span style="color:var(--ac)">${Nova.S.lang==c?ic('check'):''}</span></button>`).join('')}<p class=language-empty hidden>No matching languages</p></div>`)),
 privacy:()=>shell('privacy',mbar(t('privdata'))+panel(t('privdata'),'Policies and data controls','',`<div class=rows>${['privacy','data','terms'].map(k=>rowB('shield',t(POL[k][0]),'',`policy/${k}`)).join('')}
 <label class=row><span class=i>${ic('db')}</span><span class=m>${t('noshare')}</span><input type=checkbox class=sw data-k=noShare ${Nova.S.noShare?'checked':''}></label></div>`)),
 security:()=>shell('security',mbar(t('security'))+panel(t('security'),'Manage password and account security','',`<div class=secrows>
@@ -471,7 +482,7 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-go]
   $('#tout').textContent=error?(/permission denied/i.test(error.message)?'Permission denied. Run fix-gallery-permissions.sql in Supabase once.':'Please fill subject (3+) and message (10+ characters).'):'Sent. We will reply by email.';if(!error){$('#sj').value='';$('#ms').value=''}}
 });
 document.addEventListener('input',e=>{if(e.target.id!=='languageSearch')return;
- const q=e.target.value.trim().toLowerCase();let shown=0;
+ const q=normalizeLanguageSearch(e.target.value.trim());let shown=0;
  document.querySelectorAll('#languageRows [data-language]').forEach(row=>{const match=row.dataset.language.includes(q);row.hidden=!match;if(match)shown++});
  const empty=document.querySelector('#languageRows .language-empty');if(empty)empty.hidden=shown!==0;
 });

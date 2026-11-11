@@ -35,18 +35,96 @@ create table if not exists public.chat_messages (
   check (length(body) > 0 or case when jsonb_typeof(attachments) = 'array' then jsonb_array_length(attachments) > 0 else false end)
 );
 
+create table if not exists public.user_blocks (
+  blocker_id uuid not null references auth.users (id) on delete cascade,
+  blocked_id uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (blocker_id, blocked_id),
+  check (blocker_id <> blocked_id)
+);
+
 create index if not exists conversation_members_user_idx
   on public.conversation_members (user_id, conversation_id);
 create index if not exists conversations_recent_idx
   on public.conversations (last_message_at desc);
 create index if not exists chat_messages_recent_idx
   on public.chat_messages (conversation_id, created_at desc);
+create index if not exists user_blocks_blocked_idx on public.user_blocks (blocked_id, blocker_id);
+
+alter table public.user_blocks enable row level security;
+drop policy if exists "chat blocks read own" on public.user_blocks;
+create policy "chat blocks read own" on public.user_blocks
+  for select to authenticated using (blocker_id = auth.uid());
+revoke all on public.user_blocks from public, anon, authenticated;
+grant select on public.user_blocks to authenticated;
+
+create or replace function public.users_blocked(p_user_a uuid, p_user_b uuid)
+returns boolean language sql security definer set search_path = '' stable as $$
+  select auth.uid() is not null
+    and (p_user_a = auth.uid() or p_user_b = auth.uid())
+    and exists (
+    select 1 from public.user_blocks b
+    where (b.blocker_id = p_user_a and b.blocked_id = p_user_b)
+       or (b.blocker_id = p_user_b and b.blocked_id = p_user_a)
+  );
+$$;
+revoke all on function public.users_blocked(uuid, uuid) from public, anon;
+
+create or replace function public.can_add_friend(p_target uuid)
+returns boolean language sql security definer set search_path = '' stable as $$
+  select auth.uid() is not null
+    and p_target is not null
+    and p_target <> auth.uid()
+    and not public.users_blocked(auth.uid(), p_target);
+$$;
+revoke all on function public.can_add_friend(uuid) from public, anon;
+grant execute on function public.can_add_friend(uuid) to authenticated;
+
+create or replace function public.block_user(p_blocked_id uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+declare current_user_id uuid := auth.uid();
+begin
+  if current_user_id is null then raise exception 'not authenticated'; end if;
+  if p_blocked_id is null or p_blocked_id = current_user_id then raise exception 'Cannot block this user'; end if;
+  if not exists (select 1 from public.profiles where id = p_blocked_id) then raise exception 'User not found'; end if;
+  insert into public.user_blocks (blocker_id, blocked_id)
+    values (current_user_id, p_blocked_id) on conflict do nothing;
+  delete from public.friendships f
+    where (f.user_id = current_user_id and f.friend_id = p_blocked_id)
+       or (f.user_id = p_blocked_id and f.friend_id = current_user_id);
+end;
+$$;
+revoke all on function public.block_user(uuid) from public, anon;
+grant execute on function public.block_user(uuid) to authenticated;
+
+create or replace function public.unblock_user(p_blocked_id uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if auth.uid() is null then raise exception 'not authenticated'; end if;
+  delete from public.user_blocks
+    where blocker_id = auth.uid() and blocked_id = p_blocked_id;
+end;
+$$;
+revoke all on function public.unblock_user(uuid) from public, anon;
+grant execute on function public.unblock_user(uuid) to authenticated;
+
+drop policy if exists "friends insert" on public.friendships;
+create policy "friends insert" on public.friendships for insert to authenticated
+  with check (auth.uid() = user_id and public.can_add_friend(friend_id));
 
 create or replace function public.is_chat_member(p_conversation uuid)
 returns boolean language sql security definer set search_path = '' stable as $$
   select exists (
-    select 1 from public.conversation_members m
-    where m.conversation_id = p_conversation and m.user_id = auth.uid()
+    select 1 from public.conversation_members own_member
+    join public.conversations c on c.id = own_member.conversation_id
+    where own_member.conversation_id = p_conversation
+      and own_member.user_id = auth.uid()
+      and not exists (
+        select 1 from public.conversation_members other_member
+        where other_member.conversation_id = p_conversation
+          and other_member.user_id <> auth.uid()
+          and public.users_blocked(auth.uid(), other_member.user_id)
+      )
   );
 $$;
 
@@ -63,10 +141,7 @@ $$;
 
 create or replace function public.chat_storage_member(p_conversation text)
 returns boolean language sql security definer set search_path = '' stable as $$
-  select exists (
-    select 1 from public.conversation_members m
-    where m.conversation_id::text = p_conversation and m.user_id = auth.uid()
-  );
+  select public.is_chat_member(p_conversation::uuid);
 $$;
 
 revoke all on function public.is_chat_member(uuid) from public, anon;
@@ -133,6 +208,9 @@ begin
   end if;
 
   foreach friend_id in array friend_ids loop
+    if public.users_blocked(current_user_id, friend_id) then
+      raise exception 'This user is blocked';
+    end if;
     if not exists (
       select 1 from public.friendships f
       where f.status = 'accepted'

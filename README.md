@@ -13,6 +13,7 @@ Static website + Supabase. No build step. Deploy the folder to Vercel (or any st
 | `nova-core.js` | Shared: Supabase client, settings, haptics, auto-translate, languages. Load on **every** page |
 | `nova-profile.js` | Profile sections: friends, videos, keywords, channels, interests, socials, preview, hide toggles |
 | `nova-chat.js` | Mobile-first private direct/group chat, media, voice notes, mentions and realtime updates |
+| `user_blocks` (in `chat-schema.sql`) | Username discovery, friends, requests, recent room members and reciprocal blocking |
 | `schema.sql` | Whole database (3 parts, safe to re-run) |
 | `chat-schema.sql` | Repeatable database setup for private realtime chats and chat media |
 
@@ -67,6 +68,7 @@ const { data: ok } = await Nova.sb.rpc('can_invite', { target: friendUserId });
 - **Restrict Invitations** is enforced by `can_invite`. **Hide Location** by `map_users`.
 - **Language:** English, Hindi, Spanish built in. Add one: copy a block inside `T` in `nova-core.js` and add it to `LANGS`.
 - **Chat:** The Chats icon is in the mobile bottom navigation. Search accepted friends by their database username, start one-to-one or group chats, exchange live messages, mention group/friend usernames, and send images, video, audio, PDF, and text files (up to 20 MB each). Voice notes use the browser microphone and are limited to three minutes. Chat media is stored in the private `chat-media` bucket and signed links expire after one hour.
+- **People:** The Friends page has Friends, Recents, Requests, and Blocked tabs. Recents lists every other profile from your latest direct and group conversations. Username search shows each result's friend/request/blocked state. Blocking removes the friendship and pending requests, prevents new requests and conversations in either direction, and hides shared conversation history from both users. Unblocking does not restore a friendship.
 
 ## 6. Test checklist (use two accounts)
 1. Sign up, confirm email, log in → profile opens.
@@ -75,7 +77,8 @@ const { data: ok } = await Nova.sb.rpc('can_invite', { target: friendUserId });
 4. Call `Nova.logWatch(...)` for a few videos; check Videos, Keywords, Channels, Interests.
 5. Hide a section on A, open A's profile from B — it is gone.
 6. Contact us creates a row in `support_tickets`. Delete Account (type DELETE) removes the user.
-7. After running `chat-schema.sql`, accept a friend request on two accounts, exchange messages, and verify updates arrive without refreshing. Test group creation, @username suggestions, image/video/audio/file uploads and microphone permissions.
+7. After running `chat-schema.sql`, search users by username; test friend requests, the Friends/Recents/Requests/Blocked tabs, block/unblock and verify blocked users cannot request or open shared chats.
+8. Accept a friend request on two accounts, exchange messages, and verify updates arrive without refreshing. Test group creation, @username suggestions, image/video/audio/file uploads and microphone permissions.
 
 ## 7. Notes
 - The anon key in `config.js` is meant to be public. Never put the `service_role` key in any file here.
@@ -93,5 +96,6 @@ const { data: ok } = await Nova.sb.rpc('can_invite', { target: friendUserId });
 - The gallery uses a compact add-photo tile when it already contains photos; the upload drop zone is shown only while the gallery is empty.
 - The language picker offers 100+ language codes. Selected interface text is translated on demand through MyMemory's public endpoint and cached in the browser; email addresses, names, bios, and other marked personal content are excluded. Public translation services can rate-limit requests or have incomplete language support, in which case the original text remains visible with a notice.
 - The language picker has an in-page search across language names and codes.
+- Language search also matches normalized accented text and the browser's English/native language display names when available; filtering happens immediately across the complete language list.
 - Chat requires `chat-schema.sql` to be run in Supabase after `schema.sql`. It uses accepted friendships, Row Level Security, a private media bucket, and Supabase Realtime; browser microphone access requires HTTPS or localhost. Database-backed realtime behavior requires a configured Supabase project and two signed-in accounts.
 - Optional: set `HOME_URL` in `config.js` to show the "Dashboard" link / back pill.

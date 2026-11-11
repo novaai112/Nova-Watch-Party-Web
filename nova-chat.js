@@ -18,6 +18,7 @@
   };
   const chatError = error => Nova.toast(friendlyError(error), 'err');
   const setBusy = (node, busy) => { if (node) node.disabled = busy; };
+  let peopleTab = 'friends', peopleQuery = '', peopleLoadSequence = 0, peopleSearchTimer = null;
   const titleFor = (conversation, members) => conversation.is_group
     ? (conversation.title || members.map(m => person(m.user_id).full_name || person(m.user_id).username).join(', '))
     : (() => { const p = person(members.find(m => m.user_id !== U.id)?.user_id); return p.full_name || `@${p.username}`; })();
@@ -35,6 +36,7 @@
             .then(({ error }) => { if (error) console.error('Could not update chat read state:', error); });
         }
         else if ((location.hash || '').startsWith('#chat')) loadInbox();
+        else if ((location.hash || '').startsWith('#friends')) loadPeople();
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversation_members', filter: `user_id=eq.${U.id}` }, () => {
         if ((location.hash || '').startsWith('#chat')) loadInbox();
@@ -54,6 +56,174 @@
 
   function viewShell(route, body) {
     return shell('chat', `${mbar('Chats', route ? `<button class="ib" data-go="chat" aria-label="All chats">${ic('left')}</button>` : `<button class="btn pri sm" data-chat-compose>${ic('plus',15)} New</button>`, route ? 'chat' : 'home')}${body}`);
+  }
+
+  function peopleRow(user, subtitle, actions = '', tail = '') {
+    const id = esc(user.id);
+    return `<article class=people-row><button class=people-identity data-go="user/${id}" aria-label="View ${esc(user.full_name || user.username)}">${Nova.avatar(user, 48)}<span><b>${esc(user.full_name || user.username || 'User')}</b><small>@${esc(user.username || '')}</small>${subtitle ? `<small class=people-subtitle>${esc(subtitle)}</small>` : ''}</span></button><div class=people-actions>${tail}${actions}</div></article>`;
+  }
+
+  function peopleTabs() {
+    const tabs = [['friends','Friends'],['recents','Recents'],['requests','Requests'],['blocked','Blocked']];
+    return `<nav class=people-tabs aria-label="People">${tabs.map(([key,label]) => `<button class="${peopleTab===key?'on':''}" data-people-tab="${key}">${label}${key==='requests'&&REQ.length?`<i>${REQ.length}</i>`:''}</button>`).join('')}</nav>`;
+  }
+
+  V.friends = () => {
+    setTimeout(() => { bindRealtime(); loadPeople(); }, 0);
+    return shell('friends', `${mbar('People')}
+      <section class="people-page">
+        <label class="chat-search people-search"><span>${ic('search')}</span><input id=peopleSearch type=search autocomplete=off placeholder="Search username" aria-label="Search users by username" value="${esc(peopleQuery)}"></label>
+        ${peopleTabs()}
+        <div id=peopleList class=people-list><p class=chat-loading>Loading people…</p></div>
+      </section>`);
+  };
+
+  async function loadPeople() {
+    const target = document.getElementById('peopleList');
+    if (!target) return;
+    const sequence = ++peopleLoadSequence;
+    target.innerHTML = '<p class=chat-loading>Loading people…</p>';
+    try {
+      const [friendshipResult, blockResult] = await Promise.all([
+        sb.from('friendships').select('user_id,friend_id,status,created_at')
+          .or(`user_id.eq.${U.id},friend_id.eq.${U.id}`),
+        sb.from('user_blocks').select('blocked_id,created_at').eq('blocker_id', U.id)
+      ]);
+      if (friendshipResult.error) throw friendshipResult.error;
+      if (blockResult.error) throw blockResult.error;
+      const relationships = friendshipResult.data || [], blocked = blockResult.data || [];
+      const blockedIds = new Set(blocked.map(row => row.blocked_id));
+      const accepted = relationships.filter(row => row.status === 'accepted')
+        .map(row => row.user_id === U.id ? row.friend_id : row.user_id);
+      const incoming = relationships.filter(row => row.status === 'pending' && row.friend_id === U.id);
+      const outgoing = relationships.filter(row => row.status === 'pending' && row.user_id === U.id);
+      const allIds = [
+        ...accepted, ...blocked.map(row => row.blocked_id),
+        ...incoming.map(row => row.user_id), ...outgoing.map(row => row.friend_id)
+      ];
+      const q = peopleQuery.trim().replace(/^@/, '').toLowerCase();
+      let recents = [];
+      const { data: conversations, error: conversationError } = await sb.from('conversations')
+        .select('id,title,is_group,last_message_at,conversation_members!inner(user_id)')
+        .eq('conversation_members.user_id', U.id).order('last_message_at', { ascending: false }).limit(50);
+      if (conversationError) throw conversationError;
+      const conversationIds = (conversations || []).map(row => row.id);
+      if (conversationIds.length) {
+        const { data: members, error: memberError } = await sb.from('conversation_members')
+          .select('conversation_id,user_id').in('conversation_id', conversationIds);
+        if (memberError) throw memberError;
+        const chatById = new Map((conversations || []).map(row => [row.id, row]));
+        const latestByUser = new Map();
+        for (const member of members || []) {
+          if (member.user_id === U.id || blockedIds.has(member.user_id)) continue;
+          const room = chatById.get(member.conversation_id);
+          if (!room) continue;
+          const seen = latestByUser.get(member.user_id);
+          if (!seen || room.last_message_at > seen.room.last_message_at) latestByUser.set(member.user_id, { user_id: member.user_id, room });
+        }
+        recents = [...latestByUser.values()].sort((a, b) => b.room.last_message_at.localeCompare(a.room.last_message_at));
+        allIds.push(...recents.map(row => row.user_id));
+      }
+
+      let searchProfiles = [];
+      if (peopleTab === 'friends' && q.length >= 2) {
+        const safeQuery = q.replace(/[^a-z0-9_.]/g, '');
+        if (safeQuery.length >= 2) {
+          const { data, error } = await sb.from('public_profiles').select('id,full_name,username,avatar_url')
+            .ilike('username', `%${safeQuery}%`).neq('id', U.id).limit(40);
+          if (error) throw error;
+          searchProfiles = data || [];
+        }
+      }
+      allIds.push(...searchProfiles.map(row => row.id));
+      await loadProfiles(allIds);
+      REQ = incoming.map(row => person(row.user_id));
+
+      const requestedYou = new Set(incoming.map(row => row.user_id));
+      const requestSent = new Set(outgoing.map(row => row.friend_id));
+      const friendIds = new Set(accepted);
+      const actionFor = userId => {
+        if (blockedIds.has(userId)) return `<button class="btn sec sm" data-people-unblock="${esc(userId)}">Unblock</button>`;
+        if (requestedYou.has(userId)) return `<button class="btn pri sm" data-people-accept="${esc(userId)}" aria-label="Accept friend request">${ic('check',15)} Accept</button><button class="icon-btn people-decline" data-people-decline="${esc(userId)}" aria-label="Decline request">${ic('x',15)}</button><button class="icon-btn people-decline" data-people-block="${esc(userId)}" aria-label="Block user" title="Block user">${ic('shield',15)}</button>`;
+        if (requestSent.has(userId)) return `<button class="btn sec sm" disabled>Requested</button><button class="icon-btn people-decline" data-people-cancel="${esc(userId)}" aria-label="Cancel request">${ic('x',15)}</button>`;
+        if (friendIds.has(userId)) return `<span class=people-status>Friend</span><button class="btn sec sm" data-people-remove="${esc(userId)}">Remove</button><button class="icon-btn people-decline" data-people-block="${esc(userId)}" aria-label="Block user" title="Block user">${ic('shield',15)}</button>`;
+        return `<button class="btn pri sm" data-people-add="${esc(userId)}">${ic('userplus',15)} Add</button><button class="icon-btn people-decline" data-people-block="${esc(userId)}" aria-label="Block user" title="Block user">${ic('shield',15)}</button>`;
+      };
+      const empty = text => `<div class=chat-empty><span>${ic('users',28)}</span><p>${esc(text)}</p></div>`;
+      const usernameMatches = id => (person(id).username || '').toLowerCase().includes(q);
+      let content = '';
+      if (peopleTab === 'friends') {
+        const ids = q.length >= 2 ? searchProfiles.map(user => user.id) : accepted;
+        content = ids.length ? ids.map(id => peopleRow(person(id), friendIds.has(id) ? 'Your friend' : blockedIds.has(id) ? 'Blocked' : requestedYou.has(id) ? 'Sent you a request' : requestSent.has(id) ? 'Request sent' : 'Find people by username', actionFor(id))).join('')
+          : empty(q.length >= 2 ? 'No users found for that username.' : 'No friends yet. Search for a username to find people.');
+      } else if (peopleTab === 'recents') {
+        const rows = recents.filter(item => !q || usernameMatches(item.user_id));
+        content = rows.length ? rows.map(item => {
+          const roomName = item.room.is_group ? item.room.title || 'Group chat' : 'Recent conversation';
+          return peopleRow(person(item.user_id), `${roomName} · ${new Date(item.room.last_message_at).toLocaleDateString()}`, `<button class="btn sec sm" data-open-chat="${esc(item.room.id)}">Open chat</button>`);
+        }).join('') : empty(q ? 'No recent chat members match that username.' : 'People from your recent chats will appear here.');
+      } else if (peopleTab === 'requests') {
+        const ins = incoming.filter(row => !q || usernameMatches(row.user_id));
+        const outs = outgoing.filter(row => !q || usernameMatches(row.friend_id));
+        content = `${ins.length ? `<h3 class=people-section-title>Received · ${ins.length}</h3>${ins.map(row => peopleRow(person(row.user_id), 'Wants to be friends', actionFor(row.user_id))).join('')}` : ''}${outs.length ? `<h3 class=people-section-title>Sent · ${outs.length}</h3>${outs.map(row => peopleRow(person(row.friend_id), 'Waiting for response', actionFor(row.friend_id))).join('')}` : ''}` || empty(q ? 'No requests match that username.' : 'No pending friend requests.');
+      } else {
+        const ids = blocked.map(row => row.blocked_id).filter(id => !q || usernameMatches(id));
+        content = ids.length ? ids.map(id => peopleRow(person(id), 'Blocked · cannot send friend requests or direct messages', actionFor(id))).join('') : empty(q ? 'No blocked users match that username.' : 'Users you block will appear here.');
+      }
+      if (target.isConnected && sequence === peopleLoadSequence) target.innerHTML = content;
+    } catch (error) {
+      if (target.isConnected && sequence === peopleLoadSequence) target.innerHTML = `<div class=chat-empty><b>People could not be loaded</b><p>${esc(friendlyError(error))}</p><button class="btn sec" data-people-retry>Try again</button></div>`;
+    }
+  }
+
+  async function peopleAction(button, action, id) {
+    if (!id) return;
+    setBusy(button, true);
+    try {
+      if (action === 'block') {
+        if (!await ask('Block this user?', 'This removes your friendship and prevents friend requests and direct chats between you.', 'Block')) {
+          setBusy(button, false);
+          return;
+        }
+        const { error } = await sb.rpc('block_user', { p_blocked_id: id });
+        if (error) throw error;
+      } else if (action === 'unblock') {
+        const { error } = await sb.rpc('unblock_user', { p_blocked_id: id });
+        if (error) throw error;
+      } else if (action === 'add') {
+        const { error } = await sb.from('friendships').insert({ user_id: U.id, friend_id: id });
+        if (error) throw error;
+        Nova.toast('Friend request sent');
+      } else if (action === 'accept') {
+        const { data, error } = await sb.from('friendships').update({ status: 'accepted' }).eq('user_id', id).eq('friend_id', U.id).eq('status', 'pending').select('user_id').maybeSingle();
+        if (error) throw error;
+        if (!data) throw new Error('This friend request is no longer available.');
+        Nova.toast('Friend request accepted');
+      } else if (action === 'decline') {
+        const { error } = await sb.from('friendships').delete().eq('user_id', id).eq('friend_id', U.id).eq('status', 'pending');
+        if (error) throw error;
+      } else if (action === 'cancel') {
+        const { error } = await sb.from('friendships').delete().eq('user_id', U.id).eq('friend_id', id).eq('status', 'pending');
+        if (error) throw error;
+      } else if (action === 'remove') {
+        if (!await ask('Remove this friend?', 'This ends the friendship. You can send a new request later.', 'Remove')) {
+          setBusy(button, false);
+          return;
+        }
+        const first = await sb.from('friendships').delete().eq('user_id', U.id).eq('friend_id', id);
+        if (first.error) throw first.error;
+        const second = await sb.from('friendships').delete().eq('user_id', id).eq('friend_id', U.id);
+        if (second.error) throw second.error;
+      }
+      await fetchPD(U.id);
+      await loadPeople();
+    } catch (error) {
+      const message = action === 'add' && /row-level security|blocked/i.test(error.message || '')
+        ? 'Unable to send a request to this user.'
+        : friendlyError(error);
+      Nova.toast(message, 'err');
+      setBusy(button, false);
+    }
   }
 
   V.chat = id => {
@@ -351,9 +521,18 @@
   }
 
   document.addEventListener('click', async event => {
-    const el = event.target.closest('[data-chat-compose],[data-open-chat],[data-chat-retry],[data-select-friend],[data-remove-friend],[data-create-chat],[data-close-chat-compose],[data-chat-send],[data-chat-record],[data-chat-older],[data-mention],[data-remove-file]');
+    const el = event.target.closest('[data-chat-compose],[data-open-chat],[data-chat-retry],[data-select-friend],[data-remove-friend],[data-create-chat],[data-close-chat-compose],[data-chat-send],[data-chat-record],[data-chat-older],[data-mention],[data-remove-file],[data-people-tab],[data-people-add],[data-people-accept],[data-people-decline],[data-people-cancel],[data-people-remove],[data-people-block],[data-people-unblock],[data-people-retry]');
     if (!el) return;
     const d = el.dataset;
+    if (d.peopleTab) { peopleTab = d.peopleTab; route(); }
+    if (d.peopleAdd) peopleAction(el, 'add', d.peopleAdd);
+    if (d.peopleAccept) peopleAction(el, 'accept', d.peopleAccept);
+    if (d.peopleDecline) peopleAction(el, 'decline', d.peopleDecline);
+    if (d.peopleCancel) peopleAction(el, 'cancel', d.peopleCancel);
+    if (d.peopleRemove) peopleAction(el, 'remove', d.peopleRemove);
+    if (d.peopleBlock) peopleAction(el, 'block', d.peopleBlock);
+    if (d.peopleUnblock) peopleAction(el, 'unblock', d.peopleUnblock);
+    if (d.peopleRetry !== undefined) loadPeople();
     if (d.chatCompose !== undefined) openCompose();
     if (d.closeChatCompose !== undefined) closeCompose();
     if (d.openChat) location.hash = `#chat/${d.openChat}`;
@@ -377,6 +556,11 @@
     if (input.id === 'chatSearch') loadInbox(input.value);
     if (input.id === 'friendSearch') findFriends(input.value, document.getElementById('friendResults'));
     if (input.id === 'chatInput') mentionSuggestions(input);
+    if (input.id === 'peopleSearch') {
+      peopleQuery = input.value;
+      clearTimeout(peopleSearchTimer);
+      peopleSearchTimer = setTimeout(loadPeople, 180);
+    }
   });
 
   document.addEventListener('change', event => {
