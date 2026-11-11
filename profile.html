@@ -176,7 +176,7 @@ input.bad{border-color:var(--bad)}input::placeholder,textarea::placeholder{color
 .mrow{display:flex;align-items:center;gap:14px;width:100%;padding:12px 14px;margin-bottom:10px;background:var(--card);border-radius:16px;text-align:left;box-shadow:var(--shadow)}
 .mrow .mi{width:40px;height:40px;border-radius:50%;background:var(--chip);display:grid;place-items:center;flex:none;color:var(--tx)}
 .mrow .nl{flex:1;font-weight:600;font-size:14px}.mrow .go{color:var(--mu);display:grid}.mrow.out{color:var(--bad)}.mrow.out .mi{color:var(--bad);background:color-mix(in srgb,var(--bad) 10%,transparent)}
-.bnav{position:fixed;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);width:min(calc(100% - 32px),380px);height:66px;border-radius:33px;background:var(--nav);box-shadow:0 12px 34px rgba(15,23,42,.22),0 0 0 1px var(--line);display:flex;align-items:center;justify-content:space-around;padding:0 10px;z-index:20}
+.bnav{position:fixed;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);width:min(calc(100% - 32px),420px);height:66px;border-radius:33px;background:var(--nav);box-shadow:0 12px 34px rgba(15,23,42,.22),0 0 0 1px var(--line);display:flex;align-items:center;justify-content:space-around;padding:0 10px;z-index:20}
 .bnav button{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;color:var(--navic);transition:background .15s,color .15s}
 .bnav button.on{background:var(--navon);color:var(--navonfg)}
 /* visitor */
@@ -233,6 +233,29 @@ textarea{height:auto}.pre>b{border-radius:8px 0 0 8px;border-color:#dfe5ee}.pre 
  .bnav{height:62px}.bnav button{width:46px;height:46px}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.lang-search,.chat-search{display:flex;align-items:center;gap:10px;margin:12px 16px;padding:0 12px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--mu)}
+.lang-search>span,.chat-search>span{display:flex;flex:none}.lang-search input,.chat-search input{width:100%;height:44px!important;border:0!important;outline:0;background:transparent;color:var(--tx)}
+.language-empty{padding:18px;text-align:center;color:var(--mu)}
+.chat-page{max-width:860px;margin:0 auto;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.chat-toolbar{display:flex;align-items:center;gap:8px;padding:12px;border-bottom:1px solid var(--line)}.chat-toolbar .chat-search{flex:1;margin:0}.chat-search{margin:0}
+.chat-list{min-height:220px}.chat-row{width:100%;display:flex;align-items:center;gap:12px;padding:13px 15px;text-align:left;border-bottom:1px solid var(--line);background:transparent;color:var(--tx)}
+.chat-row:hover,.friend-search-row:hover{background:var(--soft)}.chat-row-copy{min-width:0;flex:1;display:grid;gap:4px}.chat-row-copy b,.chat-row-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chat-row-copy small,.chat-head-person small{color:var(--mu)}
+.chat-row time{font-size:11px;color:var(--mu)}.chat-unread{width:9px;height:9px;border-radius:50%;background:var(--ac)}.chat-group-avatar{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--chip);color:var(--ac);flex:none}
+.chat-empty,.chat-loading{padding:36px 18px;text-align:center;color:var(--mu)}.chat-empty>span{display:block;color:var(--ac);margin-bottom:10px}.chat-empty b{color:var(--tx)}.chat-empty p{margin:8px 0 16px}
+.chat-thread{height:min(68vh,680px);min-height:360px;display:flex;flex-direction:column}.chat-head{padding:12px 16px;border-bottom:1px solid var(--line)}.chat-head-person{display:flex;align-items:center;gap:10px}.chat-head-person>span:last-child{display:grid;gap:3px}
+.chat-messages{flex:1;overflow:auto;display:flex;flex-direction:column;gap:9px;padding:16px;background:color-mix(in srgb,var(--soft) 55%,var(--card))}
+.message{max-width:min(82%,540px);align-self:flex-start;border-radius:15px 15px 15px 4px;padding:9px 11px;background:var(--card);box-shadow:0 1px 5px #0f172a12;overflow-wrap:anywhere}
+.message.mine{align-self:flex-end;background:var(--onbg);border-radius:15px 15px 4px 15px}.message-body{white-space:normal;line-height:1.45}.message time{display:block;text-align:right;font-size:10px;color:var(--mu);margin-top:5px}.message-sender{display:block;color:var(--ac);font-weight:700;margin-bottom:3px}.chat-mention{font-weight:700;color:var(--ac)}
+.message-attachments{display:grid;gap:7px;margin-top:7px}.message-image{display:block;max-width:min(55vw,320px)}.message-image img{display:block;max-width:100%;max-height:300px;border-radius:10px;object-fit:contain}
+.message-video{width:min(65vw,360px);max-height:260px;border-radius:10px}.message-audio{width:min(66vw,340px);height:40px}.message-file{display:flex;align-items:center;gap:9px;color:var(--ac);overflow-wrap:anywhere}
+.chat-older{align-self:center;flex:none}.mention-list{display:flex;gap:4px;overflow:auto;padding:6px 12px;border-top:1px solid var(--line)}.mention-list[hidden]{display:none}.mention-list button{display:flex;align-items:center;gap:6px;padding:6px;border-radius:9px;white-space:nowrap;color:var(--tx)}
+.chat-compose{display:flex;align-items:flex-end;gap:7px;padding:10px;border-top:1px solid var(--line)}.chat-compose textarea{flex:1;min-width:0;max-height:120px;min-height:42px;padding:10px 12px;resize:vertical;border:1px solid var(--line);border-radius:14px;background:var(--soft);color:var(--tx)}
+.icon-btn{width:40px;height:40px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--chip);color:var(--tx)}.icon-btn:hover{color:var(--ac)}.record-btn.recording{background:var(--bad);color:#fff;animation:sp 1s linear infinite}.send-btn{background:var(--ac);color:#fff}
+.chat-hint{margin:0;padding:4px 12px 10px;color:var(--mu);font-size:11px}.pending-files{display:flex;gap:7px;overflow:auto;padding:5px 10px}.pending-files:empty{display:none}.pending-files>span{display:flex;align-items:center;gap:5px;max-width:220px;padding:5px 8px;border-radius:9px;background:var(--chip);white-space:nowrap}.pending-files>span:first-child{margin-left:auto}.pending-files>span button{color:var(--bad)}
+.friend-results{max-height:42vh;overflow:auto;margin-top:10px}.friend-search-row{display:flex;align-items:center;gap:10px;width:100%;padding:9px;border-radius:10px;text-align:left}.friend-search-row>span{flex:1;display:grid;gap:3px}.friend-search-row small{color:var(--mu)}.friend-search-row i{color:var(--ac)}
+.selected-friends{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}.selected-friends:empty{display:none}.selected-friends>span{display:flex;align-items:center;gap:5px;padding:6px 8px;border-radius:999px;background:var(--chip);color:var(--tx)}.selected-friends button{display:grid;place-items:center}
+.chat-error{color:var(--bad);padding:10px}
+@media(max-width:899px){.chat-page{margin:0 -4px;border-radius:14px}.chat-thread{height:calc(100dvh - 205px);min-height:300px;max-height:740px}.chat-toolbar{padding:10px 8px}.chat-row{padding:12px 10px}.chat-messages{padding:12px 9px}.chat-compose{padding:8px 7px}.chat-hint{padding-bottom:8px}}
 :root:not([data-theme=dark]){--page:#f3f8fb;--line:#e4ebf1;--tx:#102035;--mu:#66788d;--soft:#f5f9fc;--onbg:#e8f1ff}
 body{background:radial-gradient(900px 620px at 0% 0%,#dceaff 0%,transparent 65%),radial-gradient(1000px 720px at 88% 102%,#d2f3e8 0%,transparent 62%),radial-gradient(700px 520px at 100% 38%,#e0f2fb 0%,transparent 60%),linear-gradient(180deg,#f8fbff,#f1f9f7);background-attachment:fixed}
 [data-theme=dark] body{background:radial-gradient(900px 620px at 0% 0%,#10244a 0%,transparent 65%),radial-gradient(1000px 720px at 88% 102%,#0b3a3d 0%,transparent 62%),radial-gradient(700px 520px at 100% 38%,#0d2b45 0%,transparent 60%),#080d18;background-attachment:fixed}
@@ -287,7 +310,7 @@ const planPill=()=>`<span class="pill pl">${ic('sparkles',11)}${PLAN.pro?'Pro Pl
 /* one navigation list drives the desktop sidebar AND the mobile list */
 const NAV=[['info','user','info','#2563eb'],['stats','chart','accstats','#16a34a'],['gallery','image','gallery','#db2777'],['friends','users','friends','#0d9488'],['social','link','social','#7c3aed'],
  ['settings','settings','settings','#475569'],['language','globe','language','#0891b2'],['privacy','shield','privdata','#dc2626'],['security','lock','security','#dc2626'],['support','help','support','#0d9488'],['notifications','bell','notification','#2563eb'],['activity','play','activity','#ea580c']];
-const BN=[['friends','users'],['gallery','image'],['stats','chart'],['settings','settings'],['home','user']];
+const BN=[['friends','users'],['gallery','image'],['chat','chat'],['stats','chart'],['settings','settings'],['home','user']];
 
 const mbar=(title,right='',back='home')=>`<div class="mbar mo"><button class=ib data-go=${back} aria-label="Back">${ic('left')}</button><h1>${title}</h1>${right||'<span style="width:40px"></span>'}</div>`;
 const panel=(title,sub,act,body)=>`<section class="card panel"><div class=phead><div class=pt><h2>${title}</h2>${sub?`<p>${sub}</p>`:''}</div>${act||''}</div><div class=pcard>${body}</div></section>`;
@@ -319,7 +342,7 @@ settings:()=>shell('settings',mbar(t('settings'))+panel(t('settings'),'Control h
 ${chk('users','restrict','restrict','restrictd')}${chk('shield','hideMature','mature','matured')}${chk('phone','haptic','haptic','hapticd')}${chk('pip','floating','floating','floatingd')}
 ${chk('globe','translate','translate','translated')}${chk('mute','mute','mute','muted')}${chk('pin','hideLoc','hideloc','hidelocd')}
  </div>`)),
-language:()=>shell('language',mbar(t('language'))+panel(t('language'),'Choose the app language','',`<div class=rows>${Object.entries(Nova.LANGS).map(([c,n])=>`<button class=row data-lang=${c}><span class=i>${ic('globe')}</span><span class="m langName">${n}</span><span style="color:var(--ac)">${Nova.S.lang==c?ic('check'):''}</span></button>`).join('')}</div>`)),
+language:()=>shell('language',mbar(t('language'))+panel(t('language'),'Choose the app language','',`<label class="lang-search"><span>${ic('search')}</span><input id=languageSearch type=search autocomplete=off placeholder="Search languages" aria-label="Search languages"></label><div class=rows id=languageRows>${Object.entries(Nova.LANGS).map(([c,n])=>`<button class=row data-lang=${c} data-language="${esc((c+' '+n).toLowerCase())}"><span class=i>${ic('globe')}</span><span class="m langName">${esc(n)} <small>${esc(c)}</small></span><span style="color:var(--ac)">${Nova.S.lang==c?ic('check'):''}</span></button>`).join('')}<p class=language-empty hidden>No matching languages</p></div>`)),
 privacy:()=>shell('privacy',mbar(t('privdata'))+panel(t('privdata'),'Policies and data controls','',`<div class=rows>${['privacy','data','terms'].map(k=>rowB('shield',t(POL[k][0]),'',`policy/${k}`)).join('')}
 <label class=row><span class=i>${ic('db')}</span><span class=m>${t('noshare')}</span><input type=checkbox class=sw data-k=noShare ${Nova.S.noShare?'checked':''}></label></div>`)),
 security:()=>shell('security',mbar(t('security'))+panel(t('security'),'Manage password and account security','',`<div class=secrows>
@@ -447,6 +470,11 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-go]
  if(d.act=='ticket'){const {error}=await sb.from('support_tickets').insert({user_id:U.id,email:U.email,subject:$('#sj').value,message:$('#ms').value});
   $('#tout').textContent=error?(/permission denied/i.test(error.message)?'Permission denied. Run fix-gallery-permissions.sql in Supabase once.':'Please fill subject (3+) and message (10+ characters).'):'Sent. We will reply by email.';if(!error){$('#sj').value='';$('#ms').value=''}}
 });
+document.addEventListener('input',e=>{if(e.target.id!=='languageSearch')return;
+ const q=e.target.value.trim().toLowerCase();let shown=0;
+ document.querySelectorAll('#languageRows [data-language]').forEach(row=>{const match=row.dataset.language.includes(q);row.hidden=!match;if(match)shown++});
+ const empty=document.querySelector('#languageRows .language-empty');if(empty)empty.hidden=shown!==0;
+});
 document.addEventListener('change',async e=>{const x=e.target;
  if(x.id==='avf'){const f=x.files[0];x.value='';if(!f)return;const w=AVT;w&&w.classList.add('busy');
   try{await uploadAvatar(f);paintAv();Nova.toast('Profile photo updated')}catch(er){Nova.toast(er.message||'Upload failed','err')}w&&w.classList.remove('busy');return}
@@ -463,7 +491,7 @@ const boot=async()=>{app.innerHTML=skel();
  try{await loadP()}catch(er){app.innerHTML='<div class="card pad"><p>We could not load your profile. Check your connection and try again.</p><button class="btn pri" onclick="location.reload()">Try again</button></div>';return}
  route()};
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',boot):boot();
-</script><script src="nova-profile.js"></script>
+</script><script src="nova-profile.js"></script><script src="nova-chat.js"></script>
 <input type="file" id="avf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" hidden>
 <input type="file" id="gf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" multiple hidden>
 </body></html>

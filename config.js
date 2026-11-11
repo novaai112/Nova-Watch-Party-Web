@@ -10,5 +10,11 @@ window.APP_CONFIG = {
   WEBSITE_URL: "https://nova-watch-party.vercel.app/",
   SUPPORT_HOURS: "Mon–Sat, 10:00 AM – 6:00 PM IST",
   JURISDICTION: "India",       
-  REFUND_DAYS: 7       
+  REFUND_DAYS: 7,
+  GIPHY_API_KEY: "4gsCSnEzjPiV8L6HYainDq9I6lhZdLf3",
+  TMDB_API_KEY: "9476e0641545c6f90f6c889866037037",
+  TURN_CREDENTIAL: "1R9dsJ7xe7gOM18s",
+  TURN_URL: "turn\\:global.relay.metered.ca\\:80,turns\\:global.relay.metered.ca\\:443?transport\\=tcp",
+  TURN_USERNAME: "9abf885adb934394685f9ee0",
+  YOUTUBE_API_KEY: "AIzaSyAAq4QvkKu5_jkmCKRYZQqGl0GlMVEa_uE"
 };

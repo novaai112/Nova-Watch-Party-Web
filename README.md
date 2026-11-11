@@ -12,7 +12,9 @@ Static website + Supabase. No build step. Deploy the folder to Vercel (or any st
 | `profile.html` | Profile home, Settings, Language, Privacy + policies, Support, Social |
 | `nova-core.js` | Shared: Supabase client, settings, haptics, auto-translate, languages. Load on **every** page |
 | `nova-profile.js` | Profile sections: friends, videos, keywords, channels, interests, socials, preview, hide toggles |
+| `nova-chat.js` | Mobile-first private direct/group chat, media, voice notes, mentions and realtime updates |
 | `schema.sql` | Whole database (3 parts, safe to re-run) |
+| `chat-schema.sql` | Repeatable database setup for private realtime chats and chat media |
 
 ## 1. Database
 Supabase Dashboard → SQL Editor → New query → paste **all of `schema.sql`** → Run.
@@ -24,6 +26,7 @@ It creates (Part 4 = username check, avatar bucket, gallery limits): `profiles` 
 - **Edit profile** (`profile.html#editprofile`): change photo (auto-cropped square, compressed, old file deleted), remove photo, name, username, country, bio (300 chars), **multi-photo gallery** (select many or drag & drop, max 30, compressed, per-photo delete), and **social links** (11 platforms + website; paste a handle or a full link).
 - Photos go to two Storage buckets: `avatars` and `gallery` (both created by `schema.sql`).
 - Re-run `schema.sql` once if you already ran an older version: Part 4 is safe to repeat.
+- Run `chat-schema.sql` after `schema.sql` to enable direct and group conversations, message storage, Realtime publication, private media storage, and RLS.
 
 ## 2. Auth settings (Dashboard → Authentication)
 - **URL Configuration → Site URL:** `https://nova-watch-party.vercel.app/`
@@ -63,6 +66,7 @@ const { data: ok } = await Nova.sb.rpc('can_invite', { target: friendUserId });
 - **Profile 👁️ / 🙈** hides a section from other people. The database never sends hidden sections to others. **Preview** shows what others see.
 - **Restrict Invitations** is enforced by `can_invite`. **Hide Location** by `map_users`.
 - **Language:** English, Hindi, Spanish built in. Add one: copy a block inside `T` in `nova-core.js` and add it to `LANGS`.
+- **Chat:** The Chats icon is in the mobile bottom navigation. Search accepted friends by their database username, start one-to-one or group chats, exchange live messages, mention group/friend usernames, and send images, video, audio, PDF, and text files (up to 20 MB each). Voice notes use the browser microphone and are limited to three minutes. Chat media is stored in the private `chat-media` bucket and signed links expire after one hour.
 
 ## 6. Test checklist (use two accounts)
 1. Sign up, confirm email, log in → profile opens.
@@ -71,6 +75,7 @@ const { data: ok } = await Nova.sb.rpc('can_invite', { target: friendUserId });
 4. Call `Nova.logWatch(...)` for a few videos; check Videos, Keywords, Channels, Interests.
 5. Hide a section on A, open A's profile from B — it is gone.
 6. Contact us creates a row in `support_tickets`. Delete Account (type DELETE) removes the user.
+7. After running `chat-schema.sql`, accept a friend request on two accounts, exchange messages, and verify updates arrive without refreshing. Test group creation, @username suggestions, image/video/audio/file uploads and microphone permissions.
 
 ## 7. Notes
 - The anon key in `config.js` is meant to be public. Never put the `service_role` key in any file here.
@@ -87,4 +92,6 @@ const { data: ok } = await Nova.sb.rpc('can_invite', { target: friendUserId });
 - Security Settings has popup flows for changing the signed-in user's password and confirming account deletion. Language and Privacy & Data remain separate destinations rather than duplicate Settings rows.
 - The gallery uses a compact add-photo tile when it already contains photos; the upload drop zone is shown only while the gallery is empty.
 - The language picker offers 100+ language codes. Selected interface text is translated on demand through MyMemory's public endpoint and cached in the browser; email addresses, names, bios, and other marked personal content are excluded. Public translation services can rate-limit requests or have incomplete language support, in which case the original text remains visible with a notice.
+- The language picker has an in-page search across language names and codes.
+- Chat requires `chat-schema.sql` to be run in Supabase after `schema.sql`. It uses accepted friendships, Row Level Security, a private media bucket, and Supabase Realtime; browser microphone access requires HTTPS or localhost. Database-backed realtime behavior requires a configured Supabase project and two signed-in accounts.
 - Optional: set `HOME_URL` in `config.js` to show the "Dashboard" link / back pill.
