@@ -7,7 +7,7 @@
   const ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,video/ogg,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/wav,audio/x-wav,application/pdf,text/plain';
   const MIME = new Set(ACCEPT.split(','));
   let liveChannel = null, activeThread = null, threadMembers = [], profiles = {}, messages = [], oldestMessage = null;
-  let pendingFiles = [], pendingRemote = [], mentionedUsers = new Map(), recorder = null, recordedChunks = [];
+  let pendingFiles = [], pendingRemote = [], mediaSearchItems = [], mediaSearchSequence = 0, mentionedUsers = new Map(), recorder = null, recordedChunks = [];
 
   const person = id => profiles[id] || { id, username: 'unknown', full_name: 'Unknown user' };
   const friendlyError = error => {
@@ -344,7 +344,7 @@
   async function formatAttachments(attachments) {
     const list = await Promise.all((attachments || []).map(async attachment => {
       if (attachment.url) {
-        const remote = safeRemoteMedia(attachment.url);
+        const remote = safeRemoteMedia(attachment.url, attachment.type, attachment.name);
         if (!remote) throw new Error('A shared media link is invalid or no longer supported.');
         const href = esc(remote.url), name = esc(attachment.name || remote.name);
         if (remote.type.startsWith('image/')) return `<a class=message-image href="${href}" target=_blank rel=noopener><img src="${href}" alt="${name}" loading=lazy></a>`;
@@ -505,7 +505,7 @@
     renderPending();
   }
 
-  function safeRemoteMedia(value) {
+  function safeRemoteMedia(value, typeHint = '', nameHint = '') {
     try {
       const url = new URL(value);
       if (url.protocol !== 'https:' || url.username || url.password) return null;
@@ -515,15 +515,18 @@
         mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/mp4', ogv: 'video/ogg',
         mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', weba: 'audio/webm'
       };
-      const type = types[extension];
+      const type = /^image\/(?:\*|jpeg|png|gif|webp|avif)$/.test(typeHint)
+        ? typeHint : types[extension];
       if (!type) return null;
-      const name = decodeURIComponent(url.pathname.split('/').pop() || `${type.split('/')[0]} media`);
+      let name = nameHint;
+      try { name = name || decodeURIComponent(url.pathname.split('/').pop() || `${type.split('/')[0]} media`); }
+      catch { name = `${type.split('/')[0]} media`; }
       return { url: url.href, name: name.slice(0, 180), type };
     } catch { return null; }
   }
 
-  function addRemoteMedia(value) {
-    const media = safeRemoteMedia(value.trim());
+  function addRemoteMedia(value, type = '', name = '') {
+    const media = safeRemoteMedia(value.trim(), type, name);
     if (!media) {
       Nova.toast('Paste a direct HTTPS link to an image, GIF, video, or audio file.', 'err');
       return;
@@ -541,39 +544,45 @@
     document.getElementById('mediaUrlInput').value = '';
   }
 
-  function providerSearchUrl(provider, query) {
-    const encoded = encodeURIComponent(query.trim());
-    const urls = {
-      google: `https://www.google.com/search?tbm=isch&q=${encoded}`,
-      yandex: `https://yandex.com/images/search?text=${encoded}`,
-      giphy: `https://giphy.com/search/${encoded}`,
-      klipy: `https://klipy.com/search?q=${encoded}`
-    };
-    return urls[provider] || '';
-  }
-
-  function openProviderSearch(provider, query) {
-    const url = providerSearchUrl(provider, query);
-    if (!url) return;
-    const link = document.createElement('a');
-    link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.hidden = true;
-    document.body.append(link); link.click(); link.remove();
+  async function searchMediaPicker(provider, query) {
+    const target = document.getElementById('mediaSearchResults');
+    if (!target || !query.trim()) return;
+    const sequence = ++mediaSearchSequence;
+    target.innerHTML = '<p class=chat-hint>Searching…</p>';
+    try {
+      const { data, error } = await sb.functions.invoke('watch-media-search', {
+        body: { provider, query: query.trim() }
+      });
+      if (error) throw error;
+      if (sequence !== mediaSearchSequence || !target.isConnected) return;
+      mediaSearchItems = data?.results || [];
+      target.innerHTML = mediaSearchItems.length
+        ? mediaSearchItems.map((item, index) => `<button class=media-result data-media-result="${index}" aria-label="Attach ${esc(item.title)}"><img src="${esc(item.preview)}" alt="" loading=lazy><span>${esc(item.title)}</span></button>`).join('')
+        : '<p class=chat-hint>No media matched that search.</p>';
+    } catch (error) {
+      if (sequence !== mediaSearchSequence || !target.isConnected) return;
+      target.innerHTML = `<p class=chat-error>${esc(error.message || 'Media search is not configured.')}</p>`;
+    }
   }
 
   function openMediaPicker() {
     closeMediaPicker();
+    mediaSearchSequence++;
+    mediaSearchItems = [];
     const overlay = document.createElement('div');
     overlay.className = 'ov c media-overlay'; overlay.id = 'chatMediaPicker';
     overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-labelledby', 'chatMediaTitle');
     overlay.innerHTML = `<div class="modal media-modal"><div class=mh>${ic('paperclip',18)}<b id=chatMediaTitle>Share media</b><button class=mx data-close-media aria-label="Close">${ic('x',18)}</button></div><div class=mb>
-      <p class=chat-hint>Choose a source. Camera and gallery uploads stay private to this conversation.</p>
+      <p class=chat-hint>Camera and gallery uploads stay private to this conversation. Search results load inside Nova.</p>
       <div class=media-source-grid><button class="btn sec" data-media-action="camera">${ic('camera',18)} Camera</button><button class="btn sec" data-media-action="gallery">${ic('image',18)} Gallery / files</button></div>
-      <label class=fld><span class=l>Search images or GIFs</span><input id=mediaSearchInput type=search maxlength=160 placeholder="Search Google, Yandex, GIPHY, or KLIPY"></label>
-      <div class=media-provider-grid><button class="btn sec" data-media-search="google">Google Images</button><button class="btn sec" data-media-search="yandex">Yandex Images</button><button class="btn sec" data-media-search="giphy">GIPHY</button><button class="btn sec" data-media-search="klipy">KLIPY</button></div>
-      <p class=chat-hint>Search opens the selected provider in a new tab. Copy a direct media-file link, then paste it below.</p>
+      <label class=fld><span class=l>Search images or GIFs</span><input id=mediaSearchInput type=search maxlength=160 placeholder="Search Google Images, GIPHY, or KLIPY"></label>
+      <div class=media-provider-grid><button class="btn sec" data-media-search="google">Google Images</button><button class="btn sec" data-media-search="giphy">GIPHY</button><button class="btn sec" data-media-search="klipy">KLIPY GIFs</button></div>
+      <div id=mediaSearchResults class=media-search-results aria-live=polite></div>
+      <p class=chat-hint>Tenor is no longer available as a public search API; Yandex has no supported public image-search API for this integration.</p>
+      <p class=chat-hint>Or paste a direct HTTPS image, GIF, video, or audio file link.</p>
       <label class=fld><span class=l>Paste direct media link</span><input id=mediaUrlInput type=url inputmode=url autocomplete=off placeholder="https://…/image.gif"></label>
-      <p class=chat-hint>HTTPS image, GIF, video, or audio file links only. External links are hosted by their provider, not in private Nova storage.</p>
+      <p class=chat-hint>External links are hosted by their provider, not in private Nova storage.</p>
       <div class=macts><button class="btn sec" data-close-media>Close</button><button class="btn pri" data-media-add-url>Add link to message</button></div>
     </div></div>`;
     overlay.addEventListener('mousedown', event => { if (event.target === overlay) closeMediaPicker(); });
@@ -581,7 +590,7 @@
     overlay.querySelector('#mediaSearchInput').focus();
   }
 
-  function closeMediaPicker() { document.getElementById('chatMediaPicker')?.remove(); }
+  function closeMediaPicker() { mediaSearchSequence++; document.getElementById('chatMediaPicker')?.remove(); }
 
   async function sendMessage(button) {
     const input = document.getElementById('chatInput');
@@ -640,7 +649,7 @@
   }
 
   document.addEventListener('click', async event => {
-    const el = event.target.closest('[data-chat-compose],[data-open-chat],[data-chat-retry],[data-select-friend],[data-remove-friend],[data-create-chat],[data-close-chat-compose],[data-chat-send],[data-chat-record],[data-chat-media],[data-chat-older],[data-mention],[data-remove-file],[data-remove-remote],[data-close-media],[data-media-action],[data-media-search],[data-media-add-url],[data-people-tab],[data-people-add],[data-people-accept],[data-people-decline],[data-people-cancel],[data-people-remove],[data-people-block],[data-people-unblock],[data-people-retry]');
+    const el = event.target.closest('[data-chat-compose],[data-open-chat],[data-chat-retry],[data-select-friend],[data-remove-friend],[data-create-chat],[data-close-chat-compose],[data-chat-send],[data-chat-record],[data-chat-media],[data-chat-older],[data-mention],[data-remove-file],[data-remove-remote],[data-close-media],[data-media-action],[data-media-search],[data-media-result],[data-media-add-url],[data-people-tab],[data-people-add],[data-people-accept],[data-people-decline],[data-people-cancel],[data-people-remove],[data-people-block],[data-people-unblock],[data-people-retry]');
     if (!el) return;
     const d = el.dataset;
     if (d.peopleTab) { peopleTab = d.peopleTab; route(); }
@@ -672,9 +681,13 @@
     if (d.mediaSearch) {
       const query = document.getElementById('mediaSearchInput')?.value.trim();
       if (!query) { Nova.toast('Enter a search term first.', 'err'); return; }
-      openProviderSearch(d.mediaSearch, query);
+      searchMediaPicker(d.mediaSearch, query);
     }
     if (d.mediaAddUrl !== undefined) addRemoteMedia(document.getElementById('mediaUrlInput')?.value || '');
+    if (d.mediaResult !== undefined) {
+      const item = mediaSearchItems[Number(d.mediaResult)];
+      if (item) addRemoteMedia(item.url, item.type, item.title);
+    }
     if (d.chatOlder !== undefined) loadOlder();
     if (d.mention) insertMention(d.mention);
     if (d.removeFile !== undefined) { pendingFiles.splice(Number(d.removeFile), 1); renderPending(); }
@@ -707,7 +720,7 @@
     }
     if (event.target.id === 'mediaSearchInput' && event.key === 'Enter') {
       event.preventDefault();
-      if (event.target.value.trim()) openProviderSearch('google', event.target.value);
+      if (event.target.value.trim()) searchMediaPicker('google', event.target.value);
     }
     if (event.target.id === 'mediaUrlInput' && event.key === 'Enter') {
       event.preventDefault(); addRemoteMedia(event.target.value);

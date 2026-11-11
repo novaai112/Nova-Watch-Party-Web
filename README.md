@@ -13,9 +13,11 @@ Static website + Supabase. No build step. Deploy the folder to Vercel (or any st
 | `nova-core.js` | Shared: Supabase client, settings, haptics, auto-translate, languages. Load on **every** page |
 | `nova-profile.js` | Profile sections: friends, videos, keywords, channels, interests, socials, preview, hide toggles |
 | `nova-chat.js` | Mobile-first private direct/group chat, media, voice notes, mentions and realtime updates |
+| `nova-watch.js` | Public/private watch rooms, admin-controlled synchronized playback, member moderation, invites and room chat |
 | `user_blocks` (in `chat-schema.sql`) | Username discovery, friends, requests, recent room members and reciprocal blocking |
 | `schema.sql` | Whole database (3 parts, safe to re-run) |
 | `chat-schema.sql` | Repeatable database setup for private realtime chats and chat media |
+| `watch-party-schema.sql` | Repeatable watch-room schema, realtime policies, role-checked RPCs and private room media |
 
 ## 1. Database
 Supabase Dashboard → SQL Editor → New query → paste **all of `schema.sql`** → Run.
@@ -28,6 +30,7 @@ It creates (Part 4 = username check, avatar bucket, gallery limits): `profiles` 
 - Photos go to two Storage buckets: `avatars` and `gallery` (both created by `schema.sql`).
 - Re-run `schema.sql` once if you already ran an older version: Part 4 is safe to repeat.
 - Run `chat-schema.sql` after `schema.sql` to enable direct and group conversations, message storage, Realtime publication, private media storage, and RLS.
+- Run `watch-party-schema.sql` after `chat-schema.sql` to enable public/friends/invite rooms, server-enforced owner/admin permissions, synchronized playback state, member actions, room chat, private room media, and Realtime publication.
 
 ## 2. Auth settings (Dashboard → Authentication)
 - **URL Configuration → Site URL:** `https://nova-watch-party.vercel.app/`
@@ -67,7 +70,9 @@ const { data: ok } = await Nova.sb.rpc('can_invite', { target: friendUserId });
 - **Profile 👁️ / 🙈** hides a section from other people. The database never sends hidden sections to others. **Preview** shows what others see.
 - **Restrict Invitations** is enforced by `can_invite`. **Hide Location** by `map_users`.
 - **Language:** English, Hindi, Spanish built in. Add one: copy a block inside `T` in `nova-core.js` and add it to `LANGS`.
-- **Chat:** The Chats icon is in the mobile bottom navigation. Search accepted friends by their database username, start one-to-one or group chats, exchange live messages, mention group/friend usernames, and send images, video, audio, PDF, and text files (up to 20 MB each). The media picker supports camera/gallery/files and opens Google Images, Yandex Images, GIPHY, or KLIPY searches in a new tab; paste a direct HTTPS media-file URL to share externally hosted media. External links are not copied into private storage. Voice notes use the browser microphone and are limited to three minutes. Uploaded chat media is stored in the private `chat-media` bucket and signed links expire after one hour.
+- **Chat:** The Chats icon is in the mobile bottom navigation. Search accepted friends by their database username, start one-to-one or group chats, exchange live messages, mention group/friend usernames, and send images, video, audio, PDF, and text files (up to 20 MB each). Camera/gallery/files and in-page Google Images, GIPHY, and KLIPY search are available in the media picker. External search pages are not opened; pasted external links remain hosted by their provider, not Nova. Voice notes use the browser microphone and are limited to three minutes. Uploaded chat media is stored in the private `chat-media` bucket and signed links expire after one hour.
+- **Watch Together:** Open Watch Party from the mobile navigation or desktop menu. Create public, host-friends-only, or invite-link rooms; any room member can issue an invite, the owner can promote/demote admins, and admins can kick members (only the owner can remove admins). Only owners/admins can change room video, play, pause, or seek; permissions are enforced by Supabase RPCs/RLS, not just hidden buttons. YouTube videos use the YouTube IFrame Player API; direct HTTPS MP4/WebM/MOV/OGV files use the browser player. Protected services such as Netflix and Prime Video do not allow Nova to control their DRM players, so they are not represented as working synchronized sources. Room chat supports realtime text, uploads, voice notes, and in-app Google Images/GIPHY/KLIPY search.
+- **In-app media search setup:** Deploy `supabase/functions/watch-media-search` with `supabase functions deploy watch-media-search`, then set provider keys server-side with `supabase secrets set GIPHY_API_KEY=... KLIPY_API_KEY=... GOOGLE_CSE_API_KEY=... GOOGLE_CSE_ID=...`. Only configure providers you use. Never put provider keys in `config.js` or browser code. Google Custom Search image API requires an eligible existing account and is scheduled to discontinue on **January 1, 2027**; see [Google's API status and requirements](https://developers.google.com/custom-search/v1/overview). GIPHY and KLIPY need their own API keys. Tenor's public API was discontinued in 2026; Yandex has no supported public image-search API for this integration. Without configured secrets, the picker reports which provider is unavailable instead of opening an external search page.
 - **People:** The Friends page has Friends, Recents, Requests, and Blocked tabs. Recents lists every other profile from your latest direct and group conversations. Username search shows each result's friend/request/blocked state. Blocking removes the friendship and pending requests, prevents new requests and conversations in either direction, and hides shared conversation history from both users. Unblocking does not restore a friendship.
 
 ## 6. Test checklist (use two accounts)
@@ -79,6 +84,8 @@ const { data: ok } = await Nova.sb.rpc('can_invite', { target: friendUserId });
 6. Contact us creates a row in `support_tickets`. Delete Account (type DELETE) removes the user.
 7. After running `chat-schema.sql`, search users by username; test friend requests, the Friends/Recents/Requests/Blocked tabs, block/unblock and verify blocked users cannot request or open shared chats.
 8. Accept a friend request on two accounts, exchange messages, and verify updates arrive without refreshing. Test group creation, @username suggestions, image/video/audio/file uploads, direct HTTPS media links, the camera/gallery/provider picker, and microphone permissions. Verify incoming bubbles remain left-aligned and outgoing bubbles right-aligned with the chat surface transparent.
+9. Run `watch-party-schema.sql`, create a Public room on account A, then join on B. Load an embeddable YouTube video or a direct video file on A and test play/pause/seek synchronization. Confirm B cannot control playback, and test that A can invite members, promote an admin, and kick a member while a non-admin cannot invoke those actions.
+10. Deploy the media-search Edge Function and configure API secrets. In both direct chat and a watch room, search and send a Google image, GIPHY GIF, and KLIPY GIF; verify results stay inside the page and arrive for the other member through Realtime.
 
 ## 7. Notes
 - The anon key in `config.js` is meant to be public. Never put the `service_role` key in any file here.

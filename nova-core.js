@@ -8,7 +8,7 @@
                 mute: true, hideLoc: false, lang: 'en', notif: true, noShare: true };
   const load = () => { try { return { ...DEF, ...JSON.parse(localStorage.getItem('nova_settings') || '{}') }; } catch { return { ...DEF }; } };
   const T = {
-    en: { settings:'Settings', social:'Social', language:'Language', support:'Support', notification:'Notification', mydata:'My Data', terms:'Terms & Condition', acct:'Accounts & subscription', profile:'Profile',
+    en: { settings:'Settings', social:'Social', language:'Language', support:'Support', notification:'Notification', mydata:'My Data', terms:'Terms & Condition', acct:'Accounts & subscription', profile:'Profile', watchparty:'Watch Party',
       quick:'Quick Reaction', quickd:'Change your double-tap reaction to chat messages', restrict:'Restrict Invitations', restrictd:'Only allow invitations from friends',
       mature:'Hide Mature Content', matured:'Do not display explicit content', haptic:'Haptic Feedback', hapticd:'Vibrate in response to taps and actions',
       floating:'Floating Video Player', floatingd:'Allows videos to be played outside the app', translate:'Auto-translate Chat Messages', translated:'Auto-translate chat messages that do not match your language',
