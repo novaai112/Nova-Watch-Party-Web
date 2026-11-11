@@ -187,65 +187,65 @@ grant select, insert on public.chat_messages to authenticated;
 create or replace function public.start_chat(p_member_ids uuid[], p_title text default null)
 returns uuid language plpgsql security definer set search_path = '' as $$
 declare
-  current_user_id uuid := auth.uid();
-  friend_ids uuid[];
-  all_members uuid[];
-  friend_id uuid;
-  conversation_id uuid;
-  group_chat boolean;
-  direct_pair text;
-  clean_title text := nullif(left(trim(coalesce(p_title, '')), 80), '');
+  v_current_user_id uuid := auth.uid();
+  v_friend_ids uuid[];
+  v_all_members uuid[];
+  v_friend_id uuid;
+  v_conversation_id uuid;
+  v_group_chat boolean;
+  v_direct_key text;
+  v_clean_title text := nullif(left(trim(coalesce(p_title, '')), 80), '');
 begin
-  if current_user_id is null then raise exception 'not authenticated'; end if;
+  if v_current_user_id is null then raise exception 'not authenticated'; end if;
 
-  select coalesce(array_agg(distinct member_id), '{}'::uuid[])
-    into friend_ids
+  select coalesce(array_agg(distinct requested.member_id), '{}'::uuid[])
+    into v_friend_ids
     from unnest(coalesce(p_member_ids, '{}'::uuid[])) as requested(member_id)
-    where member_id is not null and member_id <> current_user_id;
+    where requested.member_id is not null and requested.member_id <> v_current_user_id;
 
-  if cardinality(friend_ids) < 1 or cardinality(friend_ids) > 49 then
+  if cardinality(v_friend_ids) < 1 or cardinality(v_friend_ids) > 49 then
     raise exception 'Select between 1 and 49 friends';
   end if;
 
-  foreach friend_id in array friend_ids loop
-    if public.users_blocked(current_user_id, friend_id) then
+  foreach v_friend_id in array v_friend_ids loop
+    if public.users_blocked(v_current_user_id, v_friend_id) then
       raise exception 'This user is blocked';
     end if;
     if not exists (
       select 1 from public.friendships f
       where f.status = 'accepted'
-        and ((f.user_id = current_user_id and f.friend_id = friend_id)
-          or (f.friend_id = current_user_id and f.user_id = friend_id))
+        and ((f.user_id = v_current_user_id and f.friend_id = v_friend_id)
+          or (f.friend_id = v_current_user_id and f.user_id = v_friend_id))
     ) then
       raise exception 'Chat is available only with accepted friends';
     end if;
   end loop;
 
-  group_chat := cardinality(friend_ids) > 1;
-  select array_agg(member_id order by member_id) into all_members
-    from (select current_user_id as member_id
-          union select unnest(friend_ids) as member_id) members;
+  v_group_chat := cardinality(v_friend_ids) > 1;
+  select array_agg(members.member_id order by members.member_id) into v_all_members
+    from (select v_current_user_id as member_id
+          union select unnest(v_friend_ids) as member_id) members;
 
-  if not group_chat then
-    direct_pair := least(current_user_id::text, friend_ids[1]::text)
-      || ':' || greatest(current_user_id::text, friend_ids[1]::text);
+  if not v_group_chat then
+    v_direct_key := least(v_current_user_id::text, v_friend_ids[1]::text)
+      || ':' || greatest(v_current_user_id::text, v_friend_ids[1]::text);
   end if;
 
   insert into public.conversations (created_by, title, is_group, direct_key)
-  values (current_user_id, case when group_chat then clean_title else null end, group_chat, direct_pair)
+  values (v_current_user_id, case when v_group_chat then v_clean_title else null end, v_group_chat, v_direct_key)
   on conflict (direct_key) do nothing
-  returning id into conversation_id;
+  returning id into v_conversation_id;
 
-  if conversation_id is null then
-    select c.id into conversation_id
-      from public.conversations c where c.direct_key = direct_pair;
+  if v_conversation_id is null then
+    select c.id into v_conversation_id
+      from public.conversations c where c.direct_key = v_direct_key;
   end if;
 
   insert into public.conversation_members (conversation_id, user_id)
-    select conversation_id, member_id from unnest(all_members) as members(member_id)
+    select v_conversation_id, members.member_id from unnest(v_all_members) as members(member_id)
     on conflict do nothing;
 
-  return conversation_id;
+  return v_conversation_id;
 end;
 $$;
 revoke all on function public.start_chat(uuid[], text) from public, anon;

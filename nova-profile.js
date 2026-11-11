@@ -63,6 +63,7 @@ ${g.length ? `<div class=gg>${g.length<MAXG?`<label class="gt gadd" for=gf aria-
     return chips ? `<div class=chips>${chips}</div>` : `<div class=empty>${ic('link', 28)}<p>${own ? 'No social links yet' : 'No links'}</p>${own ? `<button class="btn pri sm" data-act=editsoc>${ic('plus', 15)}Add links</button>` : ''}</div>`;
   };
   const frTile = u => `<button class=frc data-go="user/${u.id}">${Nova.avatar(u, 56)}<b>${esc(u.full_name || u.username || '')}</b><small>@${esc(u.username || '')}</small></button>`;
+  const profileAvatar = (u, size) => `<button class=profile-avatar-link data-go="user/${esc(u.id)}" aria-label="View ${esc(u.full_name || u.username || 'user')} profile">${Nova.avatar(u, size)}</button>`;
 
   /* ---------- OWN VIEWS ---------- */
   V.info = () => shell('info', mbar(t('info')) + panel(t('info'), 'Your photo, name, username and bio',
@@ -83,7 +84,7 @@ ${g.length ? `<div class=gg>${g.length<MAXG?`<label class="gt gadd" for=gf aria-
     const f = PD.friends || [];
     return shell('friends', mbar(t('friends')) + panel(t('friends'), `${f.length} friend${f.length === 1 ? '' : 's'}`, eye('friends') ? `<div class=actg>${eye('friends')}</div>` : '',
       `<div class=pbody><div class=addf><div class=pre><b>@</b><input id=fu placeholder="Add friend by username" autocapitalize=none spellcheck=false aria-label="Friend username"></div><button class="btn pri" data-add>${ic('userplus', 16)}Add friend</button></div><div class=hint id=fo></div>
-${REQ.length ? `<h3 class=sub style="margin-top:22px">Requests</h3>${REQ.map(r => `<div class=reqr>${Nova.avatar(r, 44)}<div class=fv><b>${esc(r.full_name || r.username)}</b><small>@${esc(r.username || '')} wants to be friends</small></div><button class="btn pri sm" data-acc=${r.id}>Accept</button><button class="ib sm" data-dec=${r.id} aria-label="Decline">${ic('x', 15)}</button></div>`).join('')}` : ''}
+${REQ.length ? `<h3 class=sub style="margin-top:22px">Requests</h3>${REQ.map(r => `<div class=reqr>${profileAvatar(r, 44)}<div class=fv><b>${esc(r.full_name || r.username)}</b><small>@${esc(r.username || '')} wants to be friends</small></div><button class="btn pri sm" data-acc=${r.id}>Accept</button><button class="ib sm" data-dec=${r.id} aria-label="Decline">${ic('x', 15)}</button></div>`).join('')}` : ''}
 ${f.length ? `<div class=frg>${f.map(frTile).join('')}</div>` : `<div class=empty>${ic('users', 30)}<p>No friends yet. Add someone by username.</p></div>`}</div>`));
   };
 
@@ -91,7 +92,7 @@ ${f.length ? `<div class=frg>${f.map(frTile).join('')}</div>` : `<div class=empt
 
   V.notifications = () => shell('notifications', mbar(t('notification')) + panel(t('notification'), 'Friend requests and updates', '', `<div class=rows>
 <label class=row><span class=i>${ic('bell')}</span><span class=m>${t('notification')}<small>Get notified about requests and invitations</small></span><input type=checkbox class=sw data-k=notif ${Nova.S.notif ? 'checked' : ''}></label></div>
-${REQ.length ? `<div class=pbody style="border-top:1px solid var(--line)">${REQ.map(r => `<div class=reqr>${Nova.avatar(r, 44)}<div class=fv><b>${esc(r.full_name || r.username)}</b><small>@${esc(r.username || '')} sent you a friend request</small></div><button class="btn pri sm" data-acc=${r.id}>Accept</button><button class="ib sm" data-dec=${r.id} aria-label="Decline">${ic('x', 15)}</button></div>`).join('')}</div>`
+${REQ.length ? `<div class=pbody style="border-top:1px solid var(--line)">${REQ.map(r => `<div class=reqr>${profileAvatar(r, 44)}<div class=fv><b>${esc(r.full_name || r.username)}</b><small>@${esc(r.username || '')} sent you a friend request</small></div><button class="btn pri sm" data-acc=${r.id}>Accept</button><button class="ib sm" data-dec=${r.id} aria-label="Decline">${ic('x', 15)}</button></div>`).join('')}</div>`
       : `<div class=empty style="border-top:1px solid var(--line)">${ic('bell', 30)}<p>${t('nonotif')}</p></div>`}`));
 
   V.activity = () => {
@@ -109,7 +110,7 @@ ${sh('keywords', 'Keywords', kwHTML(d.titles))}${sh('channels', 'Channels', chHT
     const sec = (k, icon, title, body) => S[k] ? `<section class=card><h3 class=vt>${ic(icon, 17)}${title}</h3><div class=vb>${body}</div></section>` : '';
     const s = d.stats;
     return `<div class=lite>${pv ? `<div class=pvb><span>${ic('eye', 16)}Previewing as a visitor</span><button class="btn sec sm" data-go=info>Exit preview</button></div>` : `<button class="btn sec sm" data-go=friends style="margin:14px 0">${ic('left', 16)}${t('friends')}</button>`}
-<div class=card><div class=vcover></div><div class=vhb>${Nova.avatar(d, 96, 'ring')}<h2>${esc(d.name || '')}</h2><div class=mu>@${esc(d.username || '')}</div>${S.bio && d.bio ? `<p class=vbio>${esc(d.bio)}</p>` : ''}</div></div>
+<div class=card><div class=vcover></div><div class=vhb>${profileAvatar({id:d.id,full_name:d.name,username:d.username,avatar_url:d.avatar}, 96)}<h2>${esc(d.name || '')}</h2><div class=mu>@${esc(d.username || '')}</div>${S.bio && d.bio ? `<p class=vbio>${esc(d.bio)}</p>` : ''}</div></div>
 ${s ? sec('stats', 'chart', t('accstats'), `<div class=tiles style="padding:0"><div class="tile blue"><b>${s.videos}</b><span>Videos</span></div><div class="tile green"><b>${s.hours}</b><span>Hours</span></div><div class="tile indigo"><b>${s.friends}</b><span>${t('friends')}</span></div><div class="tile yellow"><b>${(d.gallery || []).length}</b><span>Photos</span></div></div>`) : ''}
 ${d.gallery && d.gallery.length ? sec('gallery', 'image', `${t('gallery')} (${d.gallery.length})`, gridG(d.gallery, false)) : ''}
 ${d.friends && d.friends.length ? sec('friends', 'users', t('friends'), `<div class=frg style="margin:0">${d.friends.map(frTile).join('')}</div>`) : ''}

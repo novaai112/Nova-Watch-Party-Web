@@ -19,6 +19,7 @@
   const chatError = error => Nova.toast(friendlyError(error), 'err');
   const setBusy = (node, busy) => { if (node) node.disabled = busy; };
   let peopleTab = 'friends', peopleQuery = '', peopleLoadSequence = 0, peopleSearchTimer = null;
+  const likeTerm = value => String(value).replace(/[\\%_]/g, '\\$&');
   const titleFor = (conversation, members) => conversation.is_group
     ? (conversation.title || members.map(m => person(m.user_id).full_name || person(m.user_id).username).join(', '))
     : (() => { const p = person(members.find(m => m.user_id !== U.id)?.user_id); return p.full_name || `@${p.username}`; })();
@@ -63,6 +64,12 @@
     return `<article class=people-row><button class=people-identity data-go="user/${id}" aria-label="View ${esc(user.full_name || user.username)}">${Nova.avatar(user, 48)}<span><b>${esc(user.full_name || user.username || 'User')}</b><small>@${esc(user.username || '')}</small>${subtitle ? `<small class=people-subtitle>${esc(subtitle)}</small>` : ''}</span></button><div class=people-actions>${tail}${actions}</div></article>`;
   }
 
+  function linkedAvatar(user, size, className = '') {
+    const id = user?.id || user?.user_id;
+    if (!id) return Nova.avatar(user || {}, size, className);
+    return `<button class=profile-avatar-link data-go="${id === U.id ? 'info' : `user/${esc(id)}`}" aria-label="View ${id === U.id ? 'your' : esc(user.full_name || user.username || 'user')} profile">${Nova.avatar(user, size, className)}</button>`;
+  }
+
   function peopleTabs() {
     const tabs = [['friends','Friends'],['recents','Recents'],['requests','Requests'],['blocked','Blocked']];
     return `<nav class=people-tabs aria-label="People">${tabs.map(([key,label]) => `<button class="${peopleTab===key?'on':''}" data-people-tab="${key}">${label}${key==='requests'&&REQ.length?`<i>${REQ.length}</i>`:''}</button>`).join('')}</nav>`;
@@ -73,6 +80,7 @@
     return shell('friends', `${mbar('People')}
       <section class="people-page">
         <label class="chat-search people-search"><span>${ic('search')}</span><input id=peopleSearch type=search autocomplete=off placeholder="Search username" aria-label="Search users by username" value="${esc(peopleQuery)}"></label>
+        <div id=peopleSuggestions class=people-suggestions hidden></div>
         ${peopleTabs()}
         <div id=peopleList class=people-list><p class=chat-loading>Loading people…</p></div>
       </section>`);
@@ -102,17 +110,40 @@
         ...incoming.map(row => row.user_id), ...outgoing.map(row => row.friend_id)
       ];
       const q = peopleQuery.trim().replace(/^@/, '').toLowerCase();
+      let searchProfiles = [];
+      const searchBox = document.getElementById('peopleSuggestions');
+      if (q.length >= 2) {
+        const usernameQuery = likeTerm(q.replace(/[^a-z0-9_.-]/g, ''));
+        const nameQuery = likeTerm(q).slice(0, 100);
+        const searches = [];
+        if (usernameQuery.length >= 2) searches.push(sb.from('public_profiles').select('id,full_name,username,avatar_url').ilike('username', `%${usernameQuery}%`).neq('id', U.id).limit(10));
+        if (nameQuery.length >= 2) searches.push(sb.from('public_profiles').select('id,full_name,username,avatar_url').ilike('full_name', `%${nameQuery}%`).neq('id', U.id).limit(10));
+        const results = await Promise.all(searches);
+        const searchError = results.find(result => result.error)?.error;
+        if (searchError) throw searchError;
+        const usernamePrefix = q.replace(/[^a-z0-9_.-]/g, '');
+        searchProfiles = [...new Map(results.flatMap(result => result.data || []).map(user => [user.id, user])).values()]
+          .sort((a, b) => {
+            const aExact = a.username?.toLowerCase().startsWith(usernamePrefix) ? 0 : 1;
+            const bExact = b.username?.toLowerCase().startsWith(usernamePrefix) ? 0 : 1;
+            return aExact - bExact || (a.username || '').localeCompare(b.username || '');
+          }).slice(0, 3);
+      }
       let recents = [];
-      const { data: conversations, error: conversationError } = await sb.from('conversations')
-        .select('id,title,is_group,last_message_at,conversation_members!inner(user_id)')
-        .eq('conversation_members.user_id', U.id).order('last_message_at', { ascending: false }).limit(50);
-      if (conversationError) throw conversationError;
-      const conversationIds = (conversations || []).map(row => row.id);
+      let conversations = [];
+      if (peopleTab === 'recents') {
+        const { data, error } = await sb.from('conversations')
+          .select('id,title,is_group,last_message_at,conversation_members!inner(user_id)')
+          .eq('conversation_members.user_id', U.id).order('last_message_at', { ascending: false }).limit(50);
+        if (error) throw error;
+        conversations = data || [];
+      }
+      const conversationIds = conversations.map(row => row.id);
       if (conversationIds.length) {
         const { data: members, error: memberError } = await sb.from('conversation_members')
           .select('conversation_id,user_id').in('conversation_id', conversationIds);
         if (memberError) throw memberError;
-        const chatById = new Map((conversations || []).map(row => [row.id, row]));
+        const chatById = new Map(conversations.map(row => [row.id, row]));
         const latestByUser = new Map();
         for (const member of members || []) {
           if (member.user_id === U.id || blockedIds.has(member.user_id)) continue;
@@ -125,16 +156,6 @@
         allIds.push(...recents.map(row => row.user_id));
       }
 
-      let searchProfiles = [];
-      if (peopleTab === 'friends' && q.length >= 2) {
-        const safeQuery = q.replace(/[^a-z0-9_.]/g, '');
-        if (safeQuery.length >= 2) {
-          const { data, error } = await sb.from('public_profiles').select('id,full_name,username,avatar_url')
-            .ilike('username', `%${safeQuery}%`).neq('id', U.id).limit(40);
-          if (error) throw error;
-          searchProfiles = data || [];
-        }
-      }
       allIds.push(...searchProfiles.map(row => row.id));
       await loadProfiles(allIds);
       REQ = incoming.map(row => person(row.user_id));
@@ -149,11 +170,17 @@
         if (friendIds.has(userId)) return `<span class=people-status>Friend</span><button class="btn sec sm" data-people-remove="${esc(userId)}">Remove</button><button class="icon-btn people-decline" data-people-block="${esc(userId)}" aria-label="Block user" title="Block user">${ic('shield',15)}</button>`;
         return `<button class="btn pri sm" data-people-add="${esc(userId)}">${ic('userplus',15)} Add</button><button class="icon-btn people-decline" data-people-block="${esc(userId)}" aria-label="Block user" title="Block user">${ic('shield',15)}</button>`;
       };
+      if (searchBox && sequence === peopleLoadSequence) {
+        searchBox.hidden = q.length < 2;
+        searchBox.innerHTML = q.length < 2 ? '' : searchProfiles.length
+          ? `<small class=people-suggest-label>Matching profiles</small>${searchProfiles.map(user => peopleRow(user, user.full_name && user.full_name.toLowerCase() !== user.username?.toLowerCase() ? user.full_name : '', actionFor(user.id))).join('')}`
+          : `<p class=people-suggest-empty>No username or name matches “${esc(peopleQuery.trim())}”.</p>`;
+      }
       const empty = text => `<div class=chat-empty><span>${ic('users',28)}</span><p>${esc(text)}</p></div>`;
       const usernameMatches = id => (person(id).username || '').toLowerCase().includes(q);
       let content = '';
       if (peopleTab === 'friends') {
-        const ids = q.length >= 2 ? searchProfiles.map(user => user.id) : accepted;
+        const ids = accepted.filter(id => !q || usernameMatches(id));
         content = ids.length ? ids.map(id => peopleRow(person(id), friendIds.has(id) ? 'Your friend' : blockedIds.has(id) ? 'Blocked' : requestedYou.has(id) ? 'Sent you a request' : requestSent.has(id) ? 'Request sent' : 'Find people by username', actionFor(id))).join('')
           : empty(q.length >= 2 ? 'No users found for that username.' : 'No friends yet. Search for a username to find people.');
       } else if (peopleTab === 'recents') {
@@ -273,8 +300,8 @@
         const members = byChat[c.id] || [], last = latest[c.id], mine = c.conversation_members?.[0];
         const unread = last && last.sender_id !== U.id && new Date(last.created_at) > new Date(mine?.last_read_at || 0);
         const sub = last ? (last.body || `${last.attachments?.length || 0} attachment${last.attachments?.length === 1 ? '' : 's'}`) : 'Start the conversation';
-        const face = c.is_group ? `<span class=chat-group-avatar>${ic('users',20)}</span>` : Nova.avatar(person(members.find(m => m.user_id !== U.id)?.user_id), 48);
-        return `<button class=chat-row data-open-chat="${esc(c.id)}">${face}<span class=chat-row-copy><b>${esc(titleFor(c, members))}</b><small>${esc(sub)}</small></span>${unread ? '<i class=chat-unread aria-label="Unread"></i>' : ''}<time>${last ? new Date(last.created_at).toLocaleDateString() : ''}</time></button>`;
+        const face = c.is_group ? `<span class=chat-group-avatar>${ic('users',20)}</span>` : linkedAvatar(person(members.find(m => m.user_id !== U.id)?.user_id), 48);
+        return `<article class=chat-row>${face}<button class=chat-row-open data-open-chat="${esc(c.id)}"><span class=chat-row-copy><b>${esc(titleFor(c, members))}</b><small>${esc(sub)}</small></span>${unread ? '<i class=chat-unread aria-label="Unread"></i>' : ''}<time>${last ? new Date(last.created_at).toLocaleDateString() : ''}</time></button></article>`;
       }).join('') : `<div class=chat-empty><b>No matching chats</b><p>Search a conversation or start a chat by username.</p><button class="btn sec" data-chat-compose>Find a friend</button></div>`;
     } catch (error) {
       target.innerHTML = `<div class=chat-empty><b>Chats could not be loaded</b><p>${esc(friendlyError(error))}</p><button class="btn sec" data-chat-retry>Try again</button></div>`;
@@ -298,7 +325,7 @@
         const { error: readError } = await sb.from('conversation_members').update({ last_read_at: new Date().toISOString() }).eq('conversation_id', id).eq('user_id', U.id);
         if (readError) throw readError;
       }
-      target.innerHTML = `<header class=chat-head><div class=chat-head-person>${conversation.is_group ? `<span class=chat-group-avatar>${ic('users',20)}</span>` : Nova.avatar(person(threadMembers.find(m => m.user_id !== U.id)?.user_id), 42)}<span><b>${esc(titleFor(conversation, threadMembers))}</b><small>${conversation.is_group ? `${threadMembers.length} members` : `@${esc(person(threadMembers.find(m => m.user_id !== U.id)?.user_id).username)}`}</small></span></div></header>
+      target.innerHTML = `<header class=chat-head><div class=chat-head-person>${conversation.is_group ? `<span class=chat-group-avatar>${ic('users',20)}</span>` : linkedAvatar(person(threadMembers.find(m => m.user_id !== U.id)?.user_id), 42)}<span><b>${esc(titleFor(conversation, threadMembers))}</b><small>${conversation.is_group ? `${threadMembers.length} members` : `@${esc(person(threadMembers.find(m => m.user_id !== U.id)?.user_id).username)}`}</small></span></div></header>
         <div id=chatMessages class=chat-messages><p class=chat-loading>Loading messages…</p></div><div id=mentionList class=mention-list hidden></div>
         <div id=pendingFiles class=pending-files></div><div class=chat-compose>
           <label class="icon-btn attach-btn" title="Attach media or file">${ic('paperclip')}<input type=file id=chatFiles accept="${ACCEPT}" multiple hidden aria-label="Attach media or file"></label>
@@ -334,7 +361,7 @@
       return found ? `<span class=chat-mention>${match}</span>` : match;
     });
     const attachments = await formatAttachments(message.attachments);
-    const sender = mine ? '' : `<small class=message-sender>${esc(person(message.sender_id).full_name || person(message.sender_id).username)}</small>`;
+    const sender = mine ? '' : `<small class=message-sender>${linkedAvatar(person(message.sender_id), 24)}<span>${esc(person(message.sender_id).full_name || person(message.sender_id).username)}</span></small>`;
     return `<article class="message ${mine ? 'mine' : ''}" data-message="${esc(message.id)}">${sender}${body ? `<div class=message-body>${body.replace(/\n/g, '<br>')}</div>` : ''}${attachments ? `<div class=message-attachments>${attachments}</div>` : ''}<time>${new Date(message.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time></article>`;
   }
 
@@ -383,7 +410,7 @@
   }
 
   async function findFriends(query, target) {
-    const value = query.trim().replace(/^@/, '').replace(/[%_*]/g, '');
+    const value = query.trim().replace(/^@/, '').replace(/[^a-z0-9_.-]/gi, '');
     if (value.length < 2) { target.innerHTML = '<p class=chat-hint>Enter at least 2 characters of a username.</p>'; return; }
     const { data: relationships, error } = await acceptedFriendIds();
     if (error) { target.innerHTML = `<p class=chat-error>${esc(error.message)}</p>`; return; }
@@ -391,10 +418,10 @@
     if (!ids.length) { target.innerHTML = '<p class=chat-hint>Accept a friend request before starting a chat.</p>'; return; }
     if (!/^[\p{L}\p{N}_.-]+$/u.test(value)) { target.innerHTML = '<p class=chat-hint>Search with a username.</p>'; return; }
     const { data, error: searchError } = await sb.from('public_profiles').select('id,full_name,username,avatar_url')
-      .in('id', ids).ilike('username', `%${value}%`).limit(20);
+      .in('id', ids).ilike('username', `%${likeTerm(value)}%`).limit(20);
     if (searchError) { target.innerHTML = `<p class=chat-error>${esc(searchError.message)}</p>`; return; }
     (data || []).forEach(p => { profiles[p.id] = p; });
-    target.innerHTML = data?.length ? data.map(p => `<button class=friend-search-row data-select-friend="${esc(p.id)}">${Nova.avatar(p,42)}<span><b>${esc(p.full_name || p.username)}</b><small>@${esc(p.username)}</small></span><i>${ic('check',16)}</i></button>`).join('') : '<p class=chat-hint>No accepted friend matched that username.</p>';
+    target.innerHTML = data?.length ? data.map(p => `<div class=friend-search-row>${linkedAvatar(p,42)}<button class=friend-search-main data-select-friend="${esc(p.id)}"><span><b>${esc(p.full_name || p.username)}</b><small>@${esc(p.username)}</small></span><i>${ic('check',16)}</i></button></div>`).join('') : '<p class=chat-hint>No accepted friend matched that username.</p>';
   }
 
   function openCompose() {
@@ -436,7 +463,7 @@
     const query = match[1].toLowerCase(), candidates = threadMembers.filter(m => m.user_id !== U.id)
       .filter(m => (person(m.user_id).username || '').toLowerCase().startsWith(query));
     if (!candidates.length) { list.hidden = true; return; }
-    list.innerHTML = candidates.slice(0, 6).map(m => `<button data-mention="${esc(m.user_id)}">${Nova.avatar(person(m.user_id),28)}<span>@${esc(person(m.user_id).username)}</span></button>`).join('');
+    list.innerHTML = candidates.slice(0, 6).map(m => `<div class=mention-candidate>${linkedAvatar(person(m.user_id),28)}<button data-mention="${esc(m.user_id)}">@${esc(person(m.user_id).username)}</button></div>`).join('');
     list.dataset.start = String(start - match[1].length - 1); list.dataset.end = String(start); list.hidden = false;
   }
 
