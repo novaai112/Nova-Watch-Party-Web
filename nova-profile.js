@@ -64,39 +64,10 @@
   const frTile = u => `<button class=frc data-go="user/${u.id}">${Nova.avatar(u, 56)}<b>${esc(u.full_name || u.username || '')}</b><small>@${esc(u.username || '')}</small></button>`;
 
   /* ---------- OWN VIEWS ---------- */
-  V.info = () => {
-    const s = stat();
-    const joined = dateF(P.created_at || U.created_at);
-    return shell('info', mbar(t('info')) + panel('Personal Information', 'Manage your name and contact details',
-      `<div class=actg>${eye('bio')}<button class="btn sec sm" data-go=preview>${ic('eye', 16)}${t('preview')}</button><button class="btn pri sm" data-act=editinfo>${ic('settings', 15)}${t('edit')}</button></div>`,
-      `<div class=idstrip>
-        ${avtap(78, 'ring')}
-        <div class=idt>
-          <h3>${esc(P.full_name || 'Nova User')}</h3>
-          <p>${esc(U.email)}</p>
-          <div class=pills>
-            <span class="pill ok">✓ Approved</span>
-            ${planPill()}
-          </div>
-        </div>
-      </div>
-      <div class=fgrid>
-        ${fc('user', 'FULL NAME', `<b>${esc(P.full_name || '—')}</b>`)}
-        ${fc('mail', 'EMAIL ADDRESS', `<b>${esc(U.email)}</b>`)}
-        ${fc('phone', 'PHONE NUMBER', `<b>Not Provided</b>`)}
-        ${fc('landmark', 'COMPANY / INSTITUTE', `<b>Nova AI Technologies</b>`)}
-        ${fc('clock', 'MEMBER SINCE', `<b>${joined}</b>`)}
-        ${fc('activity', 'ANALYSIS JOBS', `<b>${s.videos} Total · ${s.hours} Completed</b>`)}
-        ${fc('pencil', 'BIO', P.bio ? `<span class=biot>${esc(P.bio)}</span>` : '<span class="biot mu">No bio yet — tap Edit to write one.</span>', 'wide bio')}
-      </div>
-      <div class=tiles>
-        <div class="tile blue"><b>${s.videos}</b><span>Total</span></div>
-        <div class="tile green"><b>${s.hours}</b><span>Completed</span></div>
-        <div class="tile indigo"><b>${s.friends}</b><span>Processing</span></div>
-        <div class="tile yellow"><b>${(P._g || []).length}</b><span>Pending</span></div>
-      </div>`
-    ));
-  };
+  V.info = () => shell('info', mbar(t('info')) + panel(t('info'), 'Your photo, name, username and bio',
+    `<div class=actg>${eye('bio')}<button class="btn sec sm" data-go=preview>${ic('eye', 16)}${t('preview')}</button><button class="btn pri sm" data-act=editinfo>${ic('pencil', 15)}${t('edit')}</button></div>`,
+    `<div class=idstrip>${avtap(76, 'ring')}<div class=idt><h3>${esc(P.full_name || '')}</h3><p>@${esc(P.username || '')}</p><div class=pills>${isVer() ? `<span class="pill ok">✓ ${t('verified')}</span>` : ''}${planPill()}</div></div></div>
+<div class=fgrid>${fc('user', 'Full name', `<b>${esc(P.full_name || '—')}</b>`)}${fc('at', 'Username', `<b>@${esc(P.username || '')}</b>`)}${fc('mail', 'Email address', `<b>${esc(U.email)}</b>`, 'wide')}${fc('pencil', 'Bio', P.bio ? `<span class=biot>${esc(P.bio)}</span>` : '<span class="biot mu">No bio yet</span>', 'wide bio')}</div>`));
 
   V.stats = () => {
     const s = stat(), provs = ((P.providers && P.providers.length) ? P.providers : (U.app_metadata.providers || [])).map(p => p === 'email' ? 'Email & password' : p.charAt(0).toUpperCase() + p.slice(1)).join(' + ') || '—';
@@ -150,7 +121,7 @@ ${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.
 
   /* ---------- EDIT POPUPS ---------- */
   function editInfo() {
-    modal('Personal Information', `<div class=mav>${avtap(78, 'ring')}<div><b style="display:block;font-size:15px;margin-bottom:2px">Profile photo</b><span class=avnote style="display:block;color:var(--mu);font-size:12px">Tap the photo to change it.</span><span class=avact id=ava style="margin-top:6px;display:inline-block">${avActs()}</span></div></div>
+    modal(t('editprofile'), `<div class=mav>${avtap(72)}<div><b style="display:block">Profile photo</b><span class=avnote style="display:block">Tap the photo to change it.</span><span class=avact id=ava>${avActs()}</span></div></div>
 <label class=fld><span class=l>Full Name</span><input id=fn maxlength=40 autocomplete=name value="${esc(P.full_name || '')}"></label>
 <label class=fld><span class=l>Username</span><div class=pre><b>@</b><input id=un maxlength=24 autocomplete=off autocapitalize=none spellcheck=false value="${esc(P.username || '')}"></div><div class=hint id=uh></div></label>
 <label class=fld><span class=l>Email Address</span><input value="${esc(U.email)}" disabled></label><p class=note>Your sign-in email cannot be changed.</p>
