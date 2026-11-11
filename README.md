@@ -1,4 +1,4 @@
-# Nova-Watch-Party — Auth, Profile & Settings (final package)
+# Nova — Home, Auth, Profile & Chat
 
 Static website + Supabase. No build step. Deploy the folder to Vercel (or any static host).
 
@@ -8,20 +8,20 @@ Static website + Supabase. No build step. Deploy the folder to Vercel (or any st
 | `config.js` | Your Supabase URL/anon key + company info (also feeds the policy pages and Support page) |
 | `theme.js` | Light/dark theme (`data-theme`), used by login and profile |
 | `translator.js` | On-demand translation of interface text and accessibility labels into 100+ languages |
-| `index.html` | Sign up, log in, Google, forgot/reset password. "Open profile" goes to `profile.html` |
-| `profile.html` | Profile home, Settings, Language, Privacy + policies, Support, Social |
+| `index.html` | Sign up, log in, Google, forgot/reset password. Successful login opens `nova-home.html` |
+| `nova-home.html` | Main Nova home, room list, search and platform picker |
+| `profile.html` | Full profile, Settings, Language, Privacy + policies, Support, Social |
 | `nova-core.js` | Shared: Supabase client, settings, haptics, auto-translate, languages. Load on **every** page |
 | `nova-profile.js` | Profile sections: friends, videos, keywords, channels, interests, socials, preview, hide toggles |
 | `nova-chat.js` | Mobile-first private direct/group chat, media, voice notes, mentions and realtime updates |
-| `nova-watch.js` | Public/private watch rooms, admin-controlled synchronized playback, member moderation, invites and room chat |
-| `user_blocks` (in `chat-schema.sql`) | Username discovery, friends, requests, recent room members and reciprocal blocking |
+| `user_blocks` (in `chat-schema.sql`) | Username discovery, friends, recent conversations, requests and reciprocal blocking |
 | `schema.sql` | Whole database (3 parts, safe to re-run) |
 | `chat-schema.sql` | Repeatable database setup for private realtime chats and chat media |
-| `watch-party-schema.sql` | Repeatable watch-room schema, realtime policies, role-checked RPCs and private room media |
+| `supabase/functions/chat-media-search/` | Authenticated image/GIF search used by private chat |
 
 ## 1. Database
 Supabase Dashboard → SQL Editor → New query → paste **all of `schema.sql`** → Run.
-It creates (Part 4 = username check, avatar bucket, gallery limits): `profiles` (+ settings), `gallery` (+ `gallery` storage bucket), `friendships`, `watch_history`, `support_tickets`, `subscriptions`, the views `public_profiles` and `map_users`, and the functions `public_profile`, `log_watch`, `set_like`, `can_invite`, `delete_my_account`.
+It creates (Part 4 = username check, avatar bucket, gallery limits): `profiles` (+ settings), `gallery` (+ `gallery` storage bucket), `friendships`, `watch_history`, `support_tickets`, `subscriptions`, the views `public_profiles` and `map_users`, and the functions `public_profile`, `log_watch`, `set_like`, `delete_my_account`.
 
 ### Profile flow (new)
 - After login, a user **without a username** is sent to a one-time **Set up your profile** screen (username required, photo optional). Nothing else in the profile opens until it is done.
@@ -30,7 +30,7 @@ It creates (Part 4 = username check, avatar bucket, gallery limits): `profiles` 
 - Photos go to two Storage buckets: `avatars` and `gallery` (both created by `schema.sql`).
 - Re-run `schema.sql` once if you already ran an older version: Part 4 is safe to repeat.
 - Run `chat-schema.sql` after `schema.sql` to enable direct and group conversations, message storage, Realtime publication, private media storage, and RLS.
-- Run `watch-party-schema.sql` after `chat-schema.sql` to enable public/friends/invite rooms, server-enforced owner/admin permissions, synchronized playback state, member actions, room chat, private room media, and Realtime publication.
+- Re-running `schema.sql` removes the obsolete room-invitation RPC and profile setting.
 
 ## 2. Auth settings (Dashboard → Authentication)
 - **URL Configuration → Site URL:** `https://nova-watch-party.vercel.app/`
@@ -40,9 +40,9 @@ It creates (Part 4 = username check, avatar bucket, gallery limits): `profiles` 
 
 ## 3. Deploy
 Upload the folder to Vercel (or `npx serve .` locally). Keep all files in the same folder.
-Flow: `index.html` → "Open profile" → `profile.html`. If a logged-out user opens `profile.html` they are sent to login and brought back after.
+Flow: `index.html` → `nova-home.html` → Settings gear → `profile.html`. If a logged-out user opens `profile.html`, they are sent to login.
 
-## 4. Connect your video / room / chat pages
+## 4. Connect your video / chat pages
 Add to each page: `config.js`, the supabase-js script, `nova-core.js` (and `nova-profile.js` on the player page).
 
 ```js
@@ -59,8 +59,6 @@ Nova.audioRule(videoElement);
 // Floating Video Player: read Nova.S.floating and enable/disable Picture-in-Picture
 // Quick Reaction (double-tap): send Nova.S.quick
 // Haptic: automatic on every tap when ON
-// before sending a room invite:
-const { data: ok } = await Nova.sb.rpc('can_invite', { target: friendUserId });
 // map: read the view `map_users` (users with Hide Location ON are excluded)
 ```
 
@@ -68,35 +66,34 @@ const { data: ok } = await Nova.sb.rpc('can_invite', { target: friendUserId });
 - **Hide Mature Content** is ON by default. Turning it off needs the "Enable 🔞 Mature Content" YES/NO confirmation. 18+ videos are only shown to people who turned it off.
 - **Include 🔞 NSFW** (profile) works only when Hide Mature Content is off.
 - **Profile 👁️ / 🙈** hides a section from other people. The database never sends hidden sections to others. **Preview** shows what others see.
-- **Restrict Invitations** is enforced by `can_invite`. **Hide Location** by `map_users`.
+- **Hide Location** is enforced by `map_users`.
 - **Language:** English, Hindi, Spanish built in. Add one: copy a block inside `T` in `nova-core.js` and add it to `LANGS`.
-- **Chat:** The Chats icon is in the mobile bottom navigation. Search accepted friends by their database username, start one-to-one or group chats, exchange live messages, mention group/friend usernames, and send images, video, audio, PDF, and text files (up to 20 MB each). Camera/gallery/files and in-page Google Images, GIPHY, and KLIPY search are available in the media picker. External search pages are not opened; pasted external links remain hosted by their provider, not Nova. Voice notes use the browser microphone and are limited to three minutes. Uploaded chat media is stored in the private `chat-media` bucket and signed links expire after one hour.
-- **Watch Together:** Open Watch Party from the mobile navigation or desktop menu. Create public, host-friends-only, or invite-link rooms; any room member can issue an invite, the owner can promote/demote admins, and admins can kick members (only the owner can remove admins). Only owners/admins can change room video, play, pause, or seek; permissions are enforced by Supabase RPCs/RLS, not just hidden buttons. YouTube videos use the YouTube IFrame Player API; direct HTTPS MP4/WebM/MOV/OGV files use the browser player. Protected services such as Netflix and Prime Video do not allow Nova to control their DRM players, so they are not represented as working synchronized sources. Room chat supports realtime text, uploads, voice notes, and in-app Google Images/GIPHY/KLIPY search.
-- **In-app media search setup:** Deploy `supabase/functions/watch-media-search` with `supabase functions deploy watch-media-search`, then set provider keys server-side with `supabase secrets set GIPHY_API_KEY=... KLIPY_API_KEY=... GOOGLE_CSE_API_KEY=... GOOGLE_CSE_ID=...`. Only configure providers you use. Never put provider keys in `config.js` or browser code. Google Custom Search image API requires an eligible existing account and is scheduled to discontinue on **January 1, 2027**; see [Google's API status and requirements](https://developers.google.com/custom-search/v1/overview). GIPHY and KLIPY need their own API keys. Tenor's public API was discontinued in 2026; Yandex has no supported public image-search API for this integration. Without configured secrets, the picker reports which provider is unavailable instead of opening an external search page.
+- **Chat:** The chat fills the device viewport with the Friends/Recent/Request/Blocked rail and a Nova Home back control. The People list uses a mobile bottom navigation bar; an open thread keeps the navigation on the side. Search accepted friends by username, start one-to-one or group chats, exchange live messages, mention group/friend usernames, and send images, video, audio, documents, and contacts (up to 20 MB per file and 8 attachments per message). Attachments show a removable preview before sending; scrolling remains available while scrollbars are visually hidden. Voice notes support pause/resume, cancel, a three-minute limit, and playback preview before sending. The attachment menu includes files, camera, contacts, SearXNG Images & GIFs, GIPHY, and KLIPY. Uploaded chat media is stored in the private `chat-media` bucket and signed links expire after one hour.
+- **Nova home:** Signed-in users open `nova-home.html` after login. The settings gear opens the full Profile page; the floating + opens the platform picker.
+- **In-app chat media search:** Deploy `supabase/functions/chat-media-search` to the Supabase project used in `config.js` with `supabase functions deploy chat-media-search`. Add `SEARXNG_BASE_URL` as a Supabase Edge Function secret/config value pointing to your HTTPS SearXNG instance, plus `GIPHY_API_KEY` and/or `KLIPY_API_KEY` for those optional providers. SearXNG does not require a Google/Yandex API key. Configure your SearXNG `settings.yml` to enable the desired image engines and allow JSON output under `search.formats`; the function requests `format=json` in the `images` category. Many public instances disable JSON or rate-limit shared traffic. SearXNG pages load only when **Load more results** is selected, and the function observes the instance's `Retry-After` value when provided; unlimited third-party capacity cannot be guaranteed. For predictable higher-volume use, operate your own SearXNG instance with an appropriate capacity and bot-protection configuration. `.env.example` lists variable names only; it is not loaded by the static site or deployed automatically. Keep GIPHY/KLIPY keys server-side, never in `config.js` or browser code. A function 404 means it is missing from the configured Supabase project or the project URL is wrong.
 - **People:** The Friends page has Friends, Recents, Requests, and Blocked tabs. Recents lists every other profile from your latest direct and group conversations. Username search shows each result's friend/request/blocked state. Blocking removes the friendship and pending requests, prevents new requests and conversations in either direction, and hides shared conversation history from both users. Unblocking does not restore a friendship.
 
 ## 6. Test checklist (use two accounts)
-1. Sign up, confirm email, log in → profile opens.
+1. Sign up, confirm email, log in → Nova home opens. Use the gear to open Profile.
 2. Settings: change Quick Reaction, tick/untick every switch, reload — values persist.
 3. Add a friend by username on account A; accept on account B; both show friend bubbles.
 4. Call `Nova.logWatch(...)` for a few videos; check Videos, Keywords, Channels, Interests.
 5. Hide a section on A, open A's profile from B — it is gone.
 6. Contact us creates a row in `support_tickets`. Delete Account (type DELETE) removes the user.
 7. After running `chat-schema.sql`, search users by username; test friend requests, the Friends/Recents/Requests/Blocked tabs, block/unblock and verify blocked users cannot request or open shared chats.
-8. Accept a friend request on two accounts, exchange messages, and verify updates arrive without refreshing. Test group creation, @username suggestions, image/video/audio/file uploads, direct HTTPS media links, the camera/gallery/provider picker, and microphone permissions. Verify incoming bubbles remain left-aligned and outgoing bubbles right-aligned with the chat surface transparent.
-9. Run `watch-party-schema.sql`, create a Public room on account A, then join on B. Load an embeddable YouTube video or a direct video file on A and test play/pause/seek synchronization. Confirm B cannot control playback, and test that A can invite members, promote an admin, and kick a member while a non-admin cannot invoke those actions.
-10. Deploy the media-search Edge Function and configure API secrets. In both direct chat and a watch room, search and send a Google image, GIPHY GIF, and KLIPY GIF; verify results stay inside the page and arrive for the other member through Realtime.
+8. Accept a friend request on two accounts, exchange messages, and verify updates arrive without refreshing. Test group creation, @username suggestions, document/photo/video/audio uploads, contact sharing, camera capture, and microphone permissions. Verify incoming bubbles remain left-aligned and outgoing bubbles right-aligned with the chat surface transparent.
+9. Deploy the `chat-media-search` Edge Function and configure SearXNG/GIPHY/KLIPY as needed. Search and send SearXNG images/GIFs, GIPHY GIFs/stickers, and KLIPY GIFs/stickers; verify results stay in the page and arrive for the other member through Realtime.
 
 ## 7. Notes
 - The anon key in `config.js` is meant to be public. Never put the `service_role` key in any file here.
 - Auto-translate uses an unofficial Google endpoint. Use a paid translation API for production.
 - Deleting an account removes database rows. Uploaded gallery files stay in Storage; remove the `<user id>/` folder in Dashboard → Storage if needed.
 - The Privacy, Data and Terms pages are generated from `config.js`. They are a good starting point, not legal advice — have a lawyer review them before launch.
-- Not built: Friends "Trending" tab, Longest Session / Largest Hosted Room stats, payments (the plan badge reads `subscriptions`, which your payment webhook should fill).
+- Not built: Friends "Trending" tab and payments (the plan badge reads `subscriptions`, which your payment webhook should fill).
 
 ## 8. Update: new account pages + gallery fix
 - **Run `fix-gallery-permissions.sql` once** (Supabase -> SQL Editor). It fixes `permission denied for table gallery` (and the same missing grants on friends, history, support and plan tables). It is also appended to `schema.sql` as Part 5.
-- The "You're signed in" page is gone: login goes straight to `profile.html`.
+- Login goes straight to `nova-home.html`; the profile is opened from its settings gear.
 - `profile.html` is now a My Account area: Profile Info, Account Stats, Gallery, Friends, Social, Settings, Language, Support, Notification, Watch Activity, Privacy & Data. Desktop = sidebar, phone = list + bottom nav.
 - Profile Info shows photo, name, username, email and bio only. Edit opens as a popup on every device. Social links have their own popup.
 - Security Settings has popup flows for changing the signed-in user's password and confirming account deletion. Language and Privacy & Data remain separate destinations rather than duplicate Settings rows.
@@ -105,4 +102,4 @@ const { data: ok } = await Nova.sb.rpc('can_invite', { target: friendUserId });
 - The language picker has an in-page search across language names and codes.
 - Language search also matches normalized accented text and the browser's English/native language display names when available; filtering happens immediately across the complete language list.
 - Chat requires `chat-schema.sql` to be run in Supabase after `schema.sql`. It uses accepted friendships, Row Level Security, a private media bucket, and Supabase Realtime; browser microphone access requires HTTPS or localhost. Database-backed realtime behavior requires a configured Supabase project and two signed-in accounts.
-- Optional: set `HOME_URL` in `config.js` to show the "Dashboard" link / back pill.
+- `HOME_URL` in `config.js` points the profile's back/home controls to `nova-home.html`.

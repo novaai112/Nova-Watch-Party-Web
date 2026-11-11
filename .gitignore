@@ -21,4 +21,10 @@ node_modules/
 Rave Screenshot/
 Rave Screenshot 2/
 
+# Playwright & Tool artifacts
+.playwright-mcp/
+
+# Supabase CLI temp files
+supabase/.temp/
+
 

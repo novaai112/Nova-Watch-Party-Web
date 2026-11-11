@@ -105,15 +105,81 @@ ${sh('keywords', 'Keywords', kwHTML(d.titles))}${sh('channels', 'Channels', chHT
   };
 
   /* ---------- VISITOR / PREVIEW ---------- */
+  function profileFriendActions(profile, preview) {
+    if (preview || profile.own || PROFILE_RELATION?.userId !== profile.id) return '';
+    const state = PROFILE_RELATION.status, userId = esc(profile.id);
+    if (state === 'loading') return `<div class="profile-friend-actions"><span class=mu>Loading friendship…</span></div>`;
+    if (state === 'error') return `<div class="profile-friend-actions"><span class="hint bad">Friend actions unavailable: ${esc(PROFILE_RELATION.error || 'Could not load friendship status.')}</span></div>`;
+    if (state === 'friend') return `<div class=profile-friend-actions><span class=people-status>Friend</span><button class="btn sec sm" data-profile-friend=remove data-user-id="${userId}">Remove Friend</button><button class="btn sec sm" data-profile-friend=block data-user-id="${userId}">${ic('shield',15)} Block</button></div>`;
+    if (state === 'incoming') return `<div class=profile-friend-actions><button class="btn pri sm" data-profile-friend=accept data-user-id="${userId}">${ic('check',15)} Accept Request</button><button class="btn sec sm" data-profile-friend=decline data-user-id="${userId}">${ic('x',15)} Delete Request</button><button class="btn sec sm" data-profile-friend=block data-user-id="${userId}">${ic('shield',15)} Block</button></div>`;
+    if (state === 'outgoing') return `<div class=profile-friend-actions><button class="btn sec sm" disabled>Request Sent</button><button class="btn sec sm" data-profile-friend=cancel data-user-id="${userId}">Cancel Request</button><button class="btn sec sm" data-profile-friend=block data-user-id="${userId}">${ic('shield',15)} Block</button></div>`;
+    if (state === 'blocked') return `<div class=profile-friend-actions><button class="btn sec sm" data-profile-friend=unblock data-user-id="${userId}">Unblock</button></div>`;
+    return `<div class=profile-friend-actions><button class="btn pri sm" data-profile-friend=add data-user-id="${userId}">${ic('userplus',15)} Send Friend Request</button><button class="btn sec sm" data-profile-friend=block data-user-id="${userId}">${ic('shield',15)} Block</button></div>`;
+  }
+
+  async function profileFriendAction(button, action, id) {
+    if (!id || PROFILE_RELATION?.userId !== id) return Nova.toast('Friendship status is unavailable. Reload the profile and try again.', 'err');
+    button.disabled = true;
+    try {
+      if (action === 'add') {
+        const { error } = await sb.from('friendships').insert({ user_id: U.id, friend_id: id });
+        if (error) throw error;
+      } else if (action === 'accept') {
+        const { data, error } = await sb.from('friendships').update({ status: 'accepted' })
+          .eq('user_id', id).eq('friend_id', U.id).eq('status', 'pending').select('user_id').maybeSingle();
+        if (error) throw error;
+        if (!data) throw new Error('This friend request is no longer available.');
+      } else if (action === 'decline') {
+        const { error } = await sb.from('friendships').delete().eq('user_id', id).eq('friend_id', U.id).eq('status', 'pending');
+        if (error) throw error;
+      } else if (action === 'cancel') {
+        const { error } = await sb.from('friendships').delete().eq('user_id', U.id).eq('friend_id', id).eq('status', 'pending');
+        if (error) throw error;
+      } else if (action === 'remove') {
+        if (!await ask('Remove this friend?', 'This ends the friendship. You can send a new request later.', 'Remove')) {
+          button.disabled = false;
+          return;
+        }
+        const first = await sb.from('friendships').delete().eq('user_id', U.id).eq('friend_id', id);
+        if (first.error) throw first.error;
+        const second = await sb.from('friendships').delete().eq('user_id', id).eq('friend_id', U.id);
+        if (second.error) throw second.error;
+      } else if (action === 'block') {
+        if (!await ask('Block this user?', 'This removes your friendship and prevents friend requests and direct chats between you.', 'Block')) {
+          button.disabled = false;
+          return;
+        }
+        const { error } = await sb.rpc('block_user', { p_blocked_id: id });
+        if (error) throw error;
+      } else if (action === 'unblock') {
+        const { error } = await sb.rpc('unblock_user', { p_blocked_id: id });
+        if (error) throw error;
+      } else {
+        throw new Error('Unsupported friendship action.');
+      }
+      const refreshed = await loadProfileRelationship(id);
+      route();
+      if (!refreshed) {
+        Nova.toast('Friendship action completed, but the updated status could not be loaded. Reload the profile.', 'err');
+        return;
+      }
+      const notice = { add: 'Friend request sent', accept: 'Friend request accepted', decline: 'Friend request deleted', cancel: 'Friend request canceled', remove: 'Friend removed', block: 'User blocked', unblock: 'User unblocked' }[action];
+      if (notice) Nova.toast(notice);
+    } catch (error) {
+      Nova.toast(error.message || 'Friendship action failed.', 'err');
+      button.disabled = false;
+    }
+  }
+
   function visitor(pv) {
     const d = PD, S = d.s || {};
     const sec = (k, icon, title, body) => S[k] ? `<section class=card><h3 class=vt>${ic(icon, 17)}${title}</h3><div class=vb>${body}</div></section>` : '';
     const s = d.stats;
     return `<div class=lite>${pv ? `<div class=pvb><span>${ic('eye', 16)}Previewing as a visitor</span><button class="btn sec sm" data-go=info>Exit preview</button></div>` : `<button class="btn sec sm" data-go=friends style="margin:14px 0">${ic('left', 16)}${t('friends')}</button>`}
-<div class=card><div class=vcover></div><div class=vhb>${profileAvatar({id:d.id,full_name:d.name,username:d.username,avatar_url:d.avatar}, 96)}<h2>${esc(d.name || '')}</h2><div class=mu>@${esc(d.username || '')}</div>${S.bio && d.bio ? `<p class=vbio>${esc(d.bio)}</p>` : ''}</div></div>
-${s ? sec('stats', 'chart', t('accstats'), `<div class=tiles style="padding:0"><div class="tile blue"><b>${s.videos}</b><span>Videos</span></div><div class="tile green"><b>${s.hours}</b><span>Hours</span></div><div class="tile indigo"><b>${s.friends}</b><span>${t('friends')}</span></div><div class="tile yellow"><b>${(d.gallery || []).length}</b><span>Photos</span></div></div>`) : ''}
+<div class=card><div class=vcover></div><div class=vhb>${profileAvatar({id:d.id,full_name:d.name,username:d.username,avatar_url:d.avatar}, 96)}<h2>${esc(d.name || '')}</h2><div class=mu>@${esc(d.username || '')}</div>${profileFriendActions(d,pv)}${S.bio && d.bio ? `<p class=vbio>${esc(d.bio)}</p>` : ''}</div></div>
+${s ? sec('stats', 'chart', t('accstats'), `<div class="tiles profile-stat-tiles"><div class="tile blue"><b>${s.videos}</b><span>Videos</span></div><div class="tile green"><b>${s.hours}</b><span>Hours</span></div><div class="tile indigo"><b>${s.friends}</b><span>${t('friends')}</span></div><div class="tile yellow"><b>${(d.gallery || []).length}</b><span>Photos</span></div></div>`) : ''}
 ${d.gallery && d.gallery.length ? sec('gallery', 'image', `${t('gallery')} (${d.gallery.length})`, gridG(d.gallery, false)) : ''}
-${d.friends && d.friends.length ? sec('friends', 'users', t('friends'), `<div class=frg style="margin:0">${d.friends.map(frTile).join('')}</div>`) : ''}
+${d.friends && d.friends.length ? sec('friends', 'users', t('friends'), `<div class="frg profile-friends-grid" style="margin:0">${d.friends.map(frTile).join('')}</div>`) : ''}
 ${d.socials ? sec('socials', 'link', t('social'), socChips(d.socials, false)) : ''}
 ${d.videos ? sec('videos', 'play', 'Videos', `<div class=tabs>${['top', 'history', 'liked'].map(k => `<button class="tab${TAB === k ? ' on' : ''}" data-tab=${k}>${k[0].toUpperCase() + k.slice(1)}</button>`).join('')}</div><div style="margin-top:12px">${vidHTML(d.videos[TAB])}</div>`) : ''}
 ${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.channels ? sec('channels', 'play', 'Channels', chHTML(d.channels)) : ''}${d.interests ? sec('interests', 'chart', 'Interests', donutHTML(d.interests)) : ''}</div>${bnav('')}`;
@@ -201,7 +267,8 @@ ${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.
   /* ---------- reload helper + events ---------- */
   const reload = async () => { const id = PD ? PD.id : U.id; await fetchPD(id); route(); };
   document.addEventListener('click', async e => {
-    const el = e.target.closest('[data-close],[data-act],[data-vis],[data-tab],[data-add],[data-acc],[data-dec],[data-clear],[data-lb]'); if (!el) return; const d = el.dataset;
+    const el = e.target.closest('[data-close],[data-act],[data-vis],[data-tab],[data-add],[data-acc],[data-dec],[data-clear],[data-lb],[data-profile-friend]'); if (!el) return; const d = el.dataset;
+    if (d.profileFriend) { await profileFriendAction(el, d.profileFriend, d.userId); return; }
     if (d.close !== undefined) closeM();
     if (d.act === 'editinfo') editInfo();
     if (d.act === 'saveinfo') saveInfo(el);

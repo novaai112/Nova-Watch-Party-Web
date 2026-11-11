@@ -136,6 +136,8 @@ body{background:radial-gradient(900px 620px at 0% 0%,#dceaff 0%,transparent 65%)
 :root[data-theme="dark"] body{background:radial-gradient(900px 620px at 0% 0%,#10244a 0%,transparent 65%),radial-gradient(1000px 720px at 88% 102%,#0b3a3d 0%,transparent 62%),#080d18;background-attachment:fixed}
 .card{border-color:color-mix(in srgb,var(--border) 88%,#b8d7e8);box-shadow:0 1px 2px #0f172a0a,0 14px 40px #173b5b12}
 :root[data-theme="dark"] .card{border-color:var(--border);box-shadow:0 14px 40px #0005}
+html,body,*{scrollbar-width:none;-ms-overflow-style:none}
+*::-webkit-scrollbar{display:none;width:0;height:0}
 </style>
 </head>
 <body>
@@ -488,11 +490,9 @@ body{background:radial-gradient(900px 620px at 0% 0%,#dceaff 0%,transparent 65%)
     if (error) { busy(b, false); $$("[data-gicon]", b).forEach(s => (s.innerHTML = GOOGLE)); showAlert(form, "err", friendly(error)); }
   }));
 
-  /* ---------- after login: straight into the website (no "signed in" page) ---------- */
-  function goProfile() {
-    let next = null;
-    try { next = sessionStorage.getItem("postLoginRedirect"); if (next) sessionStorage.removeItem("postLoginRedirect"); } catch (_) {}
-    location.replace(next && /^[a-z0-9_-]+\.html$/i.test(next) ? next : "profile.html");
+  /* ---------- after login: straight into Nova home (no "signed in" page) ---------- */
+  function goHome() {
+    location.replace("nova-home.html");
   }
 
   /* ---------- auth state ---------- */
@@ -500,7 +500,7 @@ body{background:radial-gradient(900px 620px at 0% 0%,#dceaff 0%,transparent 65%)
     if (event === "PASSWORD_RECOVERY") { recoveryMode = true; show("reset", false); return; }
     if (event === "SIGNED_OUT") { show("login", false); history.replaceState({}, "", location.pathname); return; }
     if ((event === "SIGNED_IN" || event === "INITIAL_SESSION" || event === "USER_UPDATED") && session && !recoveryMode) {
-      setTimeout(goProfile, 0);
+      setTimeout(goHome, 0);
     }
   });
 

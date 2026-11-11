@@ -153,7 +153,11 @@ alter table public.profiles
   add column if not exists location_lat double precision,
   add column if not exists location_lng double precision,
   add column if not exists settings     jsonb not null default
-    '{"quick":"❤️","restrict":false,"hideMature":true,"haptic":true,"floating":true,"translate":false,"mute":true,"hideLoc":false,"lang":"en","notif":true,"noShare":true}'::jsonb;
+    '{"quick":"❤️","hideMature":true,"haptic":true,"floating":true,"translate":false,"mute":true,"hideLoc":false,"lang":"en","notif":true,"noShare":true}'::jsonb;
+
+update public.profiles
+set settings = settings - 'restrict'
+where settings ? 'restrict';
 
 alter table public.profiles drop constraint if exists username_format;
 alter table public.profiles add constraint username_format
@@ -163,7 +167,7 @@ revoke update on public.profiles from authenticated;
 grant update (full_name, avatar_url, username, bio, country, location_lat, location_lng, settings)
   on public.profiles to authenticated;
 
--- Public-safe view of other users (no email). Used by friends / rooms.
+-- Public-safe view of other users (no email). Used by friends and chat.
 create or replace view public.public_profiles as
   select id, full_name, username, avatar_url, country, bio, created_at from public.profiles;
 grant select on public.public_profiles to authenticated;
@@ -199,7 +203,7 @@ create policy "gallery upload own" on storage.objects for insert to authenticate
 create policy "gallery remove own" on storage.objects for delete to authenticated
   using (bucket_id = 'gallery' and (storage.foldername(name))[1] = auth.uid()::text);
 
--- Friends (+ invitations rule)
+-- Friends
 create table if not exists public.friendships (
   user_id   uuid not null references auth.users (id) on delete cascade,
   friend_id uuid not null references auth.users (id) on delete cascade,
@@ -217,17 +221,7 @@ create policy "friends insert" on public.friendships for insert to authenticated
 create policy "friends update" on public.friendships for update to authenticated using (auth.uid() = friend_id);
 create policy "friends delete" on public.friendships for delete to authenticated using (auth.uid() in (user_id, friend_id));
 
--- Call this before sending a room invite. Honors "Restrict Invitations".
-create or replace function public.can_invite(target uuid)
-returns boolean language sql security definer set search_path = '' stable as $$
-  select case
-    when coalesce((select (settings ->> 'restrict')::boolean from public.profiles where id = target), false)
-      then exists (select 1 from public.friendships f where f.status = 'accepted'
-                   and ((f.user_id = auth.uid() and f.friend_id = target)
-                     or (f.user_id = target and f.friend_id = auth.uid())))
-    else true end;
-$$;
-grant execute on function public.can_invite(uuid) to authenticated;
+drop function if exists public.can_invite(uuid);
 
 -- Support tickets (Contact us)
 create table if not exists public.support_tickets (

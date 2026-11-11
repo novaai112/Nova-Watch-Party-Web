@@ -270,10 +270,14 @@ insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 values (
   'chat-media', 'chat-media', false, 20971520,
   array[
-    'image/jpeg','image/png','image/webp','image/gif',
-    'video/mp4','video/webm','video/quicktime','video/ogg',
-    'audio/mpeg','audio/mp4','audio/ogg','audio/webm','audio/wav','audio/x-wav',
-    'application/pdf','text/plain'
+    'image/jpeg','image/png','image/webp','image/gif','image/avif','image/heic','image/heif','image/bmp','image/tiff',
+    'video/mp4','video/webm','video/quicktime','video/ogg','video/3gpp','video/x-msvideo',
+    'audio/mpeg','audio/mp4','audio/ogg','audio/webm','audio/wav','audio/x-wav','audio/aac','audio/flac','audio/3gpp',
+    'application/pdf','text/plain','application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint','application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/zip'
   ]
 )
 on conflict (id) do update set
