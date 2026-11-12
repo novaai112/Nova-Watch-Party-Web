@@ -148,7 +148,7 @@ body.message-page-active .people-list>.chat-empty{flex:none;margin:0;border:1px 
 .media-menu-item>svg{color:var(--ac)}
 .media-menu-item:nth-child(6){border-top:1px solid var(--line);margin-top:3px;padding-top:10px}
 .media-brand{width:20px;height:20px;display:grid;place-items:center;flex:none;border-radius:6px;font-size:12px;font-style:normal;font-weight:800}
-.searxng-brand{background:#e8f4ec;color:#267348}.giphy-brand{width:28px;background:#d7ffec;color:#111;font-size:9px}.klipy-brand{background:#111;color:#fff}
+.duckduckgo-brand{background:#deebff;color:#174ea6}.giphy-brand{width:28px;background:#d7ffec;color:#111;font-size:9px}.klipy-brand{background:#111;color:#fff}
 .media-provider-panel,.media-contact-panel{height:min(56vh,480px);min-height:235px;display:flex;flex-direction:column;overflow:hidden;padding:10px 12px 0;-ms-overflow-style:none;scrollbar-width:none}
 .media-provider-head{display:flex;align-items:center;gap:10px;flex:none;margin-bottom:8px}
 .media-provider-head>b{min-width:0;flex:1;font-size:15px;font-weight:800}
@@ -606,7 +606,7 @@ const boot=async()=>{app.innerHTML=skel();
  try{await loadP()}catch(er){app.innerHTML='<div class="card pad"><p>We could not load your profile. Check your connection and try again.</p><button class="btn pri" onclick="location.reload()">Try again</button></div>';return}
  route()};
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',boot):boot();
-</script><script src="nova-profile.js"></script><script src="nova-chat.js"></script><script src="mobile-navigation.js?v=2"></script>
+</script><script src="nova-profile.js"></script><script src="nova-chat.js?v=3"></script><script src="mobile-navigation.js?v=2"></script>
 <input type="file" id="avf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" hidden>
 <input type="file" id="gf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" multiple hidden>
 </body></html>

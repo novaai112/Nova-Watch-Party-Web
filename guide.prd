@@ -14,10 +14,10 @@ finishing one does not automatically configure the others.
 | Documents, photos, videos, audio files, and voice notes | Run `schema.sql` and then `chat-schema.sql` in the correct Supabase project |
 | Contact cards | Same database setup; these are Nova accepted-friend profiles, not the device address book |
 | Camera capture | A supported browser/device, HTTPS (or localhost), and camera permission |
-| SearXNG Images/GIFs, GIPHY GIFs/stickers, KLIPY GIFs/stickers | Deploy `chat-media-search`; configure a SearXNG instance URL and any optional provider keys |
+| DuckDuckGo Images/GIFs, GIPHY GIFs/stickers, KLIPY GIFs/stickers | Deploy `chat-media-search`; configure optional GIPHY/KLIPY provider keys |
 
 Provider search is optional. File uploads and contact cards do not require
-SearXNG, GIPHY, or KLIPY configuration.
+DuckDuckGo, GIPHY, or KLIPY configuration.
 
 ## Prerequisites
 
@@ -81,51 +81,32 @@ Do not treat opening this URL in a browser as a successful search test. The
 function accepts authenticated POST requests from the signed-in chat UI, not a
 plain browser GET.
 
-## 3. Configure SearXNG and optional providers
-
-SearXNG does not need Google or Yandex API keys. It needs a SearXNG instance
-that is publicly reachable over HTTPS by Supabase Edge Functions. In its
-`settings.yml`, enable the image engines you want to use (such as DuckDuckGo
-Images, Google Images, Bing Images, or Qwant Images) with the `images` category,
-and enable JSON output under `search.formats`, for example:
-
-```yaml
-search:
-  formats:
-    - html
-    - json
-```
-
-Engine names and exact configuration can vary by SearXNG version. Use the
-engine definitions available in your instance and ensure they include the
-`images` category. Nova requests the `images` category and JSON response.
-Many public instances disable JSON and return HTTP 403; use an instance that
-permits it or host your own. See the [SearXNG Search API docs](https://docs.searxng.org/dev/search_api.html)
-and [engine configuration docs](https://docs.searxng.org/dev/engines/engine_overview.html).
+## 3. Configure optional media providers
 
 In the Supabase Dashboard for the same project, open **Edge Functions** →
 **Secrets** and add:
 
 | Feature | Supabase secret(s) | Notes |
 |---|---|---|
-| SearXNG image and GIF searches | `SEARXNG_BASE_URL` | HTTPS URL of the SearXNG instance, without credentials, query, or fragment; no SearXNG API key is used |
 | GIPHY GIFs and stickers | `GIPHY_API_KEY` | Create an API key in the GIPHY developer portal |
 | KLIPY GIFs and stickers | `KLIPY_API_KEY` | Create an API key with access to the KLIPY search API |
 
-Only GIPHY and KLIPY require provider API keys. Follow their current account,
-quota, and attribution requirements. Do not paste secret values into this
-guide, source code, browser developer tools, or public issue reports.
+DuckDuckGo image search requires no API key, but uses an undocumented endpoint
+that may challenge or rate-limit requests. Nova does not bypass those checks.
+GIF mode only accepts direct `.gif` media URLs, so GIF results are best-effort.
+GIPHY and KLIPY require provider API keys; follow their current account, quota,
+and attribution requirements. Do not paste secret values into this guide,
+source code, browser developer tools, or public issue reports.
 
 Supabase automatically provides `SUPABASE_URL` and `SUPABASE_ANON_KEY` to Edge
 Functions. They are listed in `.env.example` for reference; they are not
 provider credentials and normally do not need to be added as custom secrets.
 The static website does not load `.env.example` as an environment file.
 
-Set the SearXNG instance URL and any optional provider keys using the Dashboard
-or CLI. Replace placeholders locally:
+Set only the optional GIPHY/KLIPY provider keys you use, using the Dashboard or
+CLI. Replace placeholders locally:
 
 ```powershell
-npx supabase secrets set SEARXNG_BASE_URL="https://your-searxng-instance.example" --project-ref viwsrmjiavfdrrfnhoog
 npx supabase secrets set GIPHY_API_KEY="<your-new-key>" --project-ref viwsrmjiavfdrrfnhoog
 npx supabase secrets set KLIPY_API_KEY="<your-key>" --project-ref viwsrmjiavfdrrfnhoog
 ```
@@ -141,9 +122,9 @@ npx supabase secrets unset GOOGLE_CSE_API_KEY GOOGLE_CSE_ID YANDEX_SEARCH_API_KE
 
 GIPHY/KLIPY API keys must stay in Supabase Edge Function secrets. Never put
 them in `config.js`, `nova-chat.js`, HTML, or any other browser-delivered file.
-Revoke/rotate any key exposed in browser code or chat. SearXNG needs an instance
-URL, not a provider API key. `.env.example` is a reference template, not a
-secure vault or automatic deployment mechanism.
+Revoke/rotate any key exposed in browser code or chat. DuckDuckGo search needs
+no provider key. `.env.example` is a reference template, not a secure vault or
+automatic deployment mechanism.
 
 ## 4. Deploy the website
 
@@ -183,9 +164,10 @@ Use two signed-in accounts and ensure they are accepted friends.
 7. Test voice recording with microphone permission: record, pause/resume, finish,
    play the preview, remove it, and record again. Voice notes are limited to
    three minutes and 20 MiB and are not sent until the user presses Send.
-8. Configure `SEARXNG_BASE_URL`, then search images and GIFs with a common term.
-   Verify that results come from the image engines enabled on your SearXNG
-   instance. Search, select, send, and confirm the recipient can view the item.
+8. Search for images and GIFs with DuckDuckGo. Search, select, send, and confirm
+   the recipient can view the item. If the GIF search has no direct `.gif`
+   results, try another query; DuckDuckGo may also challenge or rate-limit the
+   Edge Function.
 9. For each optional GIPHY or KLIPY provider whose key you configured, search
    for a term, select a GIF or sticker, send it, and confirm the recipient can
    view it.
@@ -197,12 +179,10 @@ Use two signed-in accounts and ensure they are accepted friends.
 |---|---|
 | `Media search failed (HTTP 404)` / function not found | Deploy `chat-media-search` to the project reference in `config.js`; check that the URL and deployment project match. |
 | Sign-in/session or HTTP 401 error | Sign in again, verify the browser is using the correct Supabase project, and retry from the chat page. |
-| SearXNG unavailable / HTTP 503 | Set `SEARXNG_BASE_URL` to a valid public HTTPS instance URL in the correct Supabase project's Edge Function secrets. |
-| SearXNG HTTP 403 | The instance may have JSON output disabled. Enable `json` under `search.formats` in `settings.yml`, or use an instance that allows JSON search. |
-| SearXNG HTTP 401 | The instance requires authentication; this integration expects an instance reachable by Supabase without an interactive login. |
 | GIPHY/KLIPY HTTP 401 or 403 | The API key may be invalid, revoked, or lacking provider access. Check the provider account and update its server secret if needed. |
-| Provider HTTP 429 | The provider is rate-limiting requests. Nova loads SearXNG pages only when **Load more results** is selected and honors a returned `Retry-After` value. Public SearXNG instances have shared capacity and may block Supabase's shared egress IP; no client can guarantee unlimited access to a third-party instance. Wait before retrying or configure an instance you operate for predictable capacity. |
-| SearXNG search returns no results | Confirm at least one desired engine is enabled with the `images` category and try a different query. |
+| DuckDuckGo HTTP 429 or missing search token | DuckDuckGo may be challenging or rate-limiting automated requests. Wait and retry later, or use GIPHY/KLIPY. Nova does not bypass access checks. |
+| DuckDuckGo GIF search returns no results | GIF mode accepts direct `.gif` media URLs only. Try another query; some animated images use URLs that cannot be identified as GIF files. |
+| Provider HTTP 429 | The provider is rate-limiting requests. Wait before retrying and use **Load more results** only when needed. |
 | Search returns no results | Try a different query, confirm the selected provider and media type are supported, and check provider access. |
 | Upload is rejected or attachment cannot be opened | Confirm both SQL files ran in the correct project, re-run the current `chat-schema.sql`, check the private bucket and its policies, and keep each file under 20 MiB. |
 | Camera or microphone does not start | Use HTTPS or localhost, grant the browser permission, and check that the device has an available camera/microphone. |

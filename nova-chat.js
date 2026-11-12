@@ -344,7 +344,7 @@
             <button class=media-menu-item data-media-action="camera">${ic('camera',18)}<span>Camera</span></button>
             <button class=media-menu-item data-media-action="audio">${ic('mic',18)}<span>Audio</span></button>
             <button class=media-menu-item data-media-action="contact">${ic('users',18)}<span>Contact</span></button>
-            <button class=media-menu-item data-media-provider="searxng"><i class="media-brand searxng-brand">S</i><span>SearXNG Images &amp; GIFs</span></button>
+            <button class=media-menu-item data-media-provider="duckduckgo"><i class="media-brand duckduckgo-brand">D</i><span>DuckDuckGo Images &amp; GIFs</span></button>
             <button class=media-menu-item data-media-provider="giphy"><i class="media-brand giphy-brand">GIF</i><span>GIPHY</span></button>
             <button class=media-menu-item data-media-provider="klipy"><i class="media-brand klipy-brand">K</i><span>KLIPY</span></button>
           </div>
@@ -675,7 +675,7 @@
     }
     const offset = append ? mediaSearchItems.length - items.length : 0;
     const markup = items.map((item, index) =>
-      `<button class=media-result data-media-result="${offset + index}" aria-label="Attach ${item.mediaKind === 'sticker' ? 'sticker' : 'GIF'}: ${esc(item.title)}"><img src="${esc(item.preview)}" alt="" loading=lazy></button>`
+      `<button class=media-result data-media-result="${offset + index}" aria-label="Attach ${item.mediaKind === 'sticker' ? 'sticker' : item.mediaKind === 'image' ? 'image' : 'GIF'}: ${esc(item.title)}"><img src="${esc(item.preview)}" alt="" loading=lazy></button>`
     ).join('');
     if (append) target.insertAdjacentHTML('beforeend', markup);
     else target.innerHTML = markup;
@@ -749,9 +749,9 @@
     document.getElementById('mediaContactPicker').hidden = true;
     const panel = document.getElementById('mediaProviderPanel');
     panel.hidden = false;
-    const title = ({ searxng: 'SearXNG', giphy: 'GIPHY', klipy: 'KLIPY' })[provider];
-    const searchLabel = provider === 'searxng' ? 'Search images and GIFs' : provider === 'giphy' ? 'Search GIPHY' : 'Search KLIPY';
-    const options = provider === 'searxng'
+    const title = ({ duckduckgo: 'DuckDuckGo', giphy: 'GIPHY', klipy: 'KLIPY' })[provider];
+    const searchLabel = provider === 'duckduckgo' ? 'Search images and GIFs' : provider === 'giphy' ? 'Search GIPHY' : 'Search KLIPY';
+    const options = provider === 'duckduckgo'
       ? `<div class=media-kind-toggle role=group aria-label="${title} search type"><button class="media-kind-option selected" aria-pressed=true data-media-kind="image">Image</button><button class=media-kind-option aria-pressed=false data-media-kind="gif">GIF</button></div>`
       : `<div class=media-kind-toggle role=group aria-label="${title} search type"><button class="media-kind-option selected" aria-pressed=true data-media-kind="all">All</button><button class=media-kind-option aria-pressed=false data-media-kind="gif">GIFs</button><button class=media-kind-option aria-pressed=false data-media-kind="sticker">Stickers</button></div>`;
     const search = `<label class=media-search-label><span>${ic('search',17)}</span><input id=mediaSearchInput type=search maxlength=160 placeholder="${searchLabel}" aria-label="${searchLabel}"></label>`;
@@ -763,7 +763,7 @@
       : '';
     panel.innerHTML = `<div class="media-provider-head"><button class=media-back data-media-back aria-label="Back to attachments">${ic('left',18)}</button><b>${title}</b><button class=media-close data-close-media aria-label="Close attachment picker">${ic('x',18)}</button></div>
       ${provider === 'klipy' ? '' : search}
-      ${provider === 'searxng' ? `<div class=media-provider-subhead><span>${title}</span>${options}</div>` : ''}
+      ${provider === 'duckduckgo' ? `<div class=media-provider-subhead><span>${title}</span>${options}</div>` : ''}
       ${suggestions}
       <div id=mediaSearchResults class=media-search-results aria-live=polite></div>
       ${provider === 'klipy' ? search : ''}
@@ -828,15 +828,19 @@
         target.querySelector('.media-loading-more')?.remove();
         renderMediaResults(newItems, append);
       }
-      if (!mediaSearchItems.length) target.innerHTML = '<p class=chat-hint>No results. Try another search.</p>';
-      if (mediaProvider === 'searxng' && mediaKindHasMore[mediaKind]) {
+      if (!mediaSearchItems.length) {
+        target.innerHTML = mediaProvider === 'duckduckgo' && mediaKind === 'gif'
+          ? '<p class=chat-hint>No direct GIF files found. Try another search.</p>'
+          : '<p class=chat-hint>No results. Try another search.</p>';
+      }
+      if (mediaProvider === 'duckduckgo' && mediaKindHasMore[mediaKind]) {
         target.insertAdjacentHTML('beforeend', '<button class=media-load-more data-media-load-more>Load more results</button>');
       }
     } catch (error) {
       if (sequence !== mediaSearchSequence || !target.isConnected) return;
       const [message, retryDelay] = await Promise.all([
         mediaSearchError(error),
-        mediaProvider === 'searxng' ? mediaRetryDelay(error) : 0
+        mediaProvider === 'duckduckgo' ? mediaRetryDelay(error) : 0
       ]);
       if (sequence !== mediaSearchSequence || !target.isConnected) return;
       mediaPageError = true;
@@ -847,7 +851,7 @@
       } else {
         target.innerHTML = errorMarkup;
       }
-      if (mediaProvider === 'searxng') renderMediaRetry(target, append, retryDelay);
+      if (mediaProvider === 'duckduckgo') renderMediaRetry(target, append, retryDelay);
     } finally {
       if (sequence === mediaSearchSequence) mediaLoadingMore = false;
     }
