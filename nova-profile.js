@@ -70,10 +70,14 @@ ${g.length ? `<div class=gg>${g.length<MAXG?`<label class="gt gadd" for=gf aria-
       : '';
     const media = room.media || {}, thumbnail = media.thumb || (media.kind === 'youtube' && media.id ? `https://i.ytimg.com/vi/${encodeURIComponent(media.id)}/mqdefault.jpg` : '');
     const members = (room.members || []).map(u => `<button class="public-room-avatar${u.is_admin ? ' admin' : ''}" data-go="user/${esc(u.id)}" aria-label="View ${esc(u.full_name || u.username || 'member')} profile" title="${esc(u.full_name || u.username || 'Member')}">${Nova.avatar(u, 32)}</button>`).join('');
-    return `<section class="card public-room-card"><div class="public-room-title"><span>Public room</span><b>${esc(room.title || 'Nova room')}</b></div>
-      <div class="public-room-media">${thumbnail ? `<img src="${esc(thumbnail)}" alt="" referrerpolicy="no-referrer">` : ''}<b>${esc(media.title || 'Watch together')}</b></div>
-      <div class="public-room-members">${members}<small>${Number(room.count) || 0} member${Number(room.count) === 1 ? '' : 's'}</small></div>
-      <a class="btn pri sm" href="nova-home.html#join/${encodeURIComponent(room.code)}">Join room</a></section>`;
+    const title = media.title || room.title || 'Watch together';
+    return `<section class="card public-room-card">
+      <a class="public-room-link" href="nova-home.html#join/${encodeURIComponent(room.code)}" aria-label="Join public room: ${esc(title)}"></a>
+      <div class="public-room-content">
+       <div class="public-room-media">${thumbnail ? `<img src="${esc(thumbnail)}" alt="" referrerpolicy="no-referrer">` : ''}<b>${esc(title)}</b></div>
+       <div class="public-room-members" aria-label="Room members"><div class="public-room-member-list">${members}</div></div>
+      </div>
+    </section>`;
   };
 
   /* ---------- OWN VIEWS ---------- */
@@ -279,6 +283,12 @@ ${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.
   /* ---------- reload helper + events ---------- */
   const reload = async () => { const id = PD ? PD.id : U.id; await fetchPD(id); route(); };
   document.addEventListener('click', async e => {
+    const roomCard = e.target.closest('.public-room-card');
+    if (roomCard && !e.target.closest('.public-room-avatar,.public-room-link')) {
+      const link = roomCard.querySelector('.public-room-link');
+      if (link) location.href = link.href;
+      return;
+    }
     const el = e.target.closest('[data-close],[data-act],[data-vis],[data-tab],[data-add],[data-acc],[data-dec],[data-clear],[data-lb],[data-profile-friend]'); if (!el) return; const d = el.dataset;
     if (d.profileFriend) { await profileFriendAction(el, d.profileFriend, d.userId); return; }
     if (d.close !== undefined) closeM();

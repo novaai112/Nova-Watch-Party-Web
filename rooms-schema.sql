@@ -558,7 +558,7 @@ begin
       ) order by ordered.joined_at), '[]'::jsonb)
       from (
         select user_id, joined_at from public.room_members
-        where room_id = r.id order by joined_at limit 8
+        where room_id = r.id order by joined_at
       ) ordered
       join public.public_profiles p on p.id = ordered.user_id
     )
