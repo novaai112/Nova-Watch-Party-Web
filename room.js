@@ -58,7 +58,7 @@ const MODES = [
 /* ---------- state ---------- */
 let ME = null, R = null, members = [], queue = [], msgs = [], prof = {}, ch = null;
 let skew = 0, hbT = null, tickT = null, homeT = null, homeRooms = [], mountKey = '', advAt = 0, endedAt = 0, pubT = 0, pubAt = 0;
-let homeLoaded = false, homeLoadError = '', homeErrorNotified = '';
+let homeLoaded = false, homeLoading = false, homeLoadError = '', homeErrorNotified = '';
 let roomSchemaWarned = false;
 let ui = { sheet: '', tab: 'members', promptDone: false, vol: +(localStorage.getItem('nova_vol') || 50), friends: [], first: true, events: [], nowKeys: {} };
 const micMap = new Map(), speak = new Map(), vad = new Map();
@@ -88,7 +88,13 @@ const oops = e => {
   const m = (e && e.message) || 'Something went wrong';
   toast(/schema cache|does not exist|Could not find the function/i.test(m) ? 'Run rooms-schema.sql in Supabase first.' : m, 'err');
 };
-async function rpc(n, a) { const r = await sb.rpc(n, a || {}); if (r.error) throw r.error; return r.data; }
+async function rpc(n, a, signal) {
+  let request = sb.rpc(n, a || {});
+  if (signal && typeof request.abortSignal === 'function') request = request.abortSignal(signal);
+  const r = await request;
+  if (r.error) throw r.error;
+  return r.data;
+}
 const fmt = s => { s = Math.max(0, Math.floor(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
 const thumb = m => !m ? '' : m.thumb || (m.id ? 'https://i.ytimg.com/vi/' + m.id + '/mqdefault.jpg' : '');
 const safeHttps = u => /^https:\/\/[^\s<>"']+$/.test(u || '');
@@ -365,7 +371,7 @@ async function mountMedia() {
       const proxy = new URL('/api/browse', location.href);
       proxy.searchParams.set('stream', '1');
       proxy.searchParams.set('url', m.url);
-      attachSrc(v, proxy.href, /\.m3u8(?:$|[?#])/i.test(m.url));
+      attachSrc(v, proxy.href, m.streamType === 'hls' || /\.m3u8(?:$|[?#])/i.test(m.url));
     } else attachSrc(v, m.url);
     P.kind = 'video'; P.video = v;
     ['play', 'pause', 'seeked'].forEach(ev => v.addEventListener(ev, () => { if (isAdmin() && Date.now() > P.mute) publish(!v.paused, v.currentTime); updateTimeUI(); }));
@@ -1210,26 +1216,46 @@ function renderHome() {
     } else if (homeLoadError) {
       b.innerHTML = 'Could not load rooms. <button type="button" data-home-retry>Try again</button>';
       b.setAttribute('role', 'alert');
+    } else {
+      b.textContent = l === 'invE' ? 'No invited rooms right now.' : 'No public rooms right now.';
+      b.removeAttribute('aria-live');
+      b.removeAttribute('role');
     }
   };
   set('invL', 'invE', inv); set('pubL', 'pubE', pub);
 }
 async function loadHome() {
-  if (R) return;
+  if (R || homeLoading) return;
+  homeLoading = true;
   if (!homeLoaded) renderHome();
-  if (!await auth()) { homeRooms = []; homeLoadError = 'Sign in to load rooms.'; homeLoaded = true; renderHome(); return; }
   try {
+    if (!await auth()) {
+      homeRooms = [];
+      homeLoadError = 'Sign in to load rooms.';
+      return;
+    }
     const pos = JSON.parse(sessionStorage.getItem('nova_pos') || 'null');
-    homeRooms = await rpc('list_rooms', { p_lat: pos ? pos.lat : null, p_lng: pos ? pos.lng : null }) || [];
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      homeRooms = await rpc('list_rooms', { p_lat: pos ? pos.lat : null, p_lng: pos ? pos.lng : null }, controller.signal) || [];
+    } catch (e) {
+      if (controller.signal.aborted) throw new Error('Loading rooms timed out. Check your connection and try again.');
+      throw e;
+    } finally {
+      clearTimeout(timeout);
+    }
     homeLoadError = '';
     homeErrorNotified = '';
   } catch (e) {
     homeRooms = [];
     homeLoadError = e && e.message || 'Could not load rooms.';
     if (homeErrorNotified !== homeLoadError) { oops(e); homeErrorNotified = homeLoadError; }
+  } finally {
+    homeLoaded = true;
+    homeLoading = false;
+    renderHome();
   }
-  homeLoaded = true;
-  renderHome();
 }
 async function joinByCode(code) {
   if (!await auth()) { try { sessionStorage.setItem('nova_join', code); } catch (e) {} location.href = 'index.html'; return; }

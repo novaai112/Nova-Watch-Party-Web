@@ -500,15 +500,34 @@
     });
 
     window.addEventListener('message', (event) => {
+      if (event.source !== iframe.contentWindow) return;
       const data = event.data;
       if (!data || typeof data !== 'object') return;
 
       if (data.type === 'NOVA_WEB_NAVIGATE' && data.url) {
+        try {
+          if (!['http:', 'https:'].includes(new URL(data.url).protocol)) return;
+        } catch (error) {
+          return;
+        }
         const browseSrc = `/api/browse?url=${encodeURIComponent(data.url)}`;
         pushWebHistory(browseSrc);
       }
 
+      if (data.type === 'NOVA_WEB_VIDEO_DETECTED') {
+        showStatusCard('Video found. Tap Play on the page to add it to your room.');
+      }
+
+      if (data.type === 'NOVA_WEB_VIDEO_UNSUPPORTED') {
+        showStatusCard('This video format cannot be synced. Use a direct MP4, WebM, Ogg, or HLS stream, or an official player embed.');
+      }
+
       if (data.type === 'NOVA_WEB_VIDEO_PROMPT' && data.streamUrl) {
+        try {
+          if (new URL(data.streamUrl).protocol !== 'https:') return;
+        } catch (error) {
+          return;
+        }
         promptPlayWebVideo({
           title: data.title || 'Web Video',
           streamUrl: data.streamUrl,
@@ -767,13 +786,17 @@
       if (streamUrl.protocol !== 'https:') {
         throw new Error('Only secure HTTPS video streams can be added to a room.');
       }
+      if (media.streamType === 'dash') {
+        throw new Error('DASH streams are not supported for synchronized playback yet.');
+      }
 
       roomMedia = {
         kind: 'video',
         title: media.title || 'Web Video',
         provider: 'web',
         url: streamUrl.href,
-        thumb: media.thumbnail || ''
+        thumb: media.thumbnail || '',
+        streamType: media.streamType || 'auto'
       };
     }
 
