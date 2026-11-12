@@ -7,6 +7,7 @@
 <script src="theme.js"></script>
 <script src="translator.js"></script>
 <title>Login</title>
+<link rel="icon" href="7949.jpg" type="image/jpeg">
 <link rel="preload" as="script" crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -493,7 +494,9 @@ html,body,*{scrollbar-width:none;-ms-overflow-style:none}
 
   /* ---------- after login: straight into Nova home (no "signed in" page) ---------- */
   function goHome() {
-    location.replace("nova-home.html");
+    const next = new URLSearchParams(location.search).get("next") || "";
+    const destination = /^(?:nova-home|profile)\.html(?:#[-\w./]+)?$/.test(next) ? next : "nova-home.html";
+    location.replace(destination);
   }
 
   /* ---------- auth state ---------- */

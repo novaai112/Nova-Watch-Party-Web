@@ -1,5 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Nova — My Account</title>
+<link rel="icon" href="7949.jpg" type="image/jpeg"><link rel="stylesheet" href="auth.css">
 <meta name="theme-color" content="#f4f4f2">
 <script src="theme.js"></script>
 <script src="translator.js"></script>
@@ -351,7 +352,7 @@ body.message-page-active.people-experience-active .people-list{grid-column:2;gri
 .public-room-unavailable{display:flex;flex-direction:column;gap:3px}
 .public-room-unavailable small{color:var(--mu)}
 @media(max-width:600px){.public-room-card{padding:10px 12px}.public-room-content{gap:10px}.public-room-media img{width:64px;height:42px}.public-room-media b{font-size:11px}.public-room-members{max-width:45%}.public-room-member-list{gap:4px}}
-</style></head><body><div id="app"></div>
+</style></head><body><div id="nova-auth-check" role="status" aria-live="polite"><div class="auth-card"><span class="auth-spinner" aria-hidden="true"></span><span>Checking your sign-in…</span></div></div><div id="app"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script><script src="/api/config"></script><script src="nova-core.js"></script>
 <script>
@@ -600,12 +601,11 @@ DESK.addEventListener?DESK.addEventListener('change',()=>route()):DESK.addListen
 sb.auth.onAuthStateChange(ev=>{if(ev==='SIGNED_OUT')location.href='index.html'});
 /* boot only after nova-profile.js has registered its views (it loads right after this script) */
 const boot=async()=>{app.innerHTML=skel();
- const {data}=await sb.auth.getSession();if(!data.session)return location.href='index.html'
- U=data.session.user;await Nova.sync(U.id);
+ U=await Nova.requireAuth();if(!U)return;await Nova.sync(U.id);
  try{await loadP()}catch(er){app.innerHTML='<div class="card pad"><p>We could not load your profile. Check your connection and try again.</p><button class="btn pri" onclick="location.reload()">Try again</button></div>';return}
  route()};
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',boot):boot();
-</script><script src="nova-profile.js"></script><script src="nova-chat.js"></script>
+</script><script src="nova-profile.js"></script><script src="nova-chat.js"></script><script src="mobile-navigation.js"></script>
 <input type="file" id="avf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" hidden>
 <input type="file" id="gf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" multiple hidden>
 </body></html>

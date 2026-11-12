@@ -58,6 +58,7 @@ const MODES = [
 /* ---------- state ---------- */
 let ME = null, R = null, members = [], queue = [], msgs = [], prof = {}, ch = null;
 let skew = 0, hbT = null, tickT = null, homeT = null, homeRooms = [], mountKey = '', advAt = 0, endedAt = 0, pubT = 0, pubAt = 0;
+let homeLoaded = false, homeLoadError = '', homeErrorNotified = '';
 let roomSchemaWarned = false;
 let ui = { sheet: '', tab: 'members', promptDone: false, vol: +(localStorage.getItem('nova_vol') || 50), friends: [], first: true, events: [], nowKeys: {} };
 const micMap = new Map(), speak = new Map(), vad = new Map();
@@ -667,7 +668,6 @@ function buildShell() {
     <section class="vcol">
       <div class="vwrap" id="vwrap"></div>
       <div class="ctl" id="ctl"></div>
-      <div class="np" id="np"></div>
     </section>
     <section class="scol">
       <div class="vbar" id="vbar" hidden></div>
@@ -757,11 +757,14 @@ function renderVoice() {
   if (ui.sheet === 'people') openPeople(true);
 }
 function renderNow() {
-  const el = $('#np'); if (!el) return;
-  const m = R.media;
-  if (!m) { el.innerHTML = ''; return; }
-  const liked = m.kind === 'youtube' && window.NovaApp && NovaApp.isLiked(likeItem(m));
-  el.innerHTML = `${thumb(m) ? `<img src="${esc(thumb(m))}" alt="">` : ''}<div>Now playing <b>${esc(m.title || 'Video')}</b></div>${m.kind === 'youtube' ? `<button class="cb${liked ? ' on' : ''}" data-r="like" aria-label="Like">${ic('heart', 20).replace('fill="none"', liked ? 'fill="currentColor"' : 'fill="none"')}</button>` : ''}`;
+  $$('#feed [data-event-index]').forEach(button => {
+    const event = ui.events[Number(button.dataset.eventIndex)];
+    if (!event || !event.media || event.media.kind !== 'youtube' || !window.NovaApp) return;
+    const liked = NovaApp.isLiked(likeItem(event.media));
+    button.classList.toggle('on', liked);
+    button.setAttribute('aria-label', liked ? 'Unlike video' : 'Like video');
+    button.innerHTML = ic('heart', 18).replace('fill="none"', liked ? 'fill="currentColor"' : 'fill="none"');
+  });
 }
 const likeItem = m => ({ t: m.title, id: m.id, pl: m.pl, d: '', a: '#222', b: '#444', x: '', th: m.thumb || thumb(m) });
 
@@ -834,12 +837,14 @@ function noteNow(m) {
   const key = [m.kind, m.id || '', m.pl || '', m.url || '', R.media_ver || ''].join('|');
   if (ui.nowKeys[key]) return;
   ui.nowKeys[key] = 1;
-  ui.events.push({ t: snow(), title: m.title || 'Video', th: thumb(m), kind: m.kind });
+  ui.events.push({ t: snow(), title: m.title || 'Video', th: thumb(m), kind: m.kind, media: Object.assign({}, m) });
   if (ui.events.length > 40) ui.events.shift();
   renderFeed();
 }
-function nowHTML(e) {
-  return `<div class="nowm"><div class="nowc">${e.th ? `<img src="${esc(e.th)}" alt="" referrerpolicy="no-referrer">` : `<span class="nowi">${ic('play', 14)}</span>`}<span class="nowt"><small>Now playing</small><b>${esc(e.title)}</b></span></div></div>`;
+function nowHTML(e, index) {
+  const media = e.media || {};
+  const liked = media.kind === 'youtube' && window.NovaApp && NovaApp.isLiked(likeItem(media));
+  return `<div class="nowm"><div class="nowc">${e.th ? `<img src="${esc(e.th)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : `<span class="nowi">${ic('play', 14)}</span>`}<span class="nowt"><small>Now playing</small><b>${esc(e.title)}</b></span>${media.kind === 'youtube' ? `<button class="cb${liked ? ' on' : ''}" data-r="like" data-event-index="${index}" aria-label="${liked ? 'Unlike video' : 'Like video'}">${ic('heart', 18).replace('fill="none"', liked ? 'fill="currentColor"' : 'fill="none"')}</button>` : ''}</div></div>`;
 }
 function cardsHTML() {
   /* only the one-time "who can join?" question for a new room's admin — invite link & share apps were removed */
@@ -850,7 +855,7 @@ function renderFeed() {
   const f = $('#feed'); if (!f || !R) return;
   const near = f.scrollHeight - f.scrollTop - f.clientHeight < 90;
   const items = msgs.map(m => ({ t: Date.parse(m.created_at) || 0, h: msgHTML(m), sys: m.kind === 'system' }))
-    .concat(ui.events.map(e => ({ t: e.t, h: nowHTML(e), sys: false })));
+    .concat(ui.events.map((e, i) => ({ t: e.t, h: nowHTML(e, i), sys: false })));
   items.sort((a, b) => a.t - b.t);
   let h = '', done = false;
   items.forEach(i => { h += i.h; if (!done && i.sys) { done = true; h += cardsHTML(); } });
@@ -1075,7 +1080,14 @@ function onClick(e) {
     if (!queue.length) return toast('Nothing in Up next');
     rpc('room_advance', { p_room: R.id }).catch(oops);
   }
-  else if (r === 'like') { if (R.media && window.NovaApp) { NovaApp.toggleLike(likeItem(R.media)); renderNow(); } }
+  else if (r === 'like') {
+    const event = d.eventIndex == null ? null : ui.events[Number(d.eventIndex)];
+    const media = event ? event.media : R.media;
+    if (media && media.kind === 'youtube' && window.NovaApp) {
+      NovaApp.toggleLike(likeItem(media));
+      renderNow();
+    }
+  }
   else if (r === 'vote') rpc('room_vote', { p_queue_id: d.id }).then(refreshQueue).catch(oops);
   else if (r === 'playq') rpc('room_advance', { p_room: R.id, p_queue_id: d.id }).then(() => closeSheet()).catch(oops);
   else if (r === 'rmq') rpc('room_queue_remove', { p_queue_id: d.id }).then(refreshQueue).catch(oops);
@@ -1178,7 +1190,7 @@ function card(r) {
   const av = (r.members || []).slice(0, 4).map(u => userAvatar(u, 30, false, u.id === r.admin_id)).join('');
   const more = Math.max(0, (r.count || 0) - 4);
   return `<div class="room${r.invited ? ' inv' : ''}" role="button" tabindex="0" data-code="${esc(r.code)}">
-    <div class="cover">${thumb(m) ? `<img src="${esc(thumb(m))}" alt="">` : ''}<span class="pv">${ic(pv, 16)}</span></div>
+    <div class="cover">${thumb(m) ? `<img src="${esc(thumb(m))}" alt="" loading="lazy" decoding="async">` : ''}<span class="pv">${ic(pv, 16)}</span></div>
     <div class="info"><b>${esc((m && m.title) || r.title)}</b><div class="avs">${av}${more ? `<em>+${more}</em>` : ''}</div></div>
     ${pct ? `<i class="prog" style="width:${pct * .62}%"></i>` : ''}</div>`;
 }
@@ -1186,16 +1198,37 @@ function renderHome() {
   const q = ($('#hs') ? $('#hs').value : '').trim().toLowerCase();
   const rooms = homeRooms.filter(r => !r.mine && (!q || ((r.media && r.media.title) || r.title || '').toLowerCase().includes(q)));
   const inv = rooms.filter(r => r.invited), pub = rooms.filter(r => !r.invited);
-  const set = (l, e, list) => { const a = $('#' + l), b = $('#' + e); if (a) a.innerHTML = list.map(card).join(''); if (b) b.hidden = list.length > 0; };
+  const set = (l, e, list) => {
+    const a = $('#' + l), b = $('#' + e);
+    if (a) a.innerHTML = list.map(card).join('');
+    if (!b) return;
+    b.hidden = list.length > 0;
+    if (list.length) return;
+    if (!homeLoaded) {
+      b.innerHTML = '<i class="spin" aria-hidden="true"></i> Loading rooms…';
+      b.setAttribute('aria-live', 'polite');
+    } else if (homeLoadError) {
+      b.innerHTML = 'Could not load rooms. <button type="button" data-home-retry>Try again</button>';
+      b.setAttribute('role', 'alert');
+    }
+  };
   set('invL', 'invE', inv); set('pubL', 'pubE', pub);
 }
 async function loadHome() {
   if (R) return;
-  if (!await auth()) { homeRooms = []; renderHome(); return; }
+  if (!homeLoaded) renderHome();
+  if (!await auth()) { homeRooms = []; homeLoadError = 'Sign in to load rooms.'; homeLoaded = true; renderHome(); return; }
   try {
     const pos = JSON.parse(sessionStorage.getItem('nova_pos') || 'null');
     homeRooms = await rpc('list_rooms', { p_lat: pos ? pos.lat : null, p_lng: pos ? pos.lng : null }) || [];
-  } catch (e) { homeRooms = []; }
+    homeLoadError = '';
+    homeErrorNotified = '';
+  } catch (e) {
+    homeRooms = [];
+    homeLoadError = e && e.message || 'Could not load rooms.';
+    if (homeErrorNotified !== homeLoadError) { oops(e); homeErrorNotified = homeLoadError; }
+  }
+  homeLoaded = true;
   renderHome();
 }
 async function joinByCode(code) {
@@ -1209,6 +1242,7 @@ function hashJoin() {
   return false;
 }
 document.addEventListener('click', e => {
+  if (e.target.closest('[data-home-retry]')) { loadHome(); return; }
   const avatar = e.target.closest('.uav[data-user-id]');
   if (avatar) {
     e.preventDefault();
@@ -1224,6 +1258,11 @@ window.addEventListener('hashchange', hashJoin);
 
 async function boot() {
   const u = await auth();
+  if (!u) {
+    const next = location.pathname.split('/').pop() + location.search + location.hash;
+    location.replace('index.html?next=' + encodeURIComponent(next));
+    return;
+  }
   let code = null;
   try { code = sessionStorage.getItem('nova_join'); if (code) sessionStorage.removeItem('nova_join'); } catch (e) {}
   if (u) {

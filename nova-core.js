@@ -54,6 +54,44 @@
   const LANGS = window.NovaTranslate ? window.NovaTranslate.LANGUAGES : { en:'English', hi:'हिन्दी', es:'Español' };
   const Nova = {
     sb: window.supabase.createClient(url, key), S: load(), T, LANGS,
+    async requireAuth() {
+      let splash = document.getElementById('nova-auth-check');
+      if (!splash) {
+        splash = document.createElement('div');
+        splash.id = 'nova-auth-check';
+        splash.setAttribute('role', 'status');
+        splash.setAttribute('aria-live', 'polite');
+        document.body.appendChild(splash);
+      }
+      const showError = error => {
+        splash.innerHTML = '<div class="auth-card" role="alert"><b>Could not verify your sign-in</b><span class="auth-error"></span><button type="button">Try again</button></div>';
+        splash.querySelector('.auth-error').textContent = error && error.message || 'Check your connection and try again.';
+        splash.querySelector('button').addEventListener('click', () => Nova.requireAuth());
+        splash.hidden = false;
+      };
+      splash.hidden = false;
+      splash.innerHTML = '<div class="auth-card"><span class="auth-spinner" aria-hidden="true"></span><span>Checking your sign-in…</span></div>';
+      try {
+        const { data, error } = await Nova.sb.auth.getSession();
+        if (error) throw error;
+        if (!data.session) {
+          const next = location.pathname.split('/').pop() + location.search + location.hash;
+          location.replace('index.html?next=' + encodeURIComponent(next));
+          return null;
+        }
+        splash.remove();
+        if (!Nova._authGuardActive) {
+          Nova._authGuardActive = true;
+          Nova.sb.auth.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_OUT' || !session && event === 'TOKEN_REFRESHED') location.replace('index.html');
+          });
+        }
+        return data.session.user;
+      } catch (error) {
+        showError(error);
+        return null;
+      }
+    },
     t(k) { return T.en[k] || k; },
     async set(k, v) {
       Nova.S[k] = v; localStorage.setItem('nova_settings', JSON.stringify(Nova.S));

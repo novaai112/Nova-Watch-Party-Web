@@ -68,11 +68,6 @@ body.inroom{overflow:hidden}
 #rm .cb{min-width:38px;height:38px;border-radius:12px;border:1px solid var(--line);background:#ffffffd9;display:grid;place-items:center;font-size:13px;font-weight:700}
 #rm .cb.on{color:#e0245e}
 #rm .cb:disabled{opacity:.4}
-#rm .np{display:flex;align-items:center;gap:10px;padding:2px clamp(8px,3vw,28px) 8px;min-height:20px}
-#rm .np img{width:48px;height:30px;object-fit:cover;border-radius:7px;background:#0002}
-#rm .np div{flex:1;min-width:0;font-size:13px;color:var(--mut);display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
-#rm .np div b{color:var(--ink);font-weight:600}
-
 /* ----- chat column ----- */
 #rm .scol{flex:1;min-height:0;display:flex;flex-direction:column;background:#ffffffb8;border-top:1px solid var(--line);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 
@@ -103,6 +98,7 @@ body.inroom{overflow:hidden}
 #rm .nowt{display:flex;flex-direction:column;min-width:0;text-align:left}
 #rm .nowt small{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
 #rm .nowt b{font-size:13px;font-weight:600;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#rm .nowc .cb{flex:none;width:36px;min-width:36px;height:36px;border-radius:50%}
 #rm .cm{display:flex;gap:8px;margin:7px 0;align-items:flex-end}
 #rm .cm.me{flex-direction:row-reverse}
 #rm .cb2{min-width:0;max-width:78%}

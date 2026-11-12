@@ -1,0 +1,52 @@
+#nova-auth-check {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #f8fbff;
+  color: #0f172a;
+  font: 600 15px/1.5 system-ui, sans-serif;
+}
+#nova-auth-check[hidden] { display: none; }
+#nova-auth-check .auth-card {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  width: min(100%, 380px);
+  padding: 28px;
+  border: 1px solid #d8e4ef;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 12px 40px #173b5b18;
+  text-align: center;
+}
+#nova-auth-check .auth-spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid #2563eb30;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: nova-auth-spin .75s linear infinite;
+}
+#nova-auth-check .auth-error { color: #b42318; font-weight: 500; }
+#nova-auth-check button,
+#nova-auth-check a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #fff;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+@keyframes nova-auth-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  #nova-auth-check .auth-spinner { animation-duration: 2s; }
+}

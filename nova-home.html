@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <title>Nova</title>
+<link rel="icon" href="7949.jpg" type="image/jpeg">
+<link rel="stylesheet" href="auth.css">
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{--tx:#000;--mu:#000;--card:#ffffffd9;--line:#d8e4ef;--ac:#000;color-scheme:light}
@@ -38,6 +40,7 @@ input::placeholder{color:#000;opacity:.55}
 .sec h2{display:flex;align-items:center;gap:8px;font-size:20px;font-weight:600;margin:10px 0 10px;color:var(--tx)}
 .rooms{display:grid;gap:10px}
 .empty{margin:0 0 18px;padding:18px 14px;border:1px dashed var(--line);border-radius:16px;background:var(--card);color:var(--tx);font-size:15px;font-weight:600;text-align:center}
+.empty button{color:#2563eb;text-decoration:underline;text-underline-offset:3px;font:inherit;border:0;background:transparent;cursor:pointer}
 .room{display:grid;grid-template-columns:38% 1fr;min-height:86px;overflow:hidden;border:1px solid var(--line);border-radius:16px;background:var(--card);box-shadow:0 6px 20px #173b5b12;color:var(--tx)}
 .room .cover{position:relative;background:linear-gradient(135deg,#bcd3ee,#bfeadf)}
 .room .cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
@@ -132,6 +135,9 @@ input::placeholder{color:#000;opacity:.55}
 <link rel="stylesheet" href="room.css">
 </head>
 <body>
+<div id="nova-auth-check" role="status" aria-live="polite">
+  <div class="auth-card"><span class="auth-spinner" aria-hidden="true"></span><span>Checking your sign-in…</span></div>
+</div>
 <div class="wrap">
 
 <!-- ================= HOME ================= -->
@@ -201,6 +207,7 @@ input::placeholder{color:#000;opacity:.55}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script><script src="/api/config"></script>
 <script src="nova-core.js"></script>
+<script>Nova.requireAuth();</script>
 <script src="nova-add.js"></script>
 <script>
 /* official platform icons (embedded, so this is the only file you need) */
@@ -272,7 +279,7 @@ function render(){
 document.getElementById('hs').addEventListener('input',render);render();
 
 /* header buttons: set your real pages */
-document.getElementById('gear').onclick=function(){location.href='profile.html'};
+document.getElementById('gear').onclick=function(){location.href='profile.html#settings'};
 document.getElementById('ppl').onclick=function(){location.href='profile.html#friends'};
 
 /* ================= PLATFORM SCREENS ================= */
@@ -490,5 +497,6 @@ if(/^#p-(\w+)/.test(location.hash)){var m0=/^#p-(\w+)/.exec(location.hash);if(S[
 })();
 </script>
 <script src="room.js"></script>
+<script src="mobile-navigation.js"></script>
 </body>
 </html>

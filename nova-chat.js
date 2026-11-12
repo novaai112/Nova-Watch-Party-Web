@@ -82,7 +82,8 @@
     return `<div class=people-side-rail>${back}<nav class=people-bottom-nav aria-label="People">${tabs.map(([key,icon,label]) => `<button class="${peopleTab===key?'on':''}" data-people-tab="${key}" aria-current="${peopleTab===key?'page':'false'}">${ic(icon,24)}<span>${label}</span>${key==='requests'&&REQ.length?`<i>${REQ.length}</i>`:''}</button>`).join('')}</nav></div>`;
   }
 
-  V.friends = () => {
+  V.friends = requestedTab => {
+    if (['friends', 'recents', 'requests', 'blocked'].includes(requestedTab)) peopleTab = requestedTab;
     setTimeout(() => { bindRealtime(); loadPeople(); }, 0);
     return shell('friends', `<section class="people-page">
         ${peopleTabs()}
