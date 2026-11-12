@@ -24,6 +24,7 @@ loadEnvFile(path.join(__dirname, '.env.local'));
 loadEnvFile(path.join(__dirname, '.env'));
 
 const websearchHandler = require('./api/websearch');
+const chatMediaSearchHandler = require('./api/chat-media-search');
 const browseHandler = require('./api/browse');
 const extractHandler = require('./api/extract');
 const configHandler = require('./api/config');
@@ -53,6 +54,7 @@ const server = http.createServer(async (req, res) => {
     const pathname = parsedUrl.pathname;
 
     if (pathname === '/api/websearch') return await websearchHandler(req, res);
+    if (pathname === '/api/chat-media-search') return await chatMediaSearchHandler(req, res);
     if (pathname === '/api/browse') return await browseHandler(req, res);
     if (pathname === '/api/extract') return await extractHandler(req, res);
     if (pathname === '/api/config') return configHandler(req, res);

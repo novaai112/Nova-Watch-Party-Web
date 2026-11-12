@@ -62,12 +62,19 @@ Deno.serve(async (request: Request) => {
     return reply(400, { error: "Search request must be valid JSON." });
   }
 
-  const provider = typeof input.provider === "string" ? input.provider : "";
+  const provider = typeof input.provider === "string" ? input.provider.trim().toLowerCase() : "";
   const query = typeof input.query === "string" ? input.query.trim().slice(0, 100) : "";
   const kind = typeof input.kind === "string" ? input.kind : "gif";
   const maxPage = provider === "duckduckgo" ? 20 : 208;
   const page = typeof input.page === "number" && Number.isInteger(input.page) ? Math.max(0, Math.min(input.page, maxPage)) : 0;
-  if (!["duckduckgo", "giphy", "klipy"].includes(provider)) return reply(400, { error: "Unsupported media provider." });
+  if (!["duckduckgo", "giphy", "klipy"].includes(provider)) {
+    return reply(400, {
+      error: "Unsupported media provider.",
+      code: "unsupported_media_provider",
+      provider,
+      supportedProviders: ["duckduckgo", "giphy", "klipy"],
+    });
+  }
   if (!["image", "gif", "sticker"].includes(kind)) {
     return reply(400, { error: "Unsupported media type for this provider." });
   }

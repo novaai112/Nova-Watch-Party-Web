@@ -685,10 +685,16 @@
     const response = error?.context;
     if (response instanceof Response) {
       if (response.status === 404) {
-        return 'The chat-media-search Edge Function is not deployed to this Supabase project (or the configured project URL is wrong). Deploy it with: supabase functions deploy chat-media-search';
+        if (new URL(response.url).pathname === '/api/chat-media-search') {
+          return 'The DuckDuckGo media route is not deployed on this website. Deploy the latest site files and try again.';
+        }
+        return "The chat-media-search Edge Function is not deployed to the Supabase project in this site's SUPABASE_URL setting (or the URL is wrong). Deploy the function to that project.";
       }
       try {
         const body = await response.clone().json();
+        if (body?.code === 'unsupported_media_provider' || body?.error === 'Unsupported media provider.') {
+          return "This Supabase Edge Function is outdated or belongs to a different project. Deploy the latest chat-media-search function to the Supabase project in this site's SUPABASE_URL setting, then refresh this page.";
+        }
         if (typeof body?.error === 'string') return body.error;
       } catch {
         if (response.status) return `Media search failed (HTTP ${response.status}).`;
@@ -801,10 +807,29 @@
     try {
       const kinds = append ? selectedKinds.filter(kind => mediaKindHasMore[kind]) : selectedKinds;
       const responses = await Promise.all(kinds.map(async kind => {
-        const { data, error } = await sb.functions.invoke('chat-media-search', {
-          body: { provider: mediaProvider, query: trimmedQuery, kind, page: mediaKindPages[kind] || 0 }
-        });
-        if (error) throw error;
+        const body = { provider: mediaProvider, query: trimmedQuery, kind, page: mediaKindPages[kind] || 0 };
+        let data;
+        if (mediaProvider === 'duckduckgo') {
+          const { data: sessionData, error: sessionError } = await sb.auth.getSession();
+          if (sessionError) throw sessionError;
+          const accessToken = sessionData?.session?.access_token;
+          if (!accessToken) throw new Error('Your session expired. Sign in again.');
+          const response = await fetch('/api/chat-media-search', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+          data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            const searchError = new Error(data?.error || `Media search failed (HTTP ${response.status}).`);
+            searchError.context = response;
+            throw searchError;
+          }
+        } else {
+          const response = await sb.functions.invoke('chat-media-search', { body });
+          if (response.error) throw response.error;
+          data = response.data;
+        }
         return { kind, hasMore: data?.hasMore === true, items: (data?.results || []).map(item => ({ ...item, mediaKind: kind })) };
       }));
       if (sequence !== mediaSearchSequence || !target.isConnected) return;

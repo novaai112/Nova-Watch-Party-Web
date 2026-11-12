@@ -22,8 +22,9 @@ DuckDuckGo, GIPHY, or KLIPY configuration.
 ## Prerequisites
 
 - Access to the Supabase project used by this site. Its project reference must
-  match the host in `config.js` (`viwsrmjiavfdrrfnhoog` in the current
-  workspace).
+  match the hostname in the `SUPABASE_URL` environment variable used by the
+  deployed site. `config.js` contains app branding and does not select the
+  Supabase project.
 - A Supabase account with permission to run SQL, deploy Edge Functions, and
   manage Edge Function secrets.
 - The Supabase CLI and the project files in this folder.
@@ -48,28 +49,31 @@ attachments are stored in the private bucket. The app creates signed download
 links that expire after one hour. Re-running the SQL is important if your
 existing bucket predates the current accepted file types.
 
-## 2. Deploy the media-search Edge Function
+## 2. Deploy the GIPHY/KLIPY media-search Edge Function
 
-The browser calls the `chat-media-search` function in the Supabase project
-configured by the website. A function 404 means it is missing from that
-project, or the website points to a different project. The configured endpoint
-previously returned `Requested function was not found`, so deployment is
-required before provider searches can work.
+GIPHY and KLIPY chat searches call the `chat-media-search` function in the
+Supabase project configured by the website. A function 404 means it is missing
+from that project, or the website points to a different project.
+DuckDuckGo chat searches use the authenticated `/api/chat-media-search` route
+and the laptop DDG bridge described in the README; they do not call this Edge
+Function.
 
 From PowerShell, in this project folder:
 
 ```powershell
 npx supabase login
 npx supabase init
-npx supabase link --project-ref viwsrmjiavfdrrfnhoog
-npx supabase functions deploy chat-media-search --project-ref viwsrmjiavfdrrfnhoog
+$projectRef = "replace-with-the-project-ref-from-SUPABASE_URL"
+npx supabase link --project-ref $projectRef
+npx supabase functions deploy chat-media-search --project-ref $projectRef
 ```
 
 `supabase init` is needed only if this folder does not already have
 `supabase\config.toml`. If it already exists, do not initialize again. Follow
 the CLI prompts and authenticate with an account that can deploy to this
-project. Check that the project reference is the one used in `config.js`; do
-not deploy to a different project by accident.
+project. Get the project ref from the subdomain of the site's `SUPABASE_URL`
+environment variable (in Vercel for production, or `.env` for local
+development). Do not use the project ref from a different environment.
 
 After deployment, the function should be available at:
 
@@ -91,9 +95,13 @@ In the Supabase Dashboard for the same project, open **Edge Functions** →
 | GIPHY GIFs and stickers | `GIPHY_API_KEY` | Create an API key in the GIPHY developer portal |
 | KLIPY GIFs and stickers | `KLIPY_API_KEY` | Create an API key with access to the KLIPY search API |
 
-DuckDuckGo image search requires no API key, but uses an undocumented endpoint
-that may challenge or rate-limit requests. Nova does not bypass those checks.
-GIF mode only accepts direct `.gif` media URLs, so GIF results are best-effort.
+DuckDuckGo chat image/GIF search requires no API key. In local development its
+requests run from the laptop; production sends them through the same
+token-protected laptop/ngrok bridge as web search. The bridge uses DDG's
+undocumented image endpoint, which may still challenge or rate-limit requests;
+Nova does not bypass those checks. GIF mode only accepts direct `.gif` media
+URLs, so GIF results are best-effort. Follow the README's DDG bridge setup and
+keep the local service and tunnel online for production chat searches.
 GIPHY and KLIPY require provider API keys; follow their current account, quota,
 and attribution requirements. Do not paste secret values into this guide,
 source code, browser developer tools, or public issue reports.
@@ -107,15 +115,15 @@ Set only the optional GIPHY/KLIPY provider keys you use, using the Dashboard or
 CLI. Replace placeholders locally:
 
 ```powershell
-npx supabase secrets set GIPHY_API_KEY="<your-new-key>" --project-ref viwsrmjiavfdrrfnhoog
-npx supabase secrets set KLIPY_API_KEY="<your-key>" --project-ref viwsrmjiavfdrrfnhoog
+npx supabase secrets set GIPHY_API_KEY="<your-new-key>" --project-ref $projectRef
+npx supabase secrets set KLIPY_API_KEY="<your-key>" --project-ref $projectRef
 ```
 
 Run only the command(s) for providers you use. Never send key values in chat.
 Remove old Google/Yandex media-search secrets from Supabase if you added them:
 
 ```powershell
-npx supabase secrets unset GOOGLE_CSE_API_KEY GOOGLE_CSE_ID YANDEX_SEARCH_API_KEY YANDEX_SEARCH_FOLDER_ID --project-ref viwsrmjiavfdrrfnhoog
+npx supabase secrets unset GOOGLE_CSE_API_KEY GOOGLE_CSE_ID YANDEX_SEARCH_API_KEY YANDEX_SEARCH_FOLDER_ID --project-ref $projectRef
 ```
 
 ### Credential safety
@@ -134,15 +142,16 @@ for your deployment workflow. The site has no frontend build step.
 
 For production, serve the site over HTTPS. Configure the Supabase project's
 **Authentication → URL Configuration** with the production site URL and
-redirect URL patterns. Ensure the `SUPABASE_URL` and public anon key in
-`config.js` belong to this same project. The anon key is designed for browser
-use with Supabase RLS; service-role keys and provider API keys are not.
+redirect URL patterns. Ensure the `SUPABASE_URL` and `SUPABASE_ANON_KEY`
+environment variables used by the site belong to this same project. `/api/config`
+serves these values to the browser. The anon key is designed for browser use
+with Supabase RLS; service-role keys and provider API keys are not.
 
 The media Edge Function is deployed to Supabase separately from the static
 website. Redeploy it after changing its source:
 
 ```powershell
-npx supabase functions deploy chat-media-search --project-ref viwsrmjiavfdrrfnhoog
+npx supabase functions deploy chat-media-search --project-ref $projectRef
 ```
 
 ## 5. Test the complete flow
@@ -164,10 +173,10 @@ Use two signed-in accounts and ensure they are accepted friends.
 7. Test voice recording with microphone permission: record, pause/resume, finish,
    play the preview, remove it, and record again. Voice notes are limited to
    three minutes and 20 MiB and are not sent until the user presses Send.
-8. Search for images and GIFs with DuckDuckGo. Search, select, send, and confirm
-   the recipient can view the item. If the GIF search has no direct `.gif`
-   results, try another query; DuckDuckGo may also challenge or rate-limit the
-   Edge Function.
+8. Start the local DDG bridge and ngrok tunnel for production, then search for
+   images and GIFs with DuckDuckGo. Search, select, send, and confirm the
+   recipient can view the item. If the GIF search has no direct `.gif` results,
+   try another query; DuckDuckGo may challenge or rate-limit the request.
 9. For each optional GIPHY or KLIPY provider whose key you configured, search
    for a term, select a GIF or sticker, send it, and confirm the recipient can
    view it.
@@ -177,10 +186,11 @@ Use two signed-in accounts and ensure they are accepted friends.
 
 | Symptom | Likely cause and action |
 |---|---|
-| `Media search failed (HTTP 404)` / function not found | Deploy `chat-media-search` to the project reference in `config.js`; check that the URL and deployment project match. |
+| `Media search failed (HTTP 404)` / function not found | Deploy `chat-media-search` to the project ref from the site's `SUPABASE_URL` environment variable; check that the URL and deployment project match. |
+| `Unsupported media provider` | The deployed Edge Function is outdated or belongs to a different project. Deploy the current `chat-media-search` function to the project ref from the site's `SUPABASE_URL` environment variable, then refresh the page. |
 | Sign-in/session or HTTP 401 error | Sign in again, verify the browser is using the correct Supabase project, and retry from the chat page. |
 | GIPHY/KLIPY HTTP 401 or 403 | The API key may be invalid, revoked, or lacking provider access. Check the provider account and update its server secret if needed. |
-| DuckDuckGo HTTP 429 or missing search token | DuckDuckGo may be challenging or rate-limiting automated requests. Wait and retry later, or use GIPHY/KLIPY. Nova does not bypass access checks. |
+| DuckDuckGo HTTP 429 or missing search token | DuckDuckGo may be challenging or rate-limiting requests from the laptop bridge. Wait and retry later, or use GIPHY/KLIPY. Nova does not bypass access checks. |
 | DuckDuckGo GIF search returns no results | GIF mode accepts direct `.gif` media URLs only. Try another query; some animated images use URLs that cannot be identified as GIF files. |
 | Provider HTTP 429 | The provider is rate-limiting requests. Wait before retrying and use **Load more results** only when needed. |
 | Search returns no results | Try a different query, confirm the selected provider and media type are supported, and check provider access. |

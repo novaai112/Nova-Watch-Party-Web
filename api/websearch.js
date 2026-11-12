@@ -236,6 +236,116 @@ async function searchDuckDuckGoWebJson(query, vqd) {
   }
 }
 
+function mediaHttpsUrl(value) {
+  if (typeof value !== 'string') return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password ? url.href : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function isDirectGifUrl(value) {
+  try {
+    const url = new URL(value);
+    if (/\.gif$/i.test(url.pathname)) return true;
+    const nested = url.searchParams.get('u') || url.searchParams.get('url');
+    return nested ? /\.gif$/i.test(new URL(nested).pathname) : false;
+  } catch (error) {
+    return false;
+  }
+}
+
+function duckDuckGoLimitedError() {
+  const error = new Error('DuckDuckGo is limiting this image search. Try again later; Nova does not bypass its access checks.');
+  error.status = 429;
+  error.retryAfter = '60';
+  return error;
+}
+
+async function runDuckDuckGoImageSearch(query, kind = 'image', page = 0) {
+  if (typeof query !== 'string' || !query.trim() || query.trim().length > 100) {
+    throw Object.assign(new Error('Enter a search term up to 100 characters.'), { status: 400 });
+  }
+  if (!['image', 'gif'].includes(kind)) {
+    throw Object.assign(new Error('DuckDuckGo chat search supports images and GIFs only.'), { status: 400 });
+  }
+  if (!Number.isInteger(page) || page < 0 || page > 20) {
+    throw Object.assign(new Error('Search page must be between 0 and 20.'), { status: 400 });
+  }
+
+  const searchTerm = kind === 'gif' ? `${query.trim()} GIF` : query.trim();
+  const imagePage = new URL('https://duckduckgo.com/');
+  imagePage.search = new URLSearchParams({ q: searchTerm, iax: 'images', ia: 'images', kp: '1' }).toString();
+  const pageResponse = await fetchRaw(imagePage.href, {
+    headers: {
+      'Accept': 'text/html,application/xhtml+xml',
+      'Referer': 'https://duckduckgo.com/',
+      'Cookie': 'kp=1'
+    },
+    timeout: 4000
+  });
+  if ([202, 403, 429].includes(pageResponse.status)) throw duckDuckGoLimitedError();
+  if (pageResponse.status !== 200) {
+    throw Object.assign(new Error(`DuckDuckGo image search could not start (HTTP ${pageResponse.status}).`), { status: 502 });
+  }
+
+  const vqd = pageResponse.body.match(/vqd\s*[:=]\s*["']?([\d-]{10,})/i)?.[1];
+  if (!vqd) throw duckDuckGoLimitedError();
+
+  const endpoint = new URL('https://duckduckgo.com/i.js');
+  endpoint.search = new URLSearchParams({
+    q: searchTerm,
+    l: 'us-en',
+    o: 'json',
+    vqd,
+    s: String(page * 100),
+    p: '1'
+  }).toString();
+  const response = await fetchRaw(endpoint.href, {
+    headers: {
+      'Accept': 'application/json',
+      'Referer': imagePage.href,
+      'Cookie': 'kp=1'
+    },
+    timeout: 6000
+  });
+  if ([202, 403, 429].includes(response.status)) throw duckDuckGoLimitedError();
+  if (response.status !== 200) {
+    throw Object.assign(new Error(`DuckDuckGo image search failed (HTTP ${response.status}).`), { status: 502 });
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(response.body);
+  } catch (error) {
+    if (/captcha|challenge|anomaly/i.test(response.body)) throw duckDuckGoLimitedError();
+    throw Object.assign(new Error('DuckDuckGo returned an unsupported image-search response.'), { status: 502 });
+  }
+  if (payload.response_type === 'botnet_challenge' || payload.challenge) throw duckDuckGoLimitedError();
+  if (!Array.isArray(payload.results)) {
+    throw Object.assign(new Error('DuckDuckGo returned an unsupported image-search response.'), { status: 502 });
+  }
+
+  const results = payload.results.flatMap(item => {
+    if (!item || typeof item !== 'object') return [];
+    const url = mediaHttpsUrl(item.image || item.image_url);
+    const preview = mediaHttpsUrl(item.thumbnail || item.thumbnail_url || item.image) || url;
+    if (!url || !preview) return [];
+    const isGif = isDirectGifUrl(url);
+    if ((kind === 'gif') !== isGif) return [];
+    return [{
+      url,
+      preview,
+      title: decodeHtmlEntities(item.title || item.source || (isGif ? 'GIF' : 'Image')).slice(0, 160),
+      type: isGif ? 'image/gif' : 'image/*'
+    }];
+  }).slice(0, 24);
+
+  return { provider: 'duckduckgo', results, hasMore: payload.results.length >= 24 && page < 20 };
+}
+
 async function searchDuckDuckGoHtml(query) {
   try {
     const postData = `q=${encodeURIComponent(query)}&kl=wt-wt&kp=-2`;
@@ -460,6 +570,69 @@ async function searchForRequest(query, tab, page) {
   }
 }
 
+async function searchForMediaRequest(query, kind, page) {
+  const backendUrl = String(process.env.LOCAL_DDG_BACKEND_URL || '').trim();
+  if (!backendUrl) {
+    if (process.env.VERCEL) {
+      throw Object.assign(new Error('The local DuckDuckGo bridge is not configured for this deployment.'), { status: 503 });
+    }
+    return runDuckDuckGoImageSearch(query, kind, page);
+  }
+
+  const token = String(process.env.DDG_BACKEND_TOKEN || '');
+  if (!token) {
+    throw Object.assign(new Error('Laptop DuckDuckGo backend is configured without DDG_BACKEND_TOKEN.'), { status: 503 });
+  }
+
+  let endpoint;
+  try {
+    endpoint = new URL(backendUrl);
+  } catch (error) {
+    throw Object.assign(new Error('LOCAL_DDG_BACKEND_URL must be a valid HTTPS URL ending in /search.'), { status: 503 });
+  }
+  if (endpoint.protocol !== 'https:' || endpoint.pathname !== '/search' ||
+      endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+    throw Object.assign(new Error('Laptop DuckDuckGo backend requires LOCAL_DDG_BACKEND_URL to be an HTTPS URL ending in /search.'), { status: 503 });
+  }
+
+  endpoint.pathname = '/media-search';
+  endpoint.searchParams.set('q', query);
+  endpoint.searchParams.set('kind', kind);
+  endpoint.searchParams.set('page', String(page));
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 11000);
+  try {
+    const response = await fetch(endpoint, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+        'ngrok-skip-browser-warning': 'true'
+      },
+      signal: controller.signal
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(payload.error || `Laptop DuckDuckGo media search failed (HTTP ${response.status}).`);
+      error.status = response.status;
+      error.retryAfter = response.headers.get('Retry-After') || '';
+      throw error;
+    }
+    if (!payload || payload.provider !== 'duckduckgo' || !Array.isArray(payload.results) || typeof payload.hasMore !== 'boolean') {
+      throw Object.assign(new Error('Laptop DuckDuckGo backend returned an invalid image-search response.'), { status: 502 });
+    }
+    return payload;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw Object.assign(new Error('Laptop DuckDuckGo image search timed out. Check that the local service and ngrok tunnel are running.'), { status: 504 });
+    }
+    if (error.status) throw error;
+    throw Object.assign(new Error('Could not reach the laptop DuckDuckGo service. Check that ngrok is running and LOCAL_DDG_BACKEND_URL is correct.'), { status: 502 });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -499,4 +672,6 @@ module.exports = async function handler(req, res) {
 module.exports.runUnifiedSearch = runUnifiedSearch;
 module.exports.runDuckDuckGoSearch = runDuckDuckGoSearch;
 module.exports.searchForRequest = searchForRequest;
+module.exports.runDuckDuckGoImageSearch = runDuckDuckGoImageSearch;
+module.exports.searchForMediaRequest = searchForMediaRequest;
 module.exports._emptyResultsMessage = emptyResultsMessage;
