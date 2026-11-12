@@ -225,6 +225,7 @@ function renderGoogleDarkSearchPage(searchData) {
   const tab = searchData.tab || 'all';
   const results = searchData.results || [];
   const videoCards = searchData.videoCards || [];
+  const emptyResultsMessage = searchData.message || 'No results found. Try another keyword or direct URL.';
 
   const resultItemsHtml = results.map((item) => {
     const thumbHtml = item.thumbnail ? `
@@ -573,7 +574,7 @@ function renderGoogleDarkSearchPage(searchData) {
     </div>
   </div>
   <div class="gs-container">
-    ${results.slice(0, 3).length ? resultItemsHtml : '<p style="color:#9aa0a6;padding:24px 0;">No results found. Try another keyword or direct URL.</p>'}
+    ${results.length ? resultItemsHtml : `<p style="color:#9aa0a6;padding:24px 0;">${escapeHtml(emptyResultsMessage)}</p>`}
     ${topStoriesHtml}
   </div>
   <script>
@@ -814,3 +815,5 @@ module.exports = async function handler(req, res) {
     return res.end(`<!DOCTYPE html><html><body style="background:#121212;color:#e8eaed;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><div style="text-align:center;"><h3>Unable to load webpage</h3><p style="color:#9aa0a6;">${escapeHtml(tlsTrust.errorMessage(err, 'Connection failed'))}</p></div></body></html>`);
   }
 };
+
+module.exports._renderGoogleDarkSearchPage = renderGoogleDarkSearchPage;

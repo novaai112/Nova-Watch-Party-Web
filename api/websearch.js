@@ -80,11 +80,12 @@ async function searchGoogleApi(query, tab = 'all', page = 1) {
   const keys = rawKeys.split(',').map((k) => k.trim()).filter(Boolean);
 
   if (!keys.length || !cx) {
-    return null;
+    return { error: 'not-configured' };
   }
 
   const start = Math.max(1, Math.min(91, (page - 1) * 10 + 1));
   const effectiveQuery = tab === 'videos' ? `${query} video` : query;
+  let lastFailure = 'unavailable';
 
   for (const apiKey of keys) {
     try {
@@ -97,11 +98,21 @@ async function searchGoogleApi(query, tab = 'all', page = 1) {
       apiUrl.searchParams.set('start', String(start));
 
       const response = await fetchRaw(apiUrl.toString(), { timeout: 8000 });
-      if (response.status !== 200) continue;
+      if (response.status !== 200) {
+        lastFailure = response.status === 403
+          ? 'forbidden'
+          : response.status === 429
+            ? 'quota'
+            : response.status === 400
+              ? 'invalid-search-engine'
+              : 'unavailable';
+        continue;
+      }
 
       const data = JSON.parse(response.body);
       if (!data.items || !Array.isArray(data.items) || data.items.length === 0) {
-        return null;
+        lastFailure = 'empty';
+        continue;
       }
 
       const results = data.items.map((item) => {
@@ -131,12 +142,12 @@ async function searchGoogleApi(query, tab = 'all', page = 1) {
         engine: 'google-api',
         results
       };
-    } catch (err) {
-      continue;
+    } catch (error) {
+      lastFailure = 'network';
     }
   }
 
-  return null;
+  return { error: lastFailure };
 }
 
 async function getDuckDuckGoVqd(query) {
@@ -279,8 +290,34 @@ async function searchDuckDuckGoHtml(query) {
   }
 }
 
+function emptyResultsMessage(googleConfigured, googleFailure) {
+  if (!googleConfigured || googleFailure === 'not-configured') {
+    return 'Web search is not configured on this deployment. Add GOOGLE_API_KEY and GOOGLE_CX in Vercel, then redeploy.';
+  }
+  if (googleFailure === 'forbidden') {
+    return 'Google rejected the search request. Check that the Custom Search JSON API is enabled and the API key and GOOGLE_CX are correct.';
+  }
+  if (googleFailure === 'quota') {
+    return 'Google search quota is exhausted. Check the Custom Search API quota in Google Cloud.';
+  }
+  if (googleFailure === 'invalid-search-engine') {
+    return 'Google rejected the search engine configuration. Verify the GOOGLE_CX search engine ID.';
+  }
+  if (googleFailure === 'network') {
+    return 'The search provider could not be reached. Try again shortly.';
+  }
+  if (googleFailure === 'empty') {
+    return 'Google returned no matches. Check that the Programmable Search Engine is configured to search the web.';
+  }
+  return 'Search providers returned no results. Verify the Google Custom Search JSON API, API key, search engine ID (GOOGLE_CX), and quota.';
+}
+
 async function runUnifiedSearch(query, tab = 'all', page = 1) {
+  const keys = String(process.env.GOOGLE_API_KEY || process.env.GOOGLE_CSE_KEY || '')
+    .split(',').map((key) => key.trim()).filter(Boolean);
+  const googleConfigured = keys.length > 0 && Boolean(String(process.env.GOOGLE_CX || process.env.GOOGLE_CSE_CX || '').trim());
   let googleData = await searchGoogleApi(query, tab, page);
+  const googleFailure = googleData && googleData.error;
   const vqd = await getDuckDuckGoVqd(query);
   const [ddgVideos, ddgJsonWeb] = await Promise.all([
     searchDuckDuckGoVideos(query, vqd),
@@ -312,7 +349,8 @@ async function runUnifiedSearch(query, tab = 'all', page = 1) {
       query,
       tab,
       results: deduped.slice(0, 20),
-      videoCards: ddgVideos.slice(0, 8)
+      videoCards: ddgVideos.slice(0, 8),
+      message: deduped.length || ddgVideos.length ? '' : emptyResultsMessage(googleConfigured, googleFailure)
     };
   }
 
@@ -337,12 +375,14 @@ async function runUnifiedSearch(query, tab = 'all', page = 1) {
   const existingUrls = new Set(enrichedResults.map((r) => r.url));
   const topVideos = ddgVideos.filter((v) => !existingUrls.has(v.url)).slice(0, 6);
 
+  const results = [...topVideos.slice(0, 3), ...enrichedResults].slice(0, 20);
   return {
     engine: engineUsed,
     query,
     tab,
-    results: [...topVideos.slice(0, 3), ...enrichedResults].slice(0, 20),
-    videoCards: ddgVideos.slice(0, 6)
+    results,
+    videoCards: ddgVideos.slice(0, 6),
+    message: results.length || ddgVideos.length ? '' : emptyResultsMessage(googleConfigured, googleFailure)
   };
 }
 
@@ -380,3 +420,4 @@ module.exports = async function handler(req, res) {
 };
 
 module.exports.runUnifiedSearch = runUnifiedSearch;
+module.exports._emptyResultsMessage = emptyResultsMessage;
