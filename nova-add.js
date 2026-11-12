@@ -7,6 +7,73 @@
     pendingMedia: null,
     loading: false
   };
+  const WEB_SESSION_KEY = 'nova-web-navigation-v1';
+  const MAX_WEB_HISTORY = 50;
+
+  function normalizeBrowsePath(value) {
+    try {
+      const url = new URL(value, window.location.origin);
+      if (url.origin !== window.location.origin || url.pathname !== '/api/browse') return '';
+      return url.pathname + url.search;
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function clearSavedWebNavigation() {
+    try {
+      window.sessionStorage.removeItem(WEB_SESSION_KEY);
+    } catch (e) {}
+  }
+
+  function saveWebNavigation() {
+    const activePath = webState.history[webState.historyIndex];
+    if (webState.mode !== 'browsing' || !activePath) {
+      clearSavedWebNavigation();
+      return;
+    }
+
+    try {
+      window.sessionStorage.setItem(WEB_SESSION_KEY, JSON.stringify({
+        history: webState.history,
+        index: webState.historyIndex
+      }));
+    } catch (e) {}
+  }
+
+  function loadSavedWebNavigation() {
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem(WEB_SESSION_KEY) || 'null');
+      if (!saved || !Array.isArray(saved.history) || !saved.history.length ||
+          saved.history.length > MAX_WEB_HISTORY || !Number.isInteger(saved.index) ||
+          saved.index < 0 || saved.index >= saved.history.length) {
+        return null;
+      }
+
+      const history = saved.history.map(normalizeBrowsePath);
+      if (history.some((path) => !path)) return null;
+      return { history, index: saved.index };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function pushWebHistory(path) {
+    const normalizedPath = normalizeBrowsePath(path);
+    if (!normalizedPath) return;
+
+    if (webState.history[webState.historyIndex] === normalizedPath) {
+      saveWebNavigation();
+      return;
+    }
+
+    webState.history = webState.history.slice(0, webState.historyIndex + 1);
+    webState.history.push(normalizedPath);
+    if (webState.history.length > MAX_WEB_HISTORY) webState.history.shift();
+    webState.historyIndex = webState.history.length - 1;
+    updateHistoryButton();
+    saveWebNavigation();
+  }
 
   function ensureWebBrowserUI() {
     if (document.getElementById('novaWebOverlay')) return;
@@ -438,12 +505,7 @@
 
       if (data.type === 'NOVA_WEB_NAVIGATE' && data.url) {
         const browseSrc = `/api/browse?url=${encodeURIComponent(data.url)}`;
-        if (webState.history[webState.historyIndex] !== browseSrc) {
-          webState.history = webState.history.slice(0, webState.historyIndex + 1);
-          webState.history.push(browseSrc);
-          webState.historyIndex = webState.history.length - 1;
-          updateHistoryButton();
-        }
+        pushWebHistory(browseSrc);
       }
 
       if (data.type === 'NOVA_WEB_VIDEO_PROMPT' && data.streamUrl) {
@@ -476,6 +538,7 @@
         const iframe = document.getElementById('novaWebIframe');
         if (iframe) iframe.src = previous;
         updateHistoryButton();
+        saveWebNavigation();
       } else {
         returnToWebStartScreen();
       }
@@ -570,12 +633,9 @@
     webState.mode = 'browsing';
     overlay.classList.add('browsing');
 
-    webState.history = webState.history.slice(0, webState.historyIndex + 1);
-    webState.history.push(srcUrl);
-    webState.historyIndex = webState.history.length - 1;
-    updateHistoryButton();
-
-    iframe.src = srcUrl;
+    pushWebHistory(srcUrl);
+    const currentPath = webState.history[webState.historyIndex];
+    if (currentPath) iframe.src = currentPath;
   }
 
   function returnToWebStartScreen() {
@@ -584,6 +644,9 @@
     if (!overlay || !iframe) return;
 
     webState.mode = 'start';
+    webState.history = [];
+    webState.historyIndex = -1;
+    clearSavedWebNavigation();
     overlay.classList.remove('browsing');
     setLoadingState(false);
     updateHistoryButton();
@@ -613,6 +676,7 @@
     const input = document.getElementById('novaWebInput');
     if (!overlay) return;
 
+    const query = String(initialQuery || '').trim();
     webState.isOpen = true;
     webState.mode = 'start';
     webState.history = [];
@@ -620,16 +684,28 @@
     overlay.classList.add('active');
     overlay.classList.remove('browsing');
     document.getElementById('novaWebStatusCard').classList.remove('visible');
-    updateHistoryButton();
+    if (input) input.value = query;
 
-    if (input) {
-      input.value = initialQuery || '';
+    if (query) {
+      clearSavedWebNavigation();
+      updateHistoryButton();
+      setTimeout(() => input && input.focus(), 60);
+      handleWebQueryOrUrl(query);
+      return;
+    }
+
+    const saved = loadSavedWebNavigation();
+    if (saved) {
+      webState.mode = 'browsing';
+      webState.history = saved.history;
+      webState.historyIndex = saved.index;
+      overlay.classList.add('browsing');
+      const iframe = document.getElementById('novaWebIframe');
+      if (iframe) iframe.src = webState.history[webState.historyIndex];
+    } else if (input) {
       setTimeout(() => input.focus(), 60);
     }
-
-    if (initialQuery && initialQuery.trim()) {
-      handleWebQueryOrUrl(initialQuery.trim());
-    }
+    updateHistoryButton();
   }
 
   function youtubeMediaFromUrl(url, title, thumbnail) {
@@ -652,6 +728,9 @@
 
     webState.isOpen = false;
     webState.mode = 'start';
+    webState.history = [];
+    webState.historyIndex = -1;
+    clearSavedWebNavigation();
     overlay.classList.remove('active', 'browsing', 'loading');
     hidePlayConfirmModal();
     if (iframe) iframe.src = 'about:blank';
