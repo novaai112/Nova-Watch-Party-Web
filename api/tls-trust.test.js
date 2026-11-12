@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const crypto = require('node:crypto');
 const tls = require('node:tls');
-const { configureSystemCa, errorMessage } = require('./tls-trust');
+const { configureSystemCa, errorMessage } = require('../tls-trust');
 
 test('adds system roots without dropping Node trusted roots', (t) => {
   if (typeof tls.getCACertificates !== 'function' || typeof tls.setDefaultCACertificates !== 'function') {

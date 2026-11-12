@@ -2,7 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
-const tlsTrust = require('./api/tls-trust');
+const tlsTrust = require('./tls-trust');
 
 tlsTrust.configureSystemCa();
 
@@ -26,6 +26,7 @@ loadEnvFile(path.join(__dirname, '.env'));
 const websearchHandler = require('./api/websearch');
 const browseHandler = require('./api/browse');
 const extractHandler = require('./api/extract');
+const configHandler = require('./api/config');
 let youtubeHandler = null;
 try {
   youtubeHandler = require('./api/youtube');
@@ -54,6 +55,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/websearch') return await websearchHandler(req, res);
     if (pathname === '/api/browse') return await browseHandler(req, res);
     if (pathname === '/api/extract') return await extractHandler(req, res);
+    if (pathname === '/api/config') return configHandler(req, res);
     if (pathname === '/api/youtube' && youtubeHandler) return await youtubeHandler(req, res);
 
     let safePath = path.normalize(decodeURIComponent(pathname)).replace(/^(\.\.[/\\])+/, '');

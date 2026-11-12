@@ -267,6 +267,29 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && R)
    PLAYER + SYNC
    ===================================================================== */
 const mediaKey = () => R && R.media ? [R.media.kind, R.media.id, R.media.pl, R.media.url, R.media_ver, isAdmin() ? 1 : 0].join('|') : '';
+function normalizeLegacyWebYoutube() {
+  const media = R && R.media;
+  if (!media || media.kind !== 'video' || media.provider !== 'web' || !media.url) return;
+
+  try {
+    const url = new URL(media.url);
+    const host = url.hostname.toLowerCase();
+    if (!['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com',
+      'youtube-nocookie.com', 'www.youtube-nocookie.com', 'youtu.be', 'www.youtu.be'].includes(host)) return;
+
+    const videoId = host.endsWith('youtu.be')
+      ? url.pathname.split('/').filter(Boolean)[0]
+      : url.searchParams.get('v') || url.pathname.match(/^\/(?:embed|shorts|live)\/([\w-]+)/)?.[1] || '';
+    const playlistId = url.searchParams.get('list') || '';
+    const id = /^[\w-]{6,20}$/.test(videoId) ? videoId : '';
+    const pl = /^[\w-]{10,64}$/.test(playlistId) ? playlistId : '';
+    if (!id && !pl) return;
+
+    R = Object.assign({}, R, {
+      media: Object.assign({}, media, { kind: 'youtube', provider: 'youtube', id, pl })
+    });
+  } catch (e) {}
+}
 let ytWait = null;
 function loadYT() {
   if (window.YT && YT.Player) return Promise.resolve();
@@ -286,8 +309,8 @@ function loadHls() {
   return hlsWait;
 }
 /* plain files use <video src>; .m3u8 streams use native HLS (Safari) or hls.js */
-function attachSrc(v, url) {
-  if (!/\.m3u8(?:$|[?#])/i.test(url) || v.canPlayType('application/vnd.apple.mpegurl')) { v.src = url; return; }
+function attachSrc(v, url, forceHls) {
+  if ((!forceHls && !/\.m3u8(?:$|[?#])/i.test(url)) || v.canPlayType('application/vnd.apple.mpegurl')) { v.src = url; return; }
   loadHls().then(() => {
     if (window.Hls && Hls.isSupported()) {
       const h = new Hls({ enableWorker: true }); v._hls = h; h.loadSource(url); h.attachMedia(v);
@@ -316,6 +339,8 @@ function emptyHTML() {
   return `<div class="vnone"><div>${can ? 'No video yet' : 'Waiting for the admin to pick a video'}</div>${can ? `<button data-r="add">Choose a video</button>` : ''}</div>`;
 }
 async function mountMedia() {
+  if (!R) return;
+  normalizeLegacyWebYoutube();
   const key = mediaKey();
   if (!R || key === mountKey) return;
   mountKey = key;
@@ -334,7 +359,13 @@ async function mountMedia() {
   if (m.kind === 'video') {
     if (!safeHttps(m.url)) return;
     const v = document.createElement('video');
-    v.playsInline = true; v.preload = 'auto'; v.controls = adm; attachSrc(v, m.url);
+    v.playsInline = true; v.preload = 'auto'; v.controls = adm;
+    if (m.provider === 'web') {
+      const proxy = new URL('/api/browse', location.href);
+      proxy.searchParams.set('stream', '1');
+      proxy.searchParams.set('url', m.url);
+      attachSrc(v, proxy.href, /\.m3u8(?:$|[?#])/i.test(m.url));
+    } else attachSrc(v, m.url);
     P.kind = 'video'; P.video = v;
     ['play', 'pause', 'seeked'].forEach(ev => v.addEventListener(ev, () => { if (isAdmin() && Date.now() > P.mute) publish(!v.paused, v.currentTime); updateTimeUI(); }));
     v.addEventListener('ended', () => { if (isAdmin()) ended(); });
@@ -958,20 +989,20 @@ async function pick(m, now) {
     toast(r && r.action === 'queued' ? 'Added to Up next' : 'Playing now');
     afterPick();
     await refreshRoom(); renderAll(); mountMedia();
-  } catch (e) { oops(e); }
+    return true;
+  } catch (e) { oops(e); return false; }
 }
 async function handle(m, o) {
   o = o || {};
-  if (!await auth()) return false;
+  if (!await auth()) { toast('Sign in to add a video to a room', 'err'); return false; }
   try {
     if (!R) {
       const row = await rpc('create_room', { p_title: m.title || 'Nova room', p_privacy: 'public', p_media: m });
       await enter(row);
       return true;
     }
-    await pick(m, !!o.now);
-  } catch (e) { oops(e); }
-  return true;
+    return await pick(m, !!o.now);
+  } catch (e) { oops(e); return false; }
 }
 function ctx() {
   const busy = !!(R && R.media && !(R.play_state || {}).ended && !votingNow());

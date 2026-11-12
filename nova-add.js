@@ -263,6 +263,13 @@
         align-items: center;
         gap: 14px;
       }
+      #novaWebConfirmError {
+        color: #ffb4ab;
+        font-size: 13px;
+        line-height: 1.4;
+        max-width: 440px;
+        margin: -12px 0 18px;
+      }
       .nova-web-confirm-btn {
         min-width: 106px;
         height: 38px;
@@ -352,6 +359,7 @@
 
       <div id="novaWebConfirmModal">
         <div id="novaWebConfirmTitle">Play - Video?</div>
+        <div id="novaWebConfirmError" role="status" aria-live="polite"></div>
         <div class="nova-web-confirm-actions">
           <button id="novaWebConfirmNo" class="nova-web-confirm-btn" type="button">No</button>
           <button id="novaWebConfirmYes" class="nova-web-confirm-btn" type="button">Yes</button>
@@ -403,12 +411,21 @@
       hidePlayConfirmModal();
     });
 
-    yesBtn.addEventListener('click', () => {
+    yesBtn.addEventListener('click', async () => {
       if (!webState.pendingMedia) return;
       const media = webState.pendingMedia;
-      hidePlayConfirmModal();
-      closeWebBrowser();
-      launchWebVideoInRoom(media);
+      const error = document.getElementById('novaWebConfirmError');
+      yesBtn.disabled = true;
+      if (error) error.textContent = '';
+      try {
+        await launchWebVideoInRoom(media);
+        hidePlayConfirmModal();
+        closeWebBrowser();
+      } catch (err) {
+        if (error) error.textContent = err.message || 'Could not add this video to the room.';
+      } finally {
+        yesBtn.disabled = false;
+      }
     });
 
     iframe.addEventListener('load', () => {
@@ -495,6 +512,26 @@
 
     setLoadingState(true);
 
+    const parsedInput = window.NovaAdd && window.NovaAdd.parseInput(rawInput);
+    if (parsedInput && (parsedInput.t === 'yt' || parsedInput.t === 'ytpl')) {
+      try {
+        const info = await window.NovaAdd.ytInfo(parsedInput.id || '', parsedInput.id ? '' : parsedInput.pl);
+        promptPlayWebVideo({
+          kind: 'youtube',
+          id: info.id || parsedInput.id,
+          pl: info.pl || parsedInput.pl,
+          title: info.title || 'YouTube video',
+          thumb: info.thumb || '',
+          live: info.live
+        });
+      } catch (err) {
+        showStatusCard(err.message || 'Could not load this YouTube video.');
+      } finally {
+        setLoadingState(false);
+      }
+      return;
+    }
+
     if (isLikelyDirectUrl(rawInput)) {
       const normalizedUrl = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput}`;
       try {
@@ -504,14 +541,15 @@
           if (extracted && extracted.streamUrl) {
             setLoadingState(false);
             openBrowsingFrame(`/api/browse?url=${encodeURIComponent(normalizedUrl)}`);
-            promptPlayWebVideo({
-              title: extracted.title || 'Web Video',
-              streamUrl: extracted.streamUrl,
-              proxiedStreamUrl: extracted.proxiedStreamUrl || `/api/browse?stream=1&url=${encodeURIComponent(extracted.streamUrl)}`,
-              streamType: extracted.streamType || 'auto',
-              thumbnail: extracted.thumbnail || '',
-              pageUrl: normalizedUrl
-            });
+            const youtubeMedia = youtubeMediaFromUrl(extracted.streamUrl, extracted.title, extracted.thumbnail);
+            promptPlayWebVideo(youtubeMedia || {
+                title: extracted.title || 'Web Video',
+                streamUrl: extracted.streamUrl,
+                proxiedStreamUrl: extracted.proxiedStreamUrl || `/api/browse?stream=1&url=${encodeURIComponent(extracted.streamUrl)}`,
+                streamType: extracted.streamType || 'auto',
+                thumbnail: extracted.thumbnail || '',
+                pageUrl: normalizedUrl
+              });
             return;
           }
         }
@@ -556,9 +594,11 @@
     webState.pendingMedia = media;
     const modal = document.getElementById('novaWebConfirmModal');
     const titleEl = document.getElementById('novaWebConfirmTitle');
+    const errorEl = document.getElementById('novaWebConfirmError');
     if (!modal || !titleEl) return;
 
     titleEl.textContent = `Play - ${media.title || 'Web Video'}?`;
+    if (errorEl) errorEl.textContent = '';
     modal.classList.add('active');
   }
 
@@ -592,6 +632,19 @@
     }
   }
 
+  function youtubeMediaFromUrl(url, title, thumbnail) {
+    if (!window.NovaAdd || !window.NovaAdd.parseInput) return null;
+    const parsed = window.NovaAdd.parseInput(url);
+    if (parsed.t !== 'yt' && parsed.t !== 'ytpl') return null;
+    return {
+      kind: 'youtube',
+      id: parsed.id || '',
+      pl: parsed.pl || '',
+      title: title || 'YouTube video',
+      thumb: thumbnail || ''
+    };
+  }
+
   function closeWebBrowser() {
     const overlay = document.getElementById('novaWebOverlay');
     const iframe = document.getElementById('novaWebIframe');
@@ -605,35 +658,49 @@
   }
 
   async function launchWebVideoInRoom(media) {
-    const roomPayload = {
-      provider: 'web',
-      sourceLabel: 'generic • Web',
-      title: media.title || 'Web Video',
-      url: media.proxiedStreamUrl || media.streamUrl,
-      rawStreamUrl: media.streamUrl,
-      pageUrl: media.pageUrl || media.streamUrl,
-      streamType: media.streamType || (/\.m3u8(\?|$)/i.test(media.streamUrl) ? 'hls' : 'mp4'),
-      thumbnail: media.thumbnail || ''
-    };
-
-    try {
-      sessionStorage.setItem('nova_active_web_media', JSON.stringify(roomPayload));
-      localStorage.setItem('nova_active_web_media', JSON.stringify(roomPayload));
-    } catch (e) {}
-
-    if (typeof window.onNovaWebMediaSelected === 'function') {
-      window.onNovaWebMediaSelected(roomPayload);
-      return;
+    const room = window.NovaRoom;
+    if (!room || typeof room.handle !== 'function') {
+      throw new Error('Watch rooms are unavailable on this page. Refresh and try again.');
     }
 
-    if (typeof window.loadWebMediaIntoRoomPlayer === 'function') {
-      window.loadWebMediaIntoRoomPlayer(roomPayload, true);
-      return;
+    const youtubeMedia = media.kind === 'youtube'
+      ? media
+      : youtubeMediaFromUrl(media.streamUrl, media.title, media.thumbnail);
+    let roomMedia;
+    if (youtubeMedia) {
+      roomMedia = {
+        kind: 'youtube',
+        id: youtubeMedia.id || '',
+        pl: youtubeMedia.pl || '',
+        title: youtubeMedia.title || media.title || 'YouTube video',
+        provider: 'youtube',
+        thumb: youtubeMedia.thumb || media.thumbnail || '',
+        live: !!youtubeMedia.live
+      };
+      if (!roomMedia.id && !roomMedia.pl) throw new Error('This YouTube item has no video or playlist ID.');
+    } else {
+      let streamUrl;
+      try {
+        streamUrl = new URL(media.streamUrl);
+      } catch (e) {
+        throw new Error('This video does not have a valid stream URL.');
+      }
+      if (streamUrl.protocol !== 'https:') {
+        throw new Error('Only secure HTTPS video streams can be added to a room.');
+      }
+
+      roomMedia = {
+        kind: 'video',
+        title: media.title || 'Web Video',
+        provider: 'web',
+        url: streamUrl.href,
+        thumb: media.thumbnail || ''
+      };
     }
 
-    const params = new URLSearchParams(window.location.search);
-    const roomId = params.get('room') || params.get('id') || 'live-' + Math.random().toString(36).slice(2, 8);
-    window.location.href = `/index.html?room=${encodeURIComponent(roomId)}&provider=web&video=${encodeURIComponent(roomPayload.url)}&title=${encodeURIComponent(roomPayload.title)}`;
+    const state = typeof room.ctx === 'function' ? room.ctx() : null;
+    const added = await room.handle(roomMedia, { now: !(state && state.busy) });
+    if (!added) throw new Error('Could not add this video. Sign in and check the room setup, then try again.');
   }
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -733,9 +800,18 @@
       site: data.url ? new URL(data.url).hostname : '',
       title: data.title || '',
       videos: streams.map(function(stream) {
+        const youtube = parseInput(stream.url);
+        if (youtube.t === 'yt' || youtube.t === 'ytpl') {
+          return ytMedia({
+            id: youtube.id,
+            pl: youtube.pl,
+            title: data.title || 'YouTube video',
+            thumb: data.thumbnail || ''
+          });
+        }
         return {
           kind: 'video',
-          url: stream.proxiedStreamUrl || data.proxiedStreamUrl || stream.url,
+          url: stream.url,
           title: data.title || 'Web video',
           thumb: data.thumbnail || '',
           provider: 'web',

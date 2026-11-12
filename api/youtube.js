@@ -1,4 +1,4 @@
-const tlsTrust = require('./tls-trust');
+const tlsTrust = require('../tls-trust');
 tlsTrust.configureSystemCa();
 
 /* /api/youtube — server-side YouTube Data API proxy.

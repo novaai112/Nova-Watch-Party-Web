@@ -1,4 +1,4 @@
-const tlsTrust = require('./tls-trust');
+const tlsTrust = require('../tls-trust');
 tlsTrust.configureSystemCa();
 const https = require('https');
 const http = require('http');

@@ -1,11 +1,11 @@
 # Nova — Home, Auth, Profile & Chat
 
-Static website + Supabase. No build step. Deploy the folder to Vercel (or any static host).
+Static website + Supabase, with Vercel serverless API routes. No build step; deploy the folder to Vercel.
 
 ## Files
 | File | What it does |
 |---|---|
-| `config.js` | Your Supabase URL/anon key + company info (also feeds the policy pages and Support page) |
+| `config.js` | Public company info (also feeds the policy pages and Support page); Supabase config is loaded from `/api/config` |
 | `theme.js` | Light/dark theme (`data-theme`), used by login and profile |
 | `translator.js` | On-demand translation of interface text and accessibility labels into 100+ languages |
 | `index.html` | Sign up, log in, Google, forgot/reset password. Successful login opens `nova-home.html` |
@@ -40,7 +40,7 @@ It creates (Part 4 = username check, avatar bucket, gallery limits): `profiles` 
 - **Providers → Google (optional):** create an OAuth client in Google Cloud Console (type Web). Authorized redirect URI = the callback URL shown in Supabase's Google provider page. Paste Client ID + Secret in Supabase.
 
 ## 3. Deploy
-Upload the folder to Vercel (or run `npx serve .` from the project folder locally and open the HTTP address it prints). Keep all files in the same folder. Do not open the HTML files directly with `file://`; YouTube embedded playback requires an HTTP(S) referrer.
+Push the project folder to GitHub, then import that repository into Vercel. Use the repository root as the project root; this is a no-build static site with Node serverless functions under `api/`, configured by `vercel.json`. Do not set a static-only output directory, or the API routes will be omitted. Add the environment variables listed below before deploying. Keep `.env.local` out of GitHub. For local preview, run `node dev-server.js` and open its HTTP address; do not open HTML files directly with `file://`.
 Flow: `index.html` → `nova-home.html` → Settings gear → `profile.html`. If a logged-out user opens `profile.html`, they are sent to login.
 
 ## 4. Connect your video / chat pages
@@ -110,14 +110,14 @@ Nova.audioRule(videoElement);
 
 ## Video search & import (server functions)
 YouTube search, pasted links and "video from any web page" run through `/api/*` serverless functions, so visitors never enter or see an API key.
-- These features require the site to be served by Vercel (or another host configured to run the `/api` functions); opening `nova-home.html` as a local file or hosting only static files will not work. For local testing, add `YOUTUBE_API_KEY=...` to the ignored `.env.local` file and run `node dev-server.js`.
+- These features require the site to be served by Vercel (or another host configured to run the `/api` functions); opening `nova-home.html` as a local file or hosting only static files will not work. Local testing: copy `.env.local.example` to the ignored `.env.local`, fill in the values, and run `node dev-server.js`.
 - `api/youtube.js` — YouTube Data API proxy (search with endless scrolling, link lookup). **Needs the env var `YOUTUBE_API_KEY`.**
 - `api/extract.js` — finds the playable video on a web page (mp4/webm/m3u8, `<video>`, og:video, JSON-LD, YouTube/Vimeo/Dailymotion embeds) and imports only the video. DRM sites (Netflix, Prime, Disney+) cannot be imported.
 - `api/websearch.js` — plain web search for the Web tab.
 - `nova-add.js` — client helpers: confirm popup (Add / Cancel), multi-video chooser, link parsing.
 
-**Setup:** Vercel → Project → Settings → Environment Variables → add `YOUTUBE_API_KEY` (Production, Preview, Development; mark Sensitive) → redeploy. In Google Cloud restrict the key to **YouTube Data API v3**. Do not put the key in `config.js` or any browser file.
-**Local test:** copy `.env.local.example` to `.env.local`, add the key, run `node dev-server.js`.
+**Setup:** In Vercel → Project → Settings → Environment Variables, add `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `YOUTUBE_API_KEY`, `GOOGLE_API_KEY`, and `GOOGLE_CX` as separate variables for each environment you deploy. Mark Google and YouTube API keys Sensitive, then redeploy. The Supabase URL and anon key are public client configuration; never use a Supabase service-role key. Restrict Google keys to the required APIs. Do not put API keys in `config.js` or any browser file.
+**Local test:** copy `.env.local.example` to `.env.local`, fill in the values, and run `node dev-server.js`. Never commit `.env.local`.
 
 ### In-app browser (Web tab)
 Search the web (or type an address) and pages open **inside Nova** through `api/browse.js`. Website JavaScript runs in an isolated sandboxed iframe. Tap any video on the page (a `<video>`, an embedded YouTube/Vimeo/Dailymotion player, a YouTube link, a link to an `.mp4`/`.m3u8`) and Nova asks **Add / Cancel**; only that video goes to the room, never the website.

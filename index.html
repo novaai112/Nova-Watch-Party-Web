@@ -280,6 +280,7 @@ html,body,*{scrollbar-width:none;-ms-overflow-style:none}
 
 <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
+<script src="/api/config"></script>
 <script>
 (() => {
   "use strict";
@@ -287,9 +288,9 @@ html,body,*{scrollbar-width:none;-ms-overflow-style:none}
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-  const configured = CFG.SUPABASE_URL && !CFG.SUPABASE_URL.includes("YOUR-PROJECT");
+  const configured = CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY;
   if (!configured) {
-    document.body.innerHTML = '<main class="card"><h1>Setup needed</h1><p class="sub" style="margin-bottom:0">Open <b>config.js</b> and paste your Supabase URL and anon key.</p></main>';
+    document.body.innerHTML = '<main class="card"><h1>Setup needed</h1><p class="sub" style="margin-bottom:0">' + (CFG.CONFIG_ERROR || 'Supabase is not configured for this deployment.') + '</p></main>';
     return;
   }
 
