@@ -312,16 +312,17 @@ function emptyResultsMessage(googleConfigured, googleFailure) {
   return 'Search providers returned no results. Verify the Google Custom Search JSON API, API key, search engine ID (GOOGLE_CX), and quota.';
 }
 
-async function runUnifiedSearch(query, tab = 'all', page = 1) {
+async function runUnifiedSearch(query, tab = 'all', page = 1, options = {}) {
+  const forceDuckDuckGo = options.forceDuckDuckGo === true;
   const keys = String(process.env.GOOGLE_API_KEY || process.env.GOOGLE_CSE_KEY || '')
     .split(',').map((key) => key.trim()).filter(Boolean);
   const googleConfigured = keys.length > 0 && Boolean(String(process.env.GOOGLE_CX || process.env.GOOGLE_CSE_CX || '').trim());
-  let googleData = await searchGoogleApi(query, tab, page);
+  const googleData = forceDuckDuckGo ? { error: 'not-configured' } : await searchGoogleApi(query, tab, page);
   const googleFailure = googleData && googleData.error;
   const vqd = await getDuckDuckGoVqd(query);
   const [ddgVideos, ddgJsonWeb] = await Promise.all([
     searchDuckDuckGoVideos(query, vqd),
-     googleData ? Promise.resolve([]) : searchDuckDuckGoWebJson(query, vqd)
+    googleData && !googleData.error ? Promise.resolve([]) : searchDuckDuckGoWebJson(query, vqd)
   ]);
 
   let mainResults = [];
@@ -350,7 +351,9 @@ async function runUnifiedSearch(query, tab = 'all', page = 1) {
       tab,
       results: deduped.slice(0, 20),
       videoCards: ddgVideos.slice(0, 8),
-      message: deduped.length || ddgVideos.length ? '' : emptyResultsMessage(googleConfigured, googleFailure)
+      message: deduped.length || ddgVideos.length ? '' : (forceDuckDuckGo
+        ? 'DuckDuckGo did not return results. Check that the laptop search service can reach DuckDuckGo.'
+        : emptyResultsMessage(googleConfigured, googleFailure))
     };
   }
 
@@ -382,8 +385,79 @@ async function runUnifiedSearch(query, tab = 'all', page = 1) {
     tab,
     results,
     videoCards: ddgVideos.slice(0, 6),
-    message: results.length || ddgVideos.length ? '' : emptyResultsMessage(googleConfigured, googleFailure)
+    message: results.length || ddgVideos.length ? '' : (forceDuckDuckGo
+      ? 'DuckDuckGo did not return results. Check that the laptop search service can reach DuckDuckGo.'
+      : emptyResultsMessage(googleConfigured, googleFailure))
   };
+}
+
+function runDuckDuckGoSearch(query, tab = 'all', page = 1) {
+  return runUnifiedSearch(query, tab, page, { forceDuckDuckGo: true });
+}
+
+async function searchForRequest(query, tab, page) {
+  const backendUrl = String(process.env.LOCAL_DDG_BACKEND_URL || '').trim();
+  if (!backendUrl) return runUnifiedSearch(query, tab, page);
+
+  const token = String(process.env.DDG_BACKEND_TOKEN || '');
+  if (!token) throw new Error('Laptop DuckDuckGo backend is configured without DDG_BACKEND_TOKEN.');
+
+  let endpoint;
+  try {
+    endpoint = new URL(backendUrl);
+  } catch (error) {
+    throw new Error('LOCAL_DDG_BACKEND_URL must be a valid HTTPS URL ending in /search.');
+  }
+  if (endpoint.protocol !== 'https:' || endpoint.pathname !== '/search' ||
+      endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+    throw new Error('Laptop DuckDuckGo backend requires LOCAL_DDG_BACKEND_URL to be an HTTPS URL ending in /search.');
+  }
+
+  endpoint.searchParams.set('q', query);
+  endpoint.searchParams.set('tab', tab);
+  endpoint.searchParams.set('page', String(page));
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(endpoint, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+        'ngrok-skip-browser-warning': 'true'
+      },
+      signal: controller.signal
+    });
+
+    if (response.status === 401) {
+      throw new Error('Laptop DuckDuckGo backend rejected authentication. Match DDG_BACKEND_TOKEN in Vercel and .env.local.');
+    }
+    if (response.status === 429) {
+      throw new Error('Laptop DuckDuckGo backend is busy. Try again shortly.');
+    }
+    if (!response.ok) {
+      throw new Error(`Laptop DuckDuckGo backend returned HTTP ${response.status}. Check the ngrok URL and laptop service.`);
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch (error) {
+      throw new Error('Laptop DuckDuckGo backend did not return JSON. Set LOCAL_DDG_BACKEND_URL to the ngrok URL ending in /search.');
+    }
+    if (!data || data.engine !== 'duckduckgo' || !Array.isArray(data.results) || !Array.isArray(data.videoCards)) {
+      throw new Error('Laptop DuckDuckGo backend returned an invalid response. Check that ngrok forwards to the DDG search service.');
+    }
+    return data;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error('Laptop DuckDuckGo search timed out. Check that the local service and ngrok tunnel are running.');
+    }
+    if (error.message && error.message.startsWith('Laptop DuckDuckGo')) throw error;
+    throw new Error('Could not reach the laptop DuckDuckGo service. Check that ngrok is running and LOCAL_DDG_BACKEND_URL is correct.');
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 module.exports = async function handler(req, res) {
@@ -408,16 +482,21 @@ module.exports = async function handler(req, res) {
       return res.end(JSON.stringify({ error: 'Missing search query' }));
     }
 
-    const data = await runUnifiedSearch(q, tab, page);
+    const data = await searchForRequest(q, tab, page);
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
     return res.end(JSON.stringify(data));
   } catch (err) {
     res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json');
-    return res.end(JSON.stringify({ error: tlsTrust.errorMessage(err, 'Search failed'), results: [], videoCards: [] }));
+    const message = err.message && err.message.startsWith('Laptop DuckDuckGo')
+      ? err.message
+      : tlsTrust.errorMessage(err, 'Search failed');
+    return res.end(JSON.stringify({ error: message, results: [], videoCards: [] }));
   }
 };
 
 module.exports.runUnifiedSearch = runUnifiedSearch;
+module.exports.runDuckDuckGoSearch = runDuckDuckGoSearch;
+module.exports.searchForRequest = searchForRequest;
 module.exports._emptyResultsMessage = emptyResultsMessage;

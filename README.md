@@ -116,8 +116,19 @@ YouTube search, pasted links and "video from any web page" run through `/api/*` 
 - `api/websearch.js` — plain web search for the Web tab.
 - `nova-add.js` — client helpers: confirm popup (Add / Cancel), multi-video chooser, link parsing.
 
-**Setup:** In Vercel → Project → Settings → Environment Variables, add `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `YOUTUBE_API_KEY`, `GOOGLE_API_KEY`, and `GOOGLE_CX` as separate variables for each environment you deploy. Mark Google and YouTube API keys Sensitive, then redeploy. The Supabase URL and anon key are public client configuration; never use a Supabase service-role key. Restrict Google keys to the required APIs. Do not put API keys in `config.js` or any browser file.
+**Setup:** In Vercel → Project → Settings → Environment Variables, add `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `YOUTUBE_API_KEY` as separate variables for each environment you deploy. If using the built-in Google search fallback, also add `GOOGLE_API_KEY` and `GOOGLE_CX`. Mark Google and YouTube API keys Sensitive, then redeploy. The Supabase URL and anon key are public client configuration; never use a Supabase service-role key. Restrict Google keys to the required APIs. Do not put API keys in `config.js` or any browser file.
 **Local test:** copy `.env.local.example` to `.env.local`, fill in the values, and run `node dev-server.js`. Never commit `.env.local`.
+
+### DuckDuckGo search from Vercel using your laptop
+Vercel may receive no results when its own servers request DuckDuckGo. This optional bridge keeps the site and `/api` routes on Vercel while sending only search requests to a small, token-protected service on your Windows laptop. Search results still use Nova's existing result page and video detection flow.
+
+1. Generate a random token with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` and set `DDG_BACKEND_TOKEN` to that value in the ignored `.env.local`.
+2. Keep the laptop-only service in `local/` and run `node local/local-search-server.js`. The `local/` folder is Git-ignored so it is not pushed to GitHub or deployed to Vercel; the service reads `.env.local` from the project root. It listens only on `127.0.0.1:3011` and exposes only the authenticated `/search` endpoint.
+3. Install and authenticate ngrok, then run `ngrok http 3011`. Keep both terminals and the laptop online. Copy the HTTPS forwarding URL ngrok prints.
+4. In Vercel Production Environment Variables, set `LOCAL_DDG_BACKEND_URL` to that URL plus `/search` (for example, `https://your-ngrok-host.ngrok-free.app/search`) and set `DDG_BACKEND_TOKEN` to the same token. Redeploy.
+5. Test `https://your-production-domain/api/websearch?q=song`; a successful response reports `engine: "duckduckgo"`. The `/api/browse?q=...` search page uses the same bridge, and clicking a result still opens it in Nova's video-detection browser.
+
+The laptop and ngrok tunnel must stay running for Production DuckDuckGo search. If ngrok gives you a different URL after restart, update `LOCAL_DDG_BACKEND_URL` in Vercel and redeploy. If DuckDuckGo blocks or rate-limits the laptop's network, this local scraper may also stop returning results; the bridge does not bypass those restrictions.
 
 ### In-app browser (Web tab)
 Search the web (or type an address) and pages open **inside Nova** through `api/browse.js`. Website JavaScript runs in an isolated sandboxed iframe. Tap any video on the page (a `<video>`, an embedded YouTube/Vimeo/Dailymotion player, a YouTube link, a link to an `.mp4`/`.m3u8`) and Nova asks **Add / Cancel**; only that video goes to the room, never the website.

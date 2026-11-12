@@ -4,7 +4,7 @@ const https = require('https');
 const http = require('http');
 const zlib = require('zlib');
 const { URL } = require('url');
-const { runUnifiedSearch } = require('./websearch');
+const { searchForRequest } = require('./websearch');
 const { extractStreamsFromHtml } = require('./extract');
 
 function escapeHtml(str = '') {
@@ -762,7 +762,18 @@ module.exports = async function handler(req, res) {
     }
 
     if (searchQuery) {
-      const searchData = await runUnifiedSearch(searchQuery, searchTab, 1);
+      let searchData;
+      try {
+        searchData = await searchForRequest(searchQuery, searchTab, 1);
+      } catch (error) {
+        searchData = {
+          query: searchQuery,
+          tab: searchTab,
+          results: [],
+          videoCards: [],
+          message: error.message || 'Search is temporarily unavailable.'
+        };
+      }
       const html = renderGoogleDarkSearchPage(searchData);
       res.statusCode = 200;
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
