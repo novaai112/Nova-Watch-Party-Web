@@ -606,7 +606,7 @@ const boot=async()=>{app.innerHTML=skel();
  try{await loadP()}catch(er){app.innerHTML='<div class="card pad"><p>We could not load your profile. Check your connection and try again.</p><button class="btn pri" onclick="location.reload()">Try again</button></div>';return}
  route()};
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',boot):boot();
-</script><script src="nova-profile.js"></script><script src="nova-chat.js"></script><script src="mobile-navigation.js"></script>
+</script><script src="nova-profile.js"></script><script src="nova-chat.js"></script><script src="mobile-navigation.js?v=2"></script>
 <input type="file" id="avf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" hidden>
 <input type="file" id="gf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" multiple hidden>
 </body></html>

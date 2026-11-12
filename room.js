@@ -1204,7 +1204,7 @@ function renderHome() {
   const q = ($('#hs') ? $('#hs').value : '').trim().toLowerCase();
   const rooms = homeRooms.filter(r => !r.mine && (!q || ((r.media && r.media.title) || r.title || '').toLowerCase().includes(q)));
   const inv = rooms.filter(r => r.invited), pub = rooms.filter(r => !r.invited);
-  const set = (l, e, list) => {
+  const set = (l, e, list, emptyText) => {
     const a = $('#' + l), b = $('#' + e);
     if (a) a.innerHTML = list.map(card).join('');
     if (!b) return;
@@ -1217,12 +1217,13 @@ function renderHome() {
       b.innerHTML = 'Could not load rooms. <button type="button" data-home-retry>Try again</button>';
       b.setAttribute('role', 'alert');
     } else {
-      b.textContent = l === 'invE' ? 'No invited rooms right now.' : 'No public rooms right now.';
+      b.textContent = emptyText;
       b.removeAttribute('aria-live');
       b.removeAttribute('role');
     }
   };
-  set('invL', 'invE', inv); set('pubL', 'pubE', pub);
+  set('invL', 'invE', inv, 'No invited rooms right now.');
+  set('pubL', 'pubE', pub, 'No public rooms right now.');
 }
 async function loadHome() {
   if (R || homeLoading) return;
