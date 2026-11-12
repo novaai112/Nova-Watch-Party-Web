@@ -1,325 +1,797 @@
-/* nova-add.js — "add a video to the room" helpers used by nova-home.html
-   - talks to the server functions /api/youtube, /api/extract, /api/websearch (visitors never see an API key)
-   - understands pasted YouTube links, direct video files (.mp4 .m3u8 …) and any web page
-   - confirm popup (Add / Cancel) and a chooser for pages that contain several videos
-   Load AFTER nova-core.js.  Exposes window.NovaAdd. */
-(function () {
-  'use strict';
+(function() {
+  const webState = {
+    isOpen: false,
+    mode: 'start',
+    history: [],
+    historyIndex: -1,
+    pendingMedia: null,
+    loading: false
+  };
 
-  /* ---------------- server calls ---------------- */
-  function api(path, params) {
-    var u = path + '?' + Object.keys(params).filter(function (k) { return params[k] !== undefined && params[k] !== null && params[k] !== ''; })
-      .map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); }).join('&');
-    return fetch(u, { headers: { Accept: 'application/json' } }).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (j) {
-        if (!r.ok) {
-          var message = j.error || (r.status === 429 ? 'Too many searches — wait a moment and try again.' : 'Something went wrong. Please try again.');
-          if (r.status === 404) message = 'Nova video services are not available on this host. Deploy the /api functions or run node dev-server.js locally.';
-          var e = new Error(message);
-          e.status = r.status; throw e;
-        }
-        return j;
-      });
-    }, function () {
-      if (location.protocol === 'file:') throw new Error('Nova was opened as a local file, so its video services cannot load. Run node dev-server.js or open the deployed site.');
-      if (navigator.onLine === false) throw new Error('You appear to be offline. Check your internet connection and try again.');
-      throw new Error('Could not reach Nova video services. Check that the /api functions are deployed and the server is reachable.');
+  function ensureWebBrowserUI() {
+    if (document.getElementById('novaWebOverlay')) return;
+
+    const style = document.createElement('style');
+    style.id = 'novaWebOverlayStyles';
+    style.textContent = `
+      #novaWebOverlay {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100dvh;
+        background:
+          radial-gradient(70% 42% at 18% 24%, rgba(128, 105, 82, 0.78), transparent 72%),
+          radial-gradient(58% 42% at 87% 82%, rgba(0, 105, 111, 0.68), transparent 72%),
+          radial-gradient(54% 36% at 15% 88%, rgba(113, 117, 75, 0.7), transparent 72%),
+          #29231d;
+        z-index: 99999;
+        display: none;
+        flex-direction: column;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        user-select: none;
+        overflow: hidden;
+      }
+      #novaWebOverlay.active {
+        display: flex;
+      }
+      #novaWebStartScreen {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        padding: env(safe-area-inset-top) 6px env(safe-area-inset-bottom);
+        gap: 0;
+        z-index: 2;
+      }
+      #novaWebOverlay.browsing #novaWebStartScreen {
+        display: none;
+      }
+      .nova-web-header {
+        position: relative;
+        display: grid;
+        grid-template-columns: 42px 1fr 42px;
+        align-items: center;
+        flex: none;
+        min-height: 42px;
+        color: #fff;
+      }
+      .nova-web-header-title {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        font-size: 17px;
+        font-weight: 700;
+      }
+      .nova-web-header-title svg { width: 23px; height: 23px; }
+      .nova-web-icon-btn {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 36px;
+        padding: 0;
+        color: #fff;
+        background: transparent;
+        border: 0;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+      .nova-web-icon-btn:hover:not(:disabled) { background: rgba(255,255,255,.12); }
+      .nova-web-icon-btn:disabled { opacity: .38; cursor: default; }
+      .nova-web-toolbar {
+        display: grid;
+        grid-template-columns: 32px minmax(0, 1fr);
+        align-items: center;
+        gap: 4px;
+        width: 100%;
+        flex: none;
+        margin-top: 6px;
+      }
+      .nova-web-pill {
+        display: flex;
+        width: 100%;
+        min-width: 0;
+        height: 42px;
+        background: #fff;
+        border: 1px solid rgba(0,0,0,.08);
+        border-radius: 11px;
+        display: flex;
+        align-items: center;
+        padding: 0 12px;
+        gap: 9px;
+        box-shadow: 0 4px 14px rgba(0,0,0,.12);
+      }
+      .nova-web-g-icon {
+        width: 17px;
+        height: 20px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #627087;
+      }
+      #novaWebInput {
+        flex: 1;
+        min-width: 0;
+        background: transparent;
+        border: none;
+        outline: none;
+        color: #202124;
+        font-size: 14px;
+        font-weight: 400;
+      }
+      #novaWebInput::placeholder {
+        color: #8b95a5;
+      }
+      #novaWebSpinner {
+        width: 16px;
+        height: 16px;
+        display: none;
+        animation: novaHourglassSpin 1.1s infinite ease-in-out;
+        flex-shrink: 0;
+      }
+      #novaWebOverlay.loading #novaWebSpinner {
+        display: block;
+      }
+      .nova-web-start-content {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+        flex-direction: column;
+        align-items: center;
+        padding: 46px 16px 24px;
+        color: #fff;
+      }
+      @keyframes novaHourglassSpin {
+        0% { transform: rotate(0deg); }
+        50% { transform: rotate(180deg); }
+        100% { transform: rotate(360deg); }
+      }
+      .nova-web-paste-label {
+        color: rgba(255,255,255,.9);
+        font-size: 12px;
+        font-weight: 400;
+        margin-bottom: 12px;
+      }
+      #novaWebPasteBtn {
+        width: 58px;
+        height: 58px;
+        border-radius: 50%;
+        background: rgba(255,255,255,.16);
+        border: 1px solid rgba(255,255,255,.04);
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: background 0.18s ease, transform 0.15s ease;
+      }
+      #novaWebPasteBtn:hover {
+        background: rgba(255,255,255,.24);
+        transform: scale(1.04);
+      }
+      #novaWebStatusCard {
+        max-width: min(440px, 90vw);
+        min-height: 42px;
+        padding: 12px 16px;
+        background: rgba(16,16,16,.48);
+        border: 1px solid rgba(255,255,255,.08);
+        border-radius: 12px;
+        display: none;
+        flex-direction: row;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin-top: 22px;
+        text-align: center;
+      }
+      #novaWebStatusCard.visible {
+        display: flex;
+      }
+      #novaWebStatusCard svg { width: 20px; height: 20px; flex: none; }
+      #novaWebStatusText {
+        color: rgba(255,255,255,.84);
+        font-size: 13px;
+        font-weight: 400;
+      }
+      #novaWebBrowserWrap {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: none;
+        background: #202124;
+        z-index: 3;
+      }
+      #novaWebOverlay.browsing #novaWebBrowserWrap {
+        display: block;
+      }
+      #novaWebIframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+        background: #202124;
+      }
+      #novaWebBackBtn {
+        position: fixed;
+        right: 22px;
+        bottom: 22px;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: rgba(38, 38, 40, 0.78);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        z-index: 100002;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+        transition: background 0.15s ease, transform 0.15s ease;
+      }
+      #novaWebBackBtn:hover {
+        background: rgba(58, 58, 62, 0.98);
+        transform: scale(1.05);
+      }
+      #novaWebConfirmModal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.96);
+        z-index: 100005;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        text-align: center;
+      }
+      #novaWebConfirmModal.active {
+        display: flex;
+      }
+      #novaWebConfirmTitle {
+        color: #ffffff;
+        font-size: 16px;
+        font-weight: 500;
+        max-width: 480px;
+        line-height: 1.45;
+        margin-bottom: 22px;
+      }
+      .nova-web-confirm-actions {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .nova-web-confirm-btn {
+        min-width: 106px;
+        height: 38px;
+        border-radius: 8px;
+        background: #1c1c1e;
+        border: 1px solid #2c2c2e;
+        color: #ffffff;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .nova-web-confirm-btn:hover {
+        background: #2c2c2e;
+      }
+      @media (max-width: 600px) {
+        #novaWebBackBtn { right: 16px; bottom: 16px; width: 42px; height: 42px; }
+        #novaWebConfirmTitle { font-size: 15px; max-width: 90vw; }
+        .nova-web-start-content { padding-top: 42px; }
+        .nova-web-header { min-height: 40px; }
+        .nova-web-toolbar { grid-template-columns: 30px minmax(0, 1fr); }
+      }
+    `;
+    document.head.appendChild(style);
+
+    const overlay = document.createElement('div');
+    overlay.id = 'novaWebOverlay';
+    overlay.innerHTML = `
+      <div id="novaWebStartScreen">
+        <header class="nova-web-header">
+          <button id="novaWebCloseBtn" class="nova-web-icon-btn" type="button" aria-label="Back to Nova" title="Back to Nova">
+            <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>
+          </button>
+          <div class="nova-web-header-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9.5"/><path d="M2.5 12h19M12 2.5c2.8 2.7 4 5.9 4 9.5s-1.2 6.8-4 9.5c-2.8-2.7-4-5.9-4-9.5s1.2-6.8 4-9.5z"/>
+            </svg>
+            <span>Web</span>
+          </div>
+          <span aria-hidden="true"></span>
+        </header>
+
+        <div class="nova-web-toolbar">
+          <button id="novaWebHistoryBtn" class="nova-web-icon-btn" type="button" aria-label="Back" title="Back" disabled>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18 9 12l6-6"/></svg>
+          </button>
+          <form id="novaWebForm" class="nova-web-pill" autocomplete="off">
+            <span class="nova-web-g-icon">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg>
+            </span>
+            <input id="novaWebInput" type="text" placeholder="Search the web or type a web address" autocomplete="off" spellcheck="false" />
+            <svg id="novaWebSpinner" viewBox="0 0 24 24" fill="none">
+              <path d="M6 2h12v4l-4 4 4 4v4H6v-4l4-4-4-4V2z" fill="#65758b"/>
+            </svg>
+          </form>
+        </div>
+
+        <div class="nova-web-start-content">
+          <div class="nova-web-paste-label">or paste clipboard</div>
+          <button id="novaWebPasteBtn" type="button" title="Paste clipboard" aria-label="Paste clipboard">
+            <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 4h2a2 2 0 0 1 2 2v4"/>
+              <path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+              <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+              <path d="M13 14h7"/>
+              <path d="m17 11 3 3-3 3"/>
+            </svg>
+          </button>
+          <div id="novaWebStatusCard">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-2.5 14.5a3.5 3.5 0 1 1 2.47-1.03l2.28 2.28-1.06 1.06-2.28-2.28A3.48 3.48 0 0 1 11.5 16.5zm0-5.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/>
+            </svg>
+            <span id="novaWebStatusText">Enter a search or web address above.</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="novaWebBrowserWrap">
+        <iframe id="novaWebIframe" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" allow="autoplay; encrypted-media; fullscreen"></iframe>
+      </div>
+
+      <button id="novaWebBackBtn" type="button" title="Back">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+      </button>
+
+      <div id="novaWebConfirmModal">
+        <div id="novaWebConfirmTitle">Play - Video?</div>
+        <div class="nova-web-confirm-actions">
+          <button id="novaWebConfirmNo" class="nova-web-confirm-btn" type="button">No</button>
+          <button id="novaWebConfirmYes" class="nova-web-confirm-btn" type="button">Yes</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const form = document.getElementById('novaWebForm');
+    const input = document.getElementById('novaWebInput');
+    const pasteBtn = document.getElementById('novaWebPasteBtn');
+    const backBtn = document.getElementById('novaWebBackBtn');
+    const closeBtn = document.getElementById('novaWebCloseBtn');
+    const historyBtn = document.getElementById('novaWebHistoryBtn');
+    const noBtn = document.getElementById('novaWebConfirmNo');
+    const yesBtn = document.getElementById('novaWebConfirmYes');
+    const iframe = document.getElementById('novaWebIframe');
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      handleWebQueryOrUrl(input.value.trim());
     });
-  }
-  function ytSearch(o) {
-    return api('/api/youtube', { q: o.q, type: o.type === 'playlist' ? 'playlist' : '', eventType: o.eventType, pageToken: o.pageToken, safe: o.safe })
-      .then(function (j) { return { items: j.items || [], next: j.next || '' }; });
-  }
-  function ytInfo(id, pl) { return api('/api/youtube', id ? { id: id } : { pl: pl }); }
-  function extract(url) { return api('/api/extract', { url: url }); }
-  function webSearch(q) { return api('/api/websearch', { q: q }); }
 
-  /* ---------------- helpers ---------------- */
-  function ytMedia(x) {
-    var m = { kind: 'youtube', title: x.title || (x.pl && !x.id ? 'YouTube playlist' : 'YouTube video'), provider: 'youtube' };
-    if (x.id) m.id = x.id; else m.pl = x.pl;
-    if (x.thumb) m.thumb = x.thumb;
-    if (x.live) m.live = true;
-    return m;
-  }
-  var MEDIA_RE = /\.(mp4|m4v|webm|ogv|mov|m3u8)(?:$|[?#])/i;
-  /* what did the visitor type or paste? -> {t:'yt'|'ytpl'|'file'|'url'|'text', id, pl, url} */
-  function parseInput(raw) {
-    var s = String(raw || '').trim();
-    if (!s) return { t: 'text' };
-    var url = null;
-    if (/^https?:\/\//i.test(s)) url = s;
-    else if (/^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?(\/\S*)?$/i.test(s) && !/\s/.test(s)) url = 'https://' + s;
-    if (!url) return { t: 'text' };
-    var u; try { u = new URL(url); } catch (e) { return { t: 'text' }; }
-    var h = u.hostname.replace(/^www\.|^m\.|^music\./i, '').toLowerCase(), id = '', pl = u.searchParams.get('list') || '';
-    if (h === 'youtu.be') id = u.pathname.slice(1).split('/')[0];
-    else if (h === 'youtube.com' || h === 'youtube-nocookie.com') {
-      var p = u.pathname.split('/').filter(Boolean);
-      if (p[0] === 'watch') id = u.searchParams.get('v') || '';
-      else if (/^(shorts|live|embed|v)$/.test(p[0] || '')) id = p[1] || '';
-      if (id === 'videoseries') id = '';
-    }
-    if (/^[\w-]{11}$/.test(id)) return { t: 'yt', id: id, url: url };
-    if (pl && /^[\w-]{10,}$/.test(pl) && (h === 'youtube.com' || h === 'youtu.be' || h === 'youtube-nocookie.com')) return { t: 'ytpl', pl: pl, url: url };
-    if (MEDIA_RE.test(u.pathname + u.search)) return { t: 'file', url: url };
-    return { t: 'url', url: url };
-  }
-  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-  function thumbOf(m) {
-    if (m.thumb) return m.thumb;
-    if (m.kind === 'youtube' && m.id) return 'https://i.ytimg.com/vi/' + m.id + '/mqdefault.jpg';
-    return '';
-  }
+    pasteBtn.addEventListener('click', async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text && text.trim()) {
+          input.value = text.trim();
+          handleWebQueryOrUrl(text.trim());
+        } else {
+          showStatusCard('Video not found');
+        }
+      } catch (err) {
+        input.focus();
+      }
+    });
 
-  /* ---------------- popups ---------------- */
-  var open = null;
-  function close(res) { if (open) { var o = open; open = null; o.el.remove(); document.removeEventListener('keydown', o.key, true); if (o.prev && o.prev.focus) try { o.prev.focus(); } catch (e) {} if (o.done) o.done(res); } }
-  function overlay(html, done, label) {
-    close();
-    var el = document.createElement('div');
-    el.className = 'nv-ov'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', label || 'Add video');
-    el.innerHTML = html;
-    var o = { el: el, done: done, prev: document.activeElement };
-    o.key = function (e) { if (e.key === 'Escape') { e.stopPropagation(); close('cancel'); } };
-    document.addEventListener('keydown', o.key, true);
-    el.addEventListener('mousedown', function (e) { if (e.target === el) close('cancel'); });
-    document.body.appendChild(el); open = o;
-    var f = el.querySelector('.nv-b.main') || el.querySelector('button'); if (f) f.focus();
-    return el;
-  }
-
-  /* confirm: show what is about to be added, then Add / Cancel.  cb(now) is only called on Add. */
-  function confirm(m, cb, opt) {
-    opt = opt || {};
-    var th = thumbOf(m), sub = [opt.channel || (m.provider && m.provider !== 'youtube' && m.provider !== 'link' ? m.provider : ''), opt.dur || (m.live ? 'LIVE' : '')].filter(Boolean).join(' · ');
-    var busy = false, admin = false;
-    try { var c = window.NovaRoom && NovaRoom.ctx && NovaRoom.ctx(); busy = !!(c && c.busy); admin = !!(c && c.admin); } catch (e) {}
-    var el = overlay(
-      '<div class="nv-card">' +
-        '<div class="nv-th">' + (th ? '<img alt="" src="' + esc(th) + '" referrerpolicy="no-referrer">' : '<span class="nv-ph" aria-hidden="true">▶</span>') + '</div>' +
-        '<div class="nv-bd"><p class="nv-k">Add this video?</p><h2 class="nv-t">' + esc(m.title || 'Video') + '</h2>' + (sub ? '<p class="nv-s">' + esc(sub) + '</p>' : '') + '</div>' +
-        '<div class="nv-ac">' +
-          '<button type="button" class="nv-b ghost">Cancel</button>' +
-          (busy && admin ? '<button type="button" class="nv-b alt">Play now</button>' : '') +
-          '<button type="button" class="nv-b main">Add to room</button>' +
-        '</div>' +
-      '</div>', null, 'Add this video to the room');
-    var img = el.querySelector('img'); if (img) img.onerror = function () { img.replaceWith(Object.assign(document.createElement('span'), { className: 'nv-ph', textContent: '▶' })); };
-    el.querySelector('.ghost').onclick = function () { close('cancel'); };
-    el.querySelector('.main').onclick = function () { close('add'); try { cb(false); } catch (e) { console.error(e); } };
-    var alt = el.querySelector('.alt'); if (alt) alt.onclick = function () { close('add'); try { cb(true); } catch (e) { console.error(e); } };
-  }
-
-  /* choose: a page with several videos -> pick one, then go(video) (which opens the confirm popup) */
-  function choose(site, title, videos, go) {
-    var rows = videos.map(function (v, i) {
-      var t = thumbOf(v);
-      return '<button type="button" class="nv-li" data-i="' + i + '"><span class="nv-lt">' + (t ? '<img alt="" src="' + esc(t) + '" referrerpolicy="no-referrer">' : '<span class="nv-ph" aria-hidden="true">▶</span>') + '</span>' +
-        '<span class="nv-lx"><b>' + esc(v.title || title || 'Video') + '</b><small>' + esc(v.provider || site || '') + '</small></span></button>';
-    }).join('');
-    var el = overlay('<div class="nv-card nv-wide"><div class="nv-bd"><p class="nv-k">' + videos.length + ' videos found' + (site ? ' on ' + esc(site) : '') + '</p><h2 class="nv-t">Choose one to add</h2></div><div class="nv-list">' + rows + '</div><div class="nv-ac"><button type="button" class="nv-b ghost">Cancel</button></div></div>', null, 'Choose a video');
-    el.querySelector('.ghost').onclick = function () { close('cancel'); };
-    el.querySelector('.nv-list').onclick = function (e) {
-      var b = e.target.closest('.nv-li'); if (!b) return;
-      var v = videos[+b.dataset.i]; close('pick'); go(v);
-    };
-  }
-
-
-  /* ---------------- in-app browser (the Web tab) ----------------
-     Search the web or type an address; pages open inside Nova via /api/browse (script-free, sandboxed).
-     Tapping any video on a page reports it here -> confirm popup -> only that video goes to the room. */
-  function toast(t) {
-    var el = document.createElement('div'); el.className = 'nv-toast'; el.setAttribute('role', 'status'); el.textContent = t;
-    document.body.appendChild(el); setTimeout(function () { el.classList.add('out'); }, 2600); setTimeout(function () { el.remove(); }, 3000);
-  }
-  function fileName(u) { try { return decodeURIComponent(new URL(u).pathname.split('/').pop()).replace(/\.[a-z0-9]+$/i, '') || 'Video'; } catch (e) { return 'Video'; } }
-  /* a tapped video URL -> room media (null when it is not a playable video URL) */
-  function mediaFromUrl(u, title, thumb) {
-    var p = parseInput(u), m;
-    if (p.t === 'yt') return ytMedia({ id: p.id, title: title, thumb: thumb });
-    if (p.t === 'ytpl') return ytMedia({ pl: p.pl, title: title, thumb: thumb });
-    if ((m = /player\.vimeo\.com\/video\/(\d+)/.exec(u) || /^https?:\/\/vimeo\.com\/(\d+)/.exec(u)))
-      return { kind: 'embed', url: 'https://player.vimeo.com/video/' + m[1] + '?autoplay=1', title: title || 'Vimeo video', thumb: thumb || '', provider: 'vimeo' };
-    if ((m = /dailymotion\.com\/(?:embed\/)?video\/([a-z0-9]+)/i.exec(u)))
-      return { kind: 'embed', url: 'https://www.dailymotion.com/embed/video/' + m[1] + '?autoplay=1', title: title || 'Dailymotion video', thumb: thumb || '', provider: 'dailymotion' };
-    if (p.t === 'file') {
-      var t = (title || '').trim(); if (!t || t.length > 120 || /^(download|play|watch)$/i.test(t)) t = fileName(u);
-      return { kind: 'video', url: p.url, title: t, thumb: /^https:/.test(thumb || '') ? thumb : '', provider: 'link' };
-    }
-    return null;
-  }
-  function shortUrl(u) { try { var x = new URL(u); return x.hostname.replace(/^www\./, '') + (x.pathname === '/' ? '' : x.pathname) + x.search; } catch (e) { return u; } }
-
-  var SEARCH_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
-  var BACK_SVG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>';
-  var FIND_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/></svg>';
-  var OPEN_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/></svg>';
-
-  /* o: { importUrl(url) -> opens a YouTube/file link or reads a page for videos (Add/Cancel);  launch(media, opt) -> confirm popup } */
-  function browser(host, o) {
-    var hist = [], cur = null, gen = 0, lastVid = '', lastT = 0, loadTimer = null;
-    host.innerHTML =
-      '<div class="nv-br">' +
-        '<form class="nv-bar" autocomplete="off" role="search">' +
-          '<button type="button" class="nv-ib nv-back" aria-label="Back" disabled>' + BACK_SVG + '</button>' +
-          '<label class="nv-addr">' + SEARCH_SVG + '<input id="nvq" type="text" inputmode="url" enterkeyhint="go" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Search the web or type a web address" aria-label="Search the web or type a web address"></label>' +
-          '<button type="button" class="nv-ib nv-open" aria-label="Open original website" title="Open original website" hidden>' + OPEN_SVG + '</button>' +
-          '<button type="button" class="nv-ib nv-find" aria-label="Find video on this page" title="Find video on this page" hidden>' + FIND_SVG + '</button>' +
-        '</form>' +
-        '<div class="nv-main"><div class="nv-pane"></div><div class="nv-status" id="sres"></div></div>' +
-      '</div>';
-    var form = host.querySelector('.nv-bar'), input = host.querySelector('#nvq'), back = host.querySelector('.nv-back'), open = host.querySelector('.nv-open'), find = host.querySelector('.nv-find'), main = host.querySelector('.nv-pane'), over = host.querySelector('#sres');
-    over.addEventListener('click', function (ev) { if (!ev.target.closest('button')) over.innerHTML = ''; });   // tap a status message to dismiss it
-    function status(t, kind, retry) {
-      main.innerHTML = '<div class="nv-msg' + (kind ? ' ' + kind : '') + '">' + (kind === 'wait' ? '<i class="nv-spin"></i>' : '') + '<span>' + esc(t) + '</span>' + (retry ? '<button class="nv-retry" type="button">Try again</button>' : '') + '</div>';
-      if (retry) main.querySelector('.nv-retry').onclick = retry;
-    }
-    function sync() { back.disabled = hist.length < 2; open.hidden = find.hidden = !(cur && cur.k === 'page'); }
-    function hint() {
-      main.innerHTML = '<div class="nv-hint"><b>Search the web, then tap any video</b><span>Open a page, tap a supported video and Nova asks whether to add it to the room. You can also paste an official video link.</span><span class="nv-fine">Websites run JavaScript in an isolated sandbox, separate from Nova login and storage. Sign-in, pop-ups, downloads, or some site features may not work; use Open original website when needed. Protected players cannot be imported.</span></div>';
-    }
-    function results(q) {
-      var my = ++gen; status('Searching the web…', 'wait');
-      webSearch(q).then(function (j) {
-        if (my !== gen) return;
-        var l = j.results || [];
-        if (!l.length) { status('No results. Try other words, or paste a link to a page with a video.', ''); return; }
-        main.innerHTML = '<div class="nv-wr">' + l.map(function (x, i) {
-          return '<button type="button" class="nv-wi" data-u="' + esc(x.url) + '"><small>' + esc(x.host) + '</small><b>' + esc(x.title) + '</b><span>' + esc(x.snippet) + '</span></button>';
-        }).join('') + '</div>';
-        main.scrollTop = 0;
-      }).catch(function (err) { if (my === gen) status(err.message || 'Web search failed', 'err', function () { results(q); }); });
-    }
-    function page(url) {
-      var my = ++gen;
-      if (loadTimer) clearTimeout(loadTimer);
-      loadTimer = null;
-      var host = ''; try { host = new URL(url).hostname.toLowerCase(); } catch (e) {}
-      if (/(^|\.)youtube(?:-nocookie)?\.com$/.test(host)) {
-        status('YouTube needs its own browser cookies to render fully. Click Open original website to browse YouTube, or paste a direct video link to add it to the room.');
+    backBtn.addEventListener('click', () => {
+      if (document.getElementById('novaWebConfirmModal').classList.contains('active')) {
+        hidePlayConfirmModal();
         return;
       }
-      main.innerHTML = '<div class="nv-load"><i class="nv-spin"></i></div><iframe class="nv-frame" title="Web page" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" allow="" src="/api/browse?url=' + encodeURIComponent(url) + '"></iframe>';
-      var fr = main.querySelector('iframe'); fr.dataset.g = my;
-      fr.addEventListener('load', function () {
-        if (my !== gen) return;
-        if (loadTimer) clearTimeout(loadTimer);
-        loadTimer = null;
-        var l = main.querySelector('.nv-load'); if (l) l.remove();
-      });
-      loadTimer = setTimeout(function () {
-        if (my !== gen || !main.contains(fr)) return;
-        loadTimer = null;
-        status('This website is taking too long to load in Nova. Use Open original website, or try again.', 'err', function () { page(url); });
-      }, 12000);
-    }
-    function show(e, push) {
-      cur = e; if (push !== false) hist.push(e);
-      input.value = e.k === 'results' ? e.q : e.url;
-      sync();
-      if (e.k === 'results') results(e.q); else page(e.url);
-    }
-    function go(raw) {
-      raw = String(raw || '').trim(); if (!raw) return;
-      var p = parseInput(raw);
-      if (p.t === 'yt' || p.t === 'ytpl' || p.t === 'file') return o.importUrl(p.url);
-      if (p.t === 'url') return show({ k: 'page', url: p.url });
-      show({ k: 'results', q: raw });
-    }
-    form.onsubmit = function (ev) { ev.preventDefault(); input.blur(); go(input.value); };
-    input.addEventListener('focus', function () { try { input.select(); } catch (e) {} });
-    back.onclick = function () { if (hist.length > 1) { hist.pop(); show(hist[hist.length - 1], false); } };
-    open.onclick = function () {
-      if (!cur || cur.k !== 'page') return;
-      var a = document.createElement('a'); a.href = cur.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.click();
-    };
-    find.onclick = function () { if (cur && cur.k === 'page') o.importUrl(cur.url); };
-    main.addEventListener('click', function (ev) {
-      var b = ev.target.closest('.nv-wi'); if (!b) return;
-      var p = parseInput(b.dataset.u);
-      if (p.t === 'yt' || p.t === 'ytpl' || p.t === 'file') return o.importUrl(p.url);   // a video result: straight to Add / Cancel
-      show({ k: 'page', url: b.dataset.u });
+      navigateBack();
     });
-    /* messages from the page the visitor is looking at */
-    function onMsg(ev) {
-      if (!document.body.contains(host)) { window.removeEventListener('message', onMsg); return; }
-      var fr = main.querySelector('iframe'), d = ev.data;
-      if (!fr || ev.source !== fr.contentWindow || !d || d.nova !== 1) return;
-      if (d.t === 'nav') {
-        if (typeof d.url !== 'string') return;
-        if (loadTimer) clearTimeout(loadTimer);
-        loadTimer = null;
-        var l = main.querySelector('.nv-load'); if (l) l.remove();
-        if (!cur || cur.k !== 'page') return;
-        if (d.url !== cur.url) { cur = { k: 'page', url: d.url }; hist.push(cur); }
-        input.value = cur.url; sync(); return;
+
+    closeBtn.addEventListener('click', closeWebBrowser);
+    historyBtn.addEventListener('click', navigateBack);
+    noBtn.addEventListener('click', () => {
+      hidePlayConfirmModal();
+    });
+
+    yesBtn.addEventListener('click', () => {
+      if (!webState.pendingMedia) return;
+      const media = webState.pendingMedia;
+      hidePlayConfirmModal();
+      closeWebBrowser();
+      launchWebVideoInRoom(media);
+    });
+
+    iframe.addEventListener('load', () => {
+      setLoadingState(false);
+    });
+
+    window.addEventListener('message', (event) => {
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+
+      if (data.type === 'NOVA_WEB_NAVIGATE' && data.url) {
+        const browseSrc = `/api/browse?url=${encodeURIComponent(data.url)}`;
+        if (webState.history[webState.historyIndex] !== browseSrc) {
+          webState.history = webState.history.slice(0, webState.historyIndex + 1);
+          webState.history.push(browseSrc);
+          webState.historyIndex = webState.history.length - 1;
+          updateHistoryButton();
+        }
       }
-      if (d.t !== 'video' && d.t !== 'page') return;
-      var u = String(d.url || ''), now = Date.now();
-      if (u === lastVid && now - lastT < 350) return; lastVid = u; lastT = now;
-      if (d.t === 'page') return o.importUrl(cur ? cur.url : String(d.page || ''));
-      if (!/^https?:/i.test(u)) return toast('This video cannot be added.');
-      var m = mediaFromUrl(u, String(d.title || ''), String(d.thumb || ''));
-      if (!m) return o.importUrl(String(d.page || (cur && cur.url) || u));
-      if (m.kind === 'youtube') return o.importUrl(u);                    // looks the video up (real title, embeddable check)
-      if (m.kind === 'video' && !/^https:/i.test(m.url)) return toast('Only secure (https) videos can be added.');
-      o.launch(m, { channel: shortUrl(cur ? cur.url : u).split('/')[0] });
-    }
-    window.addEventListener('message', onMsg);
-    hint(); sync();
-    if (o.init) go(o.init); else setTimeout(function () { try { input.focus(); } catch (e) {} }, 60);
-    return { go: go };
+
+      if (data.type === 'NOVA_WEB_VIDEO_PROMPT' && data.streamUrl) {
+        promptPlayWebVideo({
+          title: data.title || 'Web Video',
+          streamUrl: data.streamUrl,
+          proxiedStreamUrl: data.proxiedStreamUrl || `/api/browse?stream=1&url=${encodeURIComponent(data.streamUrl)}`,
+          streamType: data.streamType || 'auto',
+          thumbnail: data.thumbnail || '',
+          pageUrl: data.pageUrl || ''
+        });
+      }
+    });
   }
 
-  /* ---------------- styles ---------------- */
-  var css = '' +
-    '.nv-ov{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;padding:16px;background:rgba(10,16,28,.38);-webkit-backdrop-filter:blur(10px) saturate(1.1);backdrop-filter:blur(10px) saturate(1.1);animation:nvf .16s ease-out;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}' +
-    '.nv-card{width:min(420px,100%);max-height:calc(100dvh - 32px);display:flex;flex-direction:column;background:#fff;color:#0b1220;border-radius:20px;overflow:hidden;box-shadow:0 24px 70px rgba(5,10,25,.35),0 0 0 1px rgba(255,255,255,.4);animation:nvu .2s cubic-bezier(.2,.8,.2,1)}' +
-    '.nv-card.nv-wide{width:min(520px,100%)}' +
-    '.nv-th{aspect-ratio:16/9;background:#0b1220;display:grid;place-items:center;overflow:hidden}.nv-th img{width:100%;height:100%;object-fit:cover;display:block}' +
-    '.nv-ph{display:grid;place-items:center;width:100%;height:100%;color:#fff9;font-size:30px;background:linear-gradient(135deg,#1c2a44,#0b1220)}' +
-    '.nv-bd{padding:16px 20px 6px;min-width:0}.nv-k{margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#667085}' +
-    '.nv-t{margin:0;font-size:18px;line-height:1.3;font-weight:700;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}' +
-    '.nv-s{margin:6px 0 0;font-size:14px;color:#667085}' +
-    '.nv-ac{display:flex;gap:10px;justify-content:flex-end;padding:16px 20px 20px}' +
-    '.nv-b{white-space:nowrap;appearance:none;border:0;border-radius:12px;padding:12px 20px;min-height:44px;font:inherit;font-size:15px;font-weight:700;cursor:pointer;transition:transform .08s,background .15s}' +
-    '.nv-b:active{transform:scale(.97)}.nv-b:focus-visible{outline:3px solid #2563eb55;outline-offset:2px}' +
-    '.nv-b.main{background:#0b1220;color:#fff}.nv-b.main:hover{background:#1c2a44}' +
-    '.nv-b.ghost{background:#eef2f7;color:#0b1220}.nv-b.ghost:hover{background:#e3e9f1}' +
-    '.nv-b.alt{background:#e7f0ff;color:#1d4ed8}' +
-    '.nv-list{overflow:auto;padding:8px 12px;display:flex;flex-direction:column;gap:6px;max-height:50dvh}' +
-    '.nv-li{display:flex;gap:12px;align-items:center;width:100%;text-align:left;border:0;background:#f3f6fa;border-radius:14px;padding:8px;cursor:pointer;font:inherit;color:inherit}.nv-li:hover{background:#e9eff6}' +
-    '.nv-lt{flex:0 0 96px;aspect-ratio:16/9;border-radius:9px;overflow:hidden;background:#0b1220;display:block}.nv-lt img{width:100%;height:100%;object-fit:cover;display:block}' +
-    '.nv-lx{min-width:0;display:flex;flex-direction:column;gap:2px}.nv-lx b{font-size:15px;line-height:1.25;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.nv-lx small{color:#667085;font-size:13px}' +
-    /* inside the dark search screen */
-    '.nv-msg{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;padding:48px 24px;text-align:center;font-size:17px;line-height:1.5;color:#e8edf5}.nv-msg.err{color:#ffb4ab}' +
-    '.nv-spin{width:22px;height:22px;border-radius:50%;border:3px solid #ffffff33;border-top-color:#fff;display:inline-block;animation:nvr .8s linear infinite}' +
-    '.nv-foot{display:flex;justify-content:center;padding:18px 0 28px;min-height:60px}' +
-    '.nv-retry{border:0;border-radius:10px;padding:10px 18px;font:inherit;font-weight:700;cursor:pointer;background:#fff;color:#0b1220}' +
-    '.nv-hint{display:flex;flex-direction:column;gap:8px;align-items:center;text-align:center;padding:56px 28px;color:#cfd8e6}.nv-hint b{font-size:22px;color:#fff}.nv-hint span{font-size:16px;line-height:1.5;max-width:520px}' +
-    '.nv-wr{display:flex;flex-direction:column;gap:8px;padding:12px 14px 28px}' +
-    '.nv-wi{display:flex;flex-direction:column;gap:3px;align-items:flex-start;text-align:left;width:100%;border:0;border-radius:14px;padding:14px 16px;background:#ffffff14;color:#fff;font:inherit;cursor:pointer}.nv-wi:hover{background:#ffffff22}' +
-    '.nv-wi b{font-size:17px;line-height:1.3}.nv-wi small{color:#9fd0ff;font-size:13px}.nv-wi span{color:#cfd8e6;font-size:14px;line-height:1.4}' +
-    '.vc .ti .ch{display:block;font-style:normal;font-size:12px;opacity:.85;margin-top:2px}' +
-    /* in-app browser */
-    '.nv-br{position:absolute;inset:0;display:flex;flex-direction:column}' +
-    '.nv-bar{display:flex;align-items:center;gap:8px;padding:8px 10px;flex:0 0 auto}' +
-    '.nv-ib{flex:0 0 44px;height:44px;border:0;border-radius:12px;background:#ffffff1a;color:#fff;display:grid;place-items:center;cursor:pointer}.nv-ib:hover:not(:disabled){background:#ffffff2e}.nv-ib:disabled{opacity:.35;cursor:default}.nv-ib[hidden]{display:none}' +
-    '.nv-addr{flex:1;min-width:0;display:flex;align-items:center;gap:10px;height:44px;padding:0 14px;border-radius:14px;background:#fff;color:#667085}' +
-    '.nv-addr input{flex:1;min-width:0;border:0;outline:0;background:transparent;font:inherit;font-size:16px;color:#0b1220}.nv-addr input::placeholder{color:#8a94a6}' +
-    '.nv-addr:focus-within{box-shadow:0 0 0 3px #60a5fa88}' +
-    '.nv-main{position:relative;flex:1;min-height:0}.nv-pane{position:absolute;inset:0;overflow:auto;-webkit-overflow-scrolling:touch}' +
-    '.nv-status{position:absolute;inset:0;z-index:3;overflow:auto;background:rgba(14,18,28,.96)}.nv-status:empty{display:none}' +
-    '.nv-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff}' +
-    '.nv-load{position:absolute;inset:0;display:grid;place-items:center;background:#fff;z-index:1;pointer-events:none}.nv-load .nv-spin{border-color:#0b122033;border-top-color:#0b1220}' +
-    '.nv-toast{position:fixed;left:50%;bottom:calc(28px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:2147483100;max-width:calc(100vw - 32px);padding:12px 18px;border-radius:999px;background:#0b1220;color:#fff;font:600 15px system-ui,sans-serif;box-shadow:0 10px 30px #0006;transition:opacity .3s}.nv-toast.out{opacity:0}' +
-    '.nv-fine{font-size:13px!important;opacity:.7}' +
-    '@keyframes nvf{from{opacity:0}to{opacity:1}}@keyframes nvu{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}@keyframes nvr{to{transform:rotate(360deg)}}' +
-    '@media (prefers-reduced-motion:reduce){.nv-ov,.nv-card,.nv-spin{animation:none}}' +
-    '@media (max-width:520px){.nv-ov{align-items:end;padding:12px}.nv-ac .nv-b{flex:1}}';
-  var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
+  function updateHistoryButton() {
+    const button = document.getElementById('novaWebHistoryBtn');
+    if (button) button.disabled = webState.historyIndex <= 0;
+  }
 
-  window.NovaAdd = { ytSearch: ytSearch, ytInfo: ytInfo, ytMedia: ytMedia, extract: extract, webSearch: webSearch, parseInput: parseInput, mediaFromUrl: mediaFromUrl, browser: browser, toast: toast, confirm: confirm, choose: choose, close: close };
+  function navigateBack() {
+    if (document.getElementById('novaWebConfirmModal')?.classList.contains('active')) {
+      hidePlayConfirmModal();
+      return;
+    }
+    if (webState.mode === 'browsing') {
+      if (webState.historyIndex > 0) {
+        webState.historyIndex -= 1;
+        const previous = webState.history[webState.historyIndex];
+        const iframe = document.getElementById('novaWebIframe');
+        if (iframe) iframe.src = previous;
+        updateHistoryButton();
+      } else {
+        returnToWebStartScreen();
+      }
+    } else {
+      closeWebBrowser();
+    }
+  }
+
+  function setLoadingState(isLoading) {
+    webState.loading = isLoading;
+    const overlay = document.getElementById('novaWebOverlay');
+    if (!overlay) return;
+    overlay.classList.toggle('loading', Boolean(isLoading));
+  }
+
+  function showStatusCard(message) {
+    const card = document.getElementById('novaWebStatusCard');
+    const txt = document.getElementById('novaWebStatusText');
+    if (txt) txt.textContent = message || 'Video not found';
+    if (card) card.classList.add('visible');
+  }
+
+  function isLikelyDirectUrl(str) {
+    if (/^https?:\/\//i.test(str)) return true;
+    if (/^[a-z0-9-]+(\.[a-z0-9-]+)+(\/.*)?$/i.test(str) && !/\s/.test(str)) return true;
+    return false;
+  }
+
+  async function handleWebQueryOrUrl(rawInput) {
+    if (!rawInput) {
+      showStatusCard('Video not found');
+      return;
+    }
+
+    setLoadingState(true);
+
+    if (isLikelyDirectUrl(rawInput)) {
+      const normalizedUrl = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput}`;
+      try {
+        const res = await fetch(`/api/extract?url=${encodeURIComponent(normalizedUrl)}`);
+        if (res.ok) {
+          const extracted = await res.json();
+          if (extracted && extracted.streamUrl) {
+            setLoadingState(false);
+            openBrowsingFrame(`/api/browse?url=${encodeURIComponent(normalizedUrl)}`);
+            promptPlayWebVideo({
+              title: extracted.title || 'Web Video',
+              streamUrl: extracted.streamUrl,
+              proxiedStreamUrl: extracted.proxiedStreamUrl || `/api/browse?stream=1&url=${encodeURIComponent(extracted.streamUrl)}`,
+              streamType: extracted.streamType || 'auto',
+              thumbnail: extracted.thumbnail || '',
+              pageUrl: normalizedUrl
+            });
+            return;
+          }
+        }
+      } catch (e) {}
+
+      openBrowsingFrame(`/api/browse?url=${encodeURIComponent(normalizedUrl)}`);
+      return;
+    }
+
+    openBrowsingFrame(`/api/browse?q=${encodeURIComponent(rawInput)}&tab=all`);
+  }
+
+  function openBrowsingFrame(srcUrl) {
+    const overlay = document.getElementById('novaWebOverlay');
+    const iframe = document.getElementById('novaWebIframe');
+    if (!overlay || !iframe) return;
+
+    webState.mode = 'browsing';
+    overlay.classList.add('browsing');
+
+    webState.history = webState.history.slice(0, webState.historyIndex + 1);
+    webState.history.push(srcUrl);
+    webState.historyIndex = webState.history.length - 1;
+    updateHistoryButton();
+
+    iframe.src = srcUrl;
+  }
+
+  function returnToWebStartScreen() {
+    const overlay = document.getElementById('novaWebOverlay');
+    const iframe = document.getElementById('novaWebIframe');
+    if (!overlay || !iframe) return;
+
+    webState.mode = 'start';
+    overlay.classList.remove('browsing');
+    setLoadingState(false);
+    updateHistoryButton();
+    iframe.src = 'about:blank';
+  }
+
+  function promptPlayWebVideo(media) {
+    webState.pendingMedia = media;
+    const modal = document.getElementById('novaWebConfirmModal');
+    const titleEl = document.getElementById('novaWebConfirmTitle');
+    if (!modal || !titleEl) return;
+
+    titleEl.textContent = `Play - ${media.title || 'Web Video'}?`;
+    modal.classList.add('active');
+  }
+
+  function hidePlayConfirmModal() {
+    const modal = document.getElementById('novaWebConfirmModal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  function openWebBrowser(initialQuery = '') {
+    ensureWebBrowserUI();
+    const overlay = document.getElementById('novaWebOverlay');
+    const input = document.getElementById('novaWebInput');
+    if (!overlay) return;
+
+    webState.isOpen = true;
+    webState.mode = 'start';
+    webState.history = [];
+    webState.historyIndex = -1;
+    overlay.classList.add('active');
+    overlay.classList.remove('browsing');
+    document.getElementById('novaWebStatusCard').classList.remove('visible');
+    updateHistoryButton();
+
+    if (input) {
+      input.value = initialQuery || '';
+      setTimeout(() => input.focus(), 60);
+    }
+
+    if (initialQuery && initialQuery.trim()) {
+      handleWebQueryOrUrl(initialQuery.trim());
+    }
+  }
+
+  function closeWebBrowser() {
+    const overlay = document.getElementById('novaWebOverlay');
+    const iframe = document.getElementById('novaWebIframe');
+    if (!overlay) return;
+
+    webState.isOpen = false;
+    webState.mode = 'start';
+    overlay.classList.remove('active', 'browsing', 'loading');
+    hidePlayConfirmModal();
+    if (iframe) iframe.src = 'about:blank';
+  }
+
+  async function launchWebVideoInRoom(media) {
+    const roomPayload = {
+      provider: 'web',
+      sourceLabel: 'generic • Web',
+      title: media.title || 'Web Video',
+      url: media.proxiedStreamUrl || media.streamUrl,
+      rawStreamUrl: media.streamUrl,
+      pageUrl: media.pageUrl || media.streamUrl,
+      streamType: media.streamType || (/\.m3u8(\?|$)/i.test(media.streamUrl) ? 'hls' : 'mp4'),
+      thumbnail: media.thumbnail || ''
+    };
+
+    try {
+      sessionStorage.setItem('nova_active_web_media', JSON.stringify(roomPayload));
+      localStorage.setItem('nova_active_web_media', JSON.stringify(roomPayload));
+    } catch (e) {}
+
+    if (typeof window.onNovaWebMediaSelected === 'function') {
+      window.onNovaWebMediaSelected(roomPayload);
+      return;
+    }
+
+    if (typeof window.loadWebMediaIntoRoomPlayer === 'function') {
+      window.loadWebMediaIntoRoomPlayer(roomPayload, true);
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const roomId = params.get('room') || params.get('id') || 'live-' + Math.random().toString(36).slice(2, 8);
+    window.location.href = `/index.html?room=${encodeURIComponent(roomId)}&provider=web&video=${encodeURIComponent(roomPayload.url)}&title=${encodeURIComponent(roomPayload.title)}`;
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    ensureWebBrowserUI();
+
+    document.addEventListener('click', (e) => {
+      const trigger = e.target.closest('[data-provider="web"], #webProviderBtn, .web-source-btn, [data-action="open-web"]');
+      if (trigger) {
+        e.preventDefault();
+        openWebBrowser();
+      }
+    });
+  });
+
+  window.NovaWebBrowser = {
+    open: openWebBrowser,
+    close: closeWebBrowser,
+    searchOrNavigate: handleWebQueryOrUrl
+  };
+})();
+
+(function() {
+  async function requestJson(path) {
+    const response = await fetch(path);
+    let data;
+    try {
+      data = await response.json();
+    } catch (e) {
+      throw new Error('The server returned an invalid response.');
+    }
+    if (!response.ok) throw new Error(data.error || 'The request failed.');
+    return data;
+  }
+
+  function youtubeUrl(params) {
+    const query = new URLSearchParams();
+    Object.keys(params).forEach(function(key) {
+      if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
+        query.set(key, params[key]);
+      }
+    });
+    return '/api/youtube?' + query.toString();
+  }
+
+  function parseInput(value) {
+    const input = String(value || '').trim();
+    if (!input) return { t: 'query', q: '' };
+
+    const candidate = /^https?:\/\//i.test(input) ? input : (/^[\w.-]+\.[a-z]{2,}(?:\/|$)/i.test(input) ? 'https://' + input : '');
+    if (candidate) {
+      let url;
+      try {
+        url = new URL(candidate);
+      } catch (e) {
+        return { t: 'query', q: input };
+      }
+      if (/^(?:www\.|m\.|music\.)?(?:youtube\.com|youtube-nocookie\.com)$/i.test(url.hostname) || /^(?:www\.)?youtu\.be$/i.test(url.hostname)) {
+        const id = url.hostname.endsWith('youtu.be')
+          ? url.pathname.split('/').filter(Boolean)[0]
+          : url.searchParams.get('v') || url.pathname.match(/^\/(?:embed|shorts|live)\/([\w-]+)/)?.[1] || '';
+        const pl = url.searchParams.get('list') || '';
+        if (id && /^[\w-]{11}$/.test(id)) return { t: 'yt', id: id, pl: pl };
+        if (pl) return { t: 'ytpl', pl: pl };
+        return { t: 'url', url: url.toString() };
+      }
+      if (/\.(?:mp4|m4v|webm|ogv|mov|m3u8)(?:[?#]|$)/i.test(url.href)) {
+        return { t: 'file', url: url.toString() };
+      }
+      return { t: 'url', url: url.toString() };
+    }
+    return { t: 'query', q: input };
+  }
+
+  function ytMedia(video) {
+    const media = {
+      kind: 'youtube',
+      title: video.title || 'YouTube video',
+      provider: 'youtube'
+    };
+    if (video.id) media.id = video.id;
+    if (video.pl) media.pl = video.pl;
+    if (video.thumb) media.thumb = video.thumb;
+    if (video.live) media.live = true;
+    if (!media.id && !media.pl) throw new Error('This YouTube item has no video or playlist ID.');
+    return media;
+  }
+
+  async function extract(url) {
+    const data = await requestJson('/api/extract?url=' + encodeURIComponent(url));
+    const streams = data.streams || (data.streamUrl ? [{
+      url: data.streamUrl,
+      proxiedStreamUrl: data.proxiedStreamUrl,
+      type: data.streamType
+    }] : []);
+    return {
+      ok: streams.length > 0,
+      site: data.url ? new URL(data.url).hostname : '',
+      title: data.title || '',
+      videos: streams.map(function(stream) {
+        return {
+          kind: 'video',
+          url: stream.proxiedStreamUrl || data.proxiedStreamUrl || stream.url,
+          title: data.title || 'Web video',
+          thumb: data.thumbnail || '',
+          provider: 'web',
+          streamType: stream.type || data.streamType || 'auto'
+        };
+      }),
+      error: data.error || ''
+    };
+  }
+
+  function choose(site, title, videos, onSelect) {
+    if (!videos || !videos.length) return;
+    if (videos.length === 1) {
+      onSelect(videos[0]);
+      return;
+    }
+    const choices = videos.map(function(video, index) {
+      return (index + 1) + '. ' + (video.title || 'Video');
+    }).join('\n');
+    const selection = window.prompt('Choose a video from ' + (title || site || 'this page') + ':\n' + choices);
+    if (selection === null) return;
+    const index = Number(selection) - 1;
+    if (Number.isInteger(index) && index >= 0 && index < videos.length) onSelect(videos[index]);
+  }
+
+  window.NovaAdd = {
+    parseInput: parseInput,
+    ytSearch: function(options) {
+      return requestJson(youtubeUrl({
+        q: options.q,
+        type: options.type,
+        eventType: options.eventType,
+        pageToken: options.pageToken,
+        safe: options.safe
+      }));
+    },
+    ytInfo: function(id, playlistId) {
+      if (id) return requestJson(youtubeUrl({ id: id }));
+      if (playlistId) return requestJson(youtubeUrl({ pl: playlistId }));
+      return Promise.reject(new Error('Paste a YouTube video or playlist link.'));
+    },
+    ytMedia: ytMedia,
+    extract: extract,
+    webSearch: function(query) {
+      return requestJson('/api/websearch?q=' + encodeURIComponent(query));
+    },
+    confirm: function(media, onConfirm) {
+      const room = window.NovaRoom;
+      const now = !(room && room.ctx && room.ctx().busy);
+      const title = media.title || 'this video';
+      if (window.confirm((now ? 'Play ' : 'Add ') + title + (now ? ' now?' : ' to the queue?'))) onConfirm(now);
+    },
+    choose: choose,
+    browser: function() {
+      if (!window.NovaWebBrowser) throw new Error('The in-app browser is unavailable.');
+      window.NovaWebBrowser.open();
+    }
+  };
 })();

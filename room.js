@@ -1215,3 +1215,135 @@ async function boot() {
 window.NovaRoom = { handle, ctx, renderHome, active: () => !!R, ready: true };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
+
+(function() {
+  let activeHlsInstance = null;
+
+  function ensureHlsLibrary() {
+    if (window.Hls) return Promise.resolve(window.Hls);
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js';
+      s.onload = () => resolve(window.Hls);
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  window.loadWebMediaIntoRoomPlayer = async function(media, autoPlay = true) {
+    if (!media || !media.url) return;
+
+    const titleNodes = document.querySelectorAll('#roomVideoTitle, .room-video-title, #nowPlayingTitle, #videoTitle, .video-title');
+    titleNodes.forEach((node) => {
+      node.textContent = media.title || 'Web Video';
+    });
+
+    const sourceNodes = document.querySelectorAll('#roomVideoProvider, .room-video-provider, #videoProvider, .provider-badge');
+    sourceNodes.forEach((node) => {
+      node.textContent = media.sourceLabel || 'generic • Web';
+    });
+
+    const nowPlayingBanner = document.querySelector('#nowPlayingSubtext, .now-playing-text');
+    if (nowPlayingBanner) {
+      nowPlayingBanner.textContent = `Now playing ${media.title || 'Web Video'}`;
+    }
+
+    let videoEl = document.getElementById('novaHtml5Player') || document.querySelector('video.room-video-player, #playerContainer video, #videoContainer video');
+    const container = document.getElementById('playerContainer') || document.getElementById('videoContainer') || document.querySelector('.video-stage, .player-wrapper, .video-wrapper, main') || document.body;
+
+    const otherFrames = container.querySelectorAll('iframe');
+    otherFrames.forEach((frame) => {
+      frame.style.display = 'none';
+    });
+
+    const emptyStates = container.querySelectorAll('.empty-player, .no-video, #emptyPlayerState, .placeholder-screen');
+    emptyStates.forEach((el) => {
+      el.style.display = 'none';
+    });
+
+    if (!videoEl) {
+      videoEl = document.createElement('video');
+      videoEl.id = 'novaHtml5Player';
+      videoEl.className = 'room-video-player';
+      videoEl.controls = true;
+      videoEl.playsInline = true;
+      videoEl.crossOrigin = 'anonymous';
+      videoEl.style.width = '100%';
+      videoEl.style.height = '100%';
+      videoEl.style.backgroundColor = '#000';
+      videoEl.style.objectFit = 'contain';
+      container.prepend(videoEl);
+    }
+
+    videoEl.style.display = 'block';
+    if (media.thumbnail) videoEl.poster = media.thumbnail;
+
+    if (activeHlsInstance) {
+      activeHlsInstance.destroy();
+      activeHlsInstance = null;
+    }
+
+    const isHls = media.streamType === 'hls' || /\.m3u8(\?|$)/i.test(media.rawStreamUrl || media.url);
+
+    if (isHls) {
+      if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+        videoEl.src = media.url;
+      } else {
+        const HlsLib = await ensureHlsLibrary();
+        if (HlsLib && HlsLib.isSupported()) {
+          activeHlsInstance = new HlsLib({ enableWorker: true, lowLatencyMode: true });
+          activeHlsInstance.loadSource(media.url);
+          activeHlsInstance.attachMedia(videoEl);
+        } else {
+          videoEl.src = media.url;
+        }
+      }
+    } else {
+      videoEl.src = media.url;
+    }
+
+    if (autoPlay) {
+      videoEl.play().catch(() => {
+        videoEl.muted = true;
+        videoEl.play().catch(() => {});
+      });
+    }
+
+    if (window.roomChannel && typeof window.roomChannel.send === 'function') {
+      window.roomChannel.send({
+        type: 'broadcast',
+        event: 'media_change',
+        payload: media
+      });
+    }
+  };
+
+  window.onNovaWebMediaSelected = function(media) {
+    window.loadWebMediaIntoRoomPlayer(media, true);
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('provider') === 'web' && params.get('video')) {
+      window.loadWebMediaIntoRoomPlayer({
+        provider: 'web',
+        sourceLabel: 'generic • Web',
+        title: params.get('title') || 'Web Video',
+        url: params.get('video'),
+        rawStreamUrl: params.get('video')
+      }, true);
+      return;
+    }
+
+    try {
+      const saved = sessionStorage.getItem('nova_active_web_media');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        sessionStorage.removeItem('nova_active_web_media');
+        if (parsed && parsed.url) {
+          window.loadWebMediaIntoRoomPlayer(parsed, true);
+        }
+      }
+    } catch (e) {}
+  });
+})();

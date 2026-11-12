@@ -1,29 +1,87 @@
-/* Local development server: serves this folder and the /api functions the way Vercel does.
-   Usage:  node dev-server.js     then open http://localhost:3000/nova-home.html
-   Put YOUTUBE_API_KEY=... in .env.local (git-ignored) to test video search locally. */
-'use strict';
-const http = require('http'), fs = require('fs'), path = require('path');
-try {
-  fs.readFileSync(path.join(__dirname, '.env.local'), 'utf8').split(/\r?\n/).forEach(l => {
-    const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(l);
-    if (m && !l.trim().startsWith('#') && process.env[m[1]] == null) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
-  });
-} catch (e) {}
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' };
-const root = __dirname, port = +process.env.PORT || 3000;
-http.createServer((req, res) => {
-  const u = new URL(req.url, 'http://localhost');
-  const m = /^\/api\/([\w-]+)$/.exec(u.pathname);
-  if (m) {
-    const f = path.join(root, 'api', m[1] + '.js');
-    if (!fs.existsSync(f) || m[1][0] === '_') { res.statusCode = 404; return res.end('Not found'); }
-    req.query = Object.fromEntries(u.searchParams);
-    return Promise.resolve(require(f)(req, res)).catch(e => { res.statusCode = 500; res.end(String(e && e.message)); });
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const { URL } = require('url');
+const tlsTrust = require('./api/tls-trust');
+
+tlsTrust.configureSystemCa();
+
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return;
+  const lines = fs.readFileSync(filePath, 'utf-8').split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const idx = trimmed.indexOf('=');
+    if (idx === -1) continue;
+    const key = trimmed.slice(0, idx).trim();
+    const val = trimmed.slice(idx + 1).trim().replace(/^['"]|['"]$/g, '');
+    if (!process.env[key]) process.env[key] = val;
   }
-  let p = path.normalize(path.join(root, decodeURIComponent(u.pathname === '/' ? '/index.html' : u.pathname)));
-  if (!p.startsWith(root) || /(^|[\\/])\.(env|git)/.test(p)) { res.statusCode = 403; return res.end('Forbidden'); }
-  fs.readFile(p, (err, buf) => {
-    if (err) { res.statusCode = 404; return res.end('Not found'); }
-    res.setHeader('Content-Type', TYPES[path.extname(p)] || 'application/octet-stream'); res.end(buf);
-  });
-}).listen(port, () => console.log('Nova dev server: http://localhost:' + port + '/nova-home.html' + (process.env.YOUTUBE_API_KEY ? '' : '   (YOUTUBE_API_KEY not set: YouTube search will not work)')));
+}
+
+loadEnvFile(path.join(__dirname, '.env.local'));
+loadEnvFile(path.join(__dirname, '.env'));
+
+const websearchHandler = require('./api/websearch');
+const browseHandler = require('./api/browse');
+const extractHandler = require('./api/extract');
+let youtubeHandler = null;
+try {
+  youtubeHandler = require('./api/youtube');
+} catch (e) {}
+
+const MIME_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm'
+};
+
+const server = http.createServer(async (req, res) => {
+  try {
+    const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const pathname = parsedUrl.pathname;
+
+    if (pathname === '/api/websearch') return await websearchHandler(req, res);
+    if (pathname === '/api/browse') return await browseHandler(req, res);
+    if (pathname === '/api/extract') return await extractHandler(req, res);
+    if (pathname === '/api/youtube' && youtubeHandler) return await youtubeHandler(req, res);
+
+    let safePath = path.normalize(decodeURIComponent(pathname)).replace(/^(\.\.[/\\])+/, '');
+    if (safePath === '/' || safePath === '\\') safePath = '/index.html';
+
+    let filePath = path.join(__dirname, safePath);
+    if (!fs.existsSync(filePath) && !path.extname(filePath) && fs.existsSync(filePath + '.html')) {
+      filePath += '.html';
+    }
+
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      const ext = path.extname(filePath).toLowerCase();
+      res.statusCode = 200;
+      res.setHeader('Content-Type', MIME_TYPES[ext] || 'application/octet-stream');
+      return fs.createReadStream(filePath).pipe(res);
+    }
+
+    res.statusCode = 404;
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.end('Not Found');
+  } catch (err) {
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.end(err.message || 'Internal Server Error');
+  }
+});
+
+const PORT = Number(process.env.PORT) || 3000;
+server.listen(PORT, () => {
+  console.log(`Nova Watch Party server running on http://localhost:${PORT}`);
+});
