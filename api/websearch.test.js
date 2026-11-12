@@ -3,6 +3,8 @@ const test = require('node:test');
 const { _emptyResultsMessage, searchForRequest } = require('./websearch');
 const browseHandler = require('./browse');
 const { _renderGoogleDarkSearchPage } = browseHandler;
+const { _isYouTubeVideoUrl } = browseHandler;
+const { _getInjectedBrowserScript } = browseHandler;
 
 test('explains which Vercel settings are required when search is not configured', () => {
   const message = _emptyResultsMessage(false, 'not-configured');
@@ -34,6 +36,51 @@ test('shows escaped setup guidance instead of a misleading empty-results message
 
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(html, /No results found\. Try another keyword or direct URL\./);
+});
+
+test('identifies playable YouTube video and playlist links only', () => {
+  assert.equal(_isYouTubeVideoUrl('https://www.youtube.com/watch?v=aqz-KE-bpKQ'), true);
+  assert.equal(_isYouTubeVideoUrl('https://youtu.be/aqz-KE-bpKQ'), true);
+  assert.equal(_isYouTubeVideoUrl('https://www.youtube.com/playlist?list=PL1234567890'), true);
+  assert.equal(_isYouTubeVideoUrl('https://www.youtube.com/channel/UC1234567890'), false);
+  assert.equal(_isYouTubeVideoUrl('https://youtube.com.example.org/watch?v=aqz-KE-bpKQ'), false);
+  assert.equal(_isYouTubeVideoUrl('https://vimeo.com/123456789'), false);
+});
+
+test('offers YouTube search results directly for synced room playback', () => {
+  const youtube = {
+    title: 'Big Buck Bunny',
+    url: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ',
+    snippet: 'Video result',
+    domain: 'youtube.com',
+    favicon: '',
+    thumbnail: 'https://img.example/video.jpg',
+    duration: '10:35',
+    source: 'YouTube',
+    isVideo: true
+  };
+  const other = { ...youtube, title: 'Other video', url: 'https://vimeo.com/123456789' };
+  const html = _renderGoogleDarkSearchPage({
+    engine: 'duckduckgo',
+    query: 'Big Buck Bunny',
+    results: [youtube, other],
+    videoCards: [youtube],
+    message: ''
+  });
+
+  assert.match(html, /Big Buck Bunny - DuckDuckGo Search/);
+  assert.match(html, /data-youtube-video="true" data-video-title="Big Buck Bunny"/);
+  assert.match(html, /type: 'NOVA_WEB_VIDEO_PROMPT'/);
+  assert.doesNotMatch(html, /data-youtube-video="true" data-video-title="Other video"/);
+});
+
+test('keeps injected browser video detection script syntactically valid', () => {
+  const wrapped = _getInjectedBrowserScript('https://example.com/watch', { title: '', thumbnail: '', streams: [] });
+  const script = wrapped.replace(/^<script>/, '').replace(/<\/script>$/, '');
+
+  assert.match(script, /function isYouTubeVideoUrl/);
+  assert.match(script, /NOVA_WEB_VIDEO_PROMPT/);
+  assert.doesNotThrow(() => new Function(script));
 });
 
 test('forwards Vercel searches to the configured laptop backend using a server-only token', async (t) => {

@@ -16,6 +16,25 @@ function escapeHtml(str = '') {
     .replace(/'/g, '&#39;');
 }
 
+function isYouTubeVideoUrl(value) {
+  try {
+    const url = new URL(String(value));
+    const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    if (!['youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtube-nocookie.com', 'youtu.be'].includes(host)) {
+      return false;
+    }
+
+    const pathId = host === 'youtu.be'
+      ? url.pathname.split('/').filter(Boolean)[0]
+      : (url.pathname.match(/^\/(?:embed|shorts|live)\/([^/?]+)/i) || [])[1];
+    const videoId = url.searchParams.get('v') || pathId || '';
+    const playlistId = url.searchParams.get('list') || '';
+    return /^[\w-]{11}$/.test(videoId) || /^[\w-]{10,64}$/.test(playlistId);
+  } catch (e) {
+    return false;
+  }
+}
+
 function getInjectedBrowserScript(pageUrl, preExtracted) {
   const safePageUrl = JSON.stringify(pageUrl);
   const safeExtracted = JSON.stringify(preExtracted || { title: '', thumbnail: '', streams: [] });
@@ -56,6 +75,22 @@ function getInjectedBrowserScript(pageUrl, preExtracted) {
     if (og && og.content) return resolveAbs(og.content);
     if (PRE_EXTRACTED && PRE_EXTRACTED.thumbnail) return PRE_EXTRACTED.thumbnail;
     return '';
+  }
+
+  function isYouTubeVideoUrl(raw) {
+    try {
+      var url = new URL(raw);
+      var host = url.hostname.toLowerCase().replace(/^www\\./, '');
+      if (['youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtube-nocookie.com', 'youtu.be'].indexOf(host) === -1) return false;
+      var pathId = host === 'youtu.be'
+        ? url.pathname.split('/').filter(Boolean)[0]
+        : ((url.pathname.match(/^\\/(?:embed|shorts|live)\\/([^/?]+)/i) || [])[1] || '');
+      var videoId = url.searchParams.get('v') || pathId;
+      var playlistId = url.searchParams.get('list') || '';
+      return /^[\\w-]{11}$/.test(videoId || '') || /^[\\w-]{10,64}$/.test(playlistId);
+    } catch (e) {
+      return false;
+    }
   }
 
   function notifyParentMedia(streamUrl, title, thumbnail, autoPrompt) {
@@ -165,6 +200,19 @@ function getInjectedBrowserScript(pageUrl, preExtracted) {
     if (!rawHref || rawHref.indexOf('javascript:') === 0 || rawHref.indexOf('#') === 0) return;
     var abs = resolveAbs(rawHref);
     if (!abs) return;
+    if (isYouTubeVideoUrl(abs)) {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        window.parent.postMessage({
+          type: 'NOVA_WEB_VIDEO_PROMPT',
+          streamUrl: abs,
+          title: (a.getAttribute('data-video-title') || a.getAttribute('title') || a.textContent || '').trim() || 'YouTube video',
+          thumbnail: a.getAttribute('data-video-thumbnail') || getBestThumbnail(a)
+        }, '*');
+      } catch (err) {}
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     try {
@@ -223,9 +271,17 @@ function getInjectedBrowserScript(pageUrl, preExtracted) {
 function renderGoogleDarkSearchPage(searchData) {
   const q = searchData.query || '';
   const tab = searchData.tab || 'all';
+  const providerName = searchData.engine === 'google-api' ? 'Google' : 'DuckDuckGo';
   const results = searchData.results || [];
   const videoCards = searchData.videoCards || [];
   const emptyResultsMessage = searchData.message || 'No results found. Try another keyword or direct URL.';
+
+  function resultLinkAttributes(item) {
+    const youtubeAttributes = isYouTubeVideoUrl(item.url)
+      ? ` data-youtube-video="true" data-video-title="${escapeHtml(item.title || 'YouTube video')}" data-video-thumbnail="${escapeHtml(item.thumbnail || '')}"`
+      : '';
+    return `href="/api/browse?url=${encodeURIComponent(item.url)}" data-target-url="${escapeHtml(item.url)}"${youtubeAttributes}`;
+  }
 
   const resultItemsHtml = results.map((item) => {
     const thumbHtml = item.thumbnail ? `
@@ -236,14 +292,14 @@ function renderGoogleDarkSearchPage(searchData) {
 
     return `
       <div class="gs-result-card">
-        <a class="gs-result-header" href="/api/browse?url=${encodeURIComponent(item.url)}" data-target-url="${escapeHtml(item.url)}">
+        <a class="gs-result-header" ${resultLinkAttributes(item)}>
           <img class="gs-favicon" src="${escapeHtml(item.favicon)}" alt="" onerror="this.style.display='none'">
           <div class="gs-site-meta">
             <div class="gs-site-name">${escapeHtml(item.source || item.domain)}</div>
             <div class="gs-site-url">${escapeHtml(item.url)}</div>
           </div>
         </a>
-        <a class="gs-result-title" href="/api/browse?url=${encodeURIComponent(item.url)}" data-target-url="${escapeHtml(item.url)}">${escapeHtml(item.title)}</a>
+        <a class="gs-result-title" ${resultLinkAttributes(item)}>${escapeHtml(item.title)}</a>
         <div class="gs-result-body">
           ${thumbHtml}
           <div class="gs-snippet">${escapeHtml(item.snippet || '')}</div>
@@ -256,7 +312,7 @@ function renderGoogleDarkSearchPage(searchData) {
       <div class="gs-stories-heading">Top stories &amp; videos</div>
       <div class="gs-stories-grid">
         ${videoCards.slice(0, 4).map((vc) => `
-          <a class="gs-story-card" href="/api/browse?url=${encodeURIComponent(vc.url)}" data-target-url="${escapeHtml(vc.url)}">
+          <a class="gs-story-card" ${resultLinkAttributes(vc)}>
             <div class="gs-story-info">
               <div class="gs-story-source">
                 <img src="${escapeHtml(vc.favicon)}" alt="" onerror="this.style.display='none'">
@@ -281,7 +337,7 @@ function renderGoogleDarkSearchPage(searchData) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${escapeHtml(q)} - Google Search</title>
+<title>${escapeHtml(q)} - ${providerName} Search</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -558,7 +614,7 @@ function renderGoogleDarkSearchPage(searchData) {
 <body>
   <div class="gs-topbar">
     <div class="gs-header-row">
-      <a class="gs-logo" href="/api/browse?q=${encodeURIComponent(q)}">Google</a>
+      <a class="gs-logo" href="/api/browse?q=${encodeURIComponent(q)}">${providerName}</a>
       <form class="gs-search-form" action="/api/browse" method="GET">
         <input class="gs-search-input" type="text" name="q" value="${escapeHtml(q)}" autocomplete="off">
         <button class="gs-clear-btn" type="button" onclick="this.previousElementSibling.value='';this.previousElementSibling.focus();" title="Clear">&#10005;</button>
@@ -582,6 +638,18 @@ function renderGoogleDarkSearchPage(searchData) {
       var a = e.target.closest('a[data-target-url]');
       if (!a) return;
       var targetUrl = a.getAttribute('data-target-url');
+      if (a.getAttribute('data-youtube-video') === 'true') {
+        e.preventDefault();
+        try {
+          window.parent.postMessage({
+            type: 'NOVA_WEB_VIDEO_PROMPT',
+            streamUrl: targetUrl,
+            title: a.getAttribute('data-video-title') || a.textContent.trim() || 'YouTube video',
+            thumbnail: a.getAttribute('data-video-thumbnail') || ''
+          }, '*');
+        } catch (err) {}
+        return;
+      }
       try {
         window.parent.postMessage({ type: 'NOVA_WEB_NAVIGATE', url: targetUrl }, '*');
       } catch (err) {}
@@ -828,3 +896,5 @@ module.exports = async function handler(req, res) {
 };
 
 module.exports._renderGoogleDarkSearchPage = renderGoogleDarkSearchPage;
+module.exports._isYouTubeVideoUrl = isYouTubeVideoUrl;
+module.exports._getInjectedBrowserScript = getInjectedBrowserScript;
