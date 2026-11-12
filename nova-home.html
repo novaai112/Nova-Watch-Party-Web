@@ -200,6 +200,7 @@ input::placeholder{color:#000;opacity:.55}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
 <script src="nova-core.js"></script>
+<script src="nova-add.js"></script>
 <script>
 /* official platform icons (embedded, so this is the only file you need) */
 var ICON={
@@ -290,14 +291,24 @@ function mediaFrom(u,t){
   var l=/^https:\/\/www\.youtube-nocookie\.com\/embed\/videoseries\?list=([\w-]+)/.exec(u);
   if(l)return{kind:'youtube',pl:l[1],title:t||'YouTube playlist',provider:'youtube'};
   if(!/^https:\/\//.test(u))return null;
-  if(/\.(mp4|webm|ogv|mov)(\?|#|$)/i.test(u))return{kind:'video',url:u,title:t||'Video',provider:'video'};
+  if(/\.(mp4|m4v|webm|ogv|mov|m3u8)(\?|#|$)/i.test(u))return{kind:'video',url:u,title:t||'Video',provider:'video'};
   var host='';try{host=new URL(u).hostname.replace(/^www\./,'')}catch(e){return null}
   return{kind:'embed',url:u,title:t||host,provider:host.split('.')[0].slice(0,20)};
 }
-function frame(u,t,lg){
+function rawM(m,lg){if(m.kind==='youtube')rawFrame(emb(m.id,m.id?null:m.pl),m.title,'youtube');else if(m.url)rawFrame(m.url,m.title,lg)}
+/* one door for every video: confirm (Add / Cancel) -> room */
+function launch(m,opt){
+  if(!m)return;
+  if(!(window.NovaRoom&&NovaRoom.ready)){rawM(m);return}
+  NovaAdd.confirm(m,function(now){
+    NovaRoom.handle(m,{now:now}).then(function(ok){if(!ok)rawM(m)}).catch(function(){rawM(m)})
+  },opt)
+}
+function frame(u,t,lg,th){
   var m=window.NovaRoom&&NovaRoom.ready?mediaFrom(u,t):null;
   if(!m){rawFrame(u,t,lg);return}
-  NovaRoom.handle(m).then(function(ok){if(!ok)rawFrame(u,t,lg)}).catch(function(){rawFrame(u,t,lg)});
+  if(th&&!m.thumb)m.thumb=th;
+  launch(m)
 }
 /* called by room.js after a video was picked: leave platform screens, return to the room/home */
 window.novaAfterPick=function(){fclose();close();if(!document.getElementById('picker').hidden)show('home',false)};
@@ -321,7 +332,7 @@ function e(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;',
 function vgrid(){
   var q=sqi.value.trim().toLowerCase(),l=list.filter(function(v){return !q||v.t.toLowerCase().indexOf(q)>-1});
   var h=l.map(function(v){var i=list.indexOf(v);
-    return '<div class="vc" role="button" tabindex="0" data-i="'+i+'" style="background:'+(v.th?'url('+e(v.th)+') center/cover':'linear-gradient(135deg,'+v.a+','+v.b+')')+'"><span class="tt">'+e(v.x)+'</span><span class="du">'+v.d+'</span><button class="hr'+(isL(v)?' on':'')+'" data-heart="'+i+'" aria-label="Like">'+HEART+'</button><span class="ti">'+e(v.t)+'</span></div>'}).join('');
+    return '<div class="vc" role="button" tabindex="0" data-i="'+i+'" style="background:'+(v.th?'url('+e(v.th)+') center/cover':'linear-gradient(135deg,'+v.a+','+v.b+')')+'"><span class="tt">'+e(v.x)+'</span><span class="du">'+v.d+'</span><button class="hr'+(isL(v)?' on':'')+'" data-heart="'+i+'" aria-label="Like">'+HEART+'</button><span class="ti">'+e(v.t)+(v.ch?'<em class="ch">'+e(v.ch)+'</em>':'')+'</span></div>'}).join('');
   var g=body.querySelector('.vg');
   if(g)g.innerHTML=h;
 }
@@ -345,63 +356,106 @@ function showSaved(k){return function(){list=lst(k);if(!list.length){body.innerH
 S.likes.b=showSaved('nova.likes');S.history.b=showSaved('nova.h');
 /* ---- in-app YouTube search/play (official YouTube Data API + embed player) ---- */
 function play(v){
-  if(v.id||v.pl){frame(emb(v.id,v.id?null:v.pl),v.t);return}
-  var k=ytKey();if(!k){body.scrollTop=0;needKey(function(){play(v)});return}
-  ytRequest(v.t,'video','',1).then(function(j){
-    if(j.items&&j.items[0]){v.id=j.items[0].id.videoId;frame(emb(v.id),v.t)}else alert('No video found')
-  }).catch(function(err){showYtError(body,err,function(){play(v)})});
-}
-function ytKey(){if(useConfiguredYtKey)return window.APP_CONFIG&&window.APP_CONFIG.YOUTUBE_API_KEY||'';return ld('nova.yk.override','')||(window.APP_CONFIG&&window.APP_CONFIG.YOUTUBE_API_KEY)||ld('nova.yk','')||''}
-function ytRequest(q,type,extra,maxResults){
-  var k=ytKey();
-  var url='https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults='+maxResults+'&type='+type+(extra||'')+'&q='+encodeURIComponent(q)+'&key='+encodeURIComponent(k);
-  return fetch(url).then(function(response){return response.json().then(function(data){
-    if(!response.ok||data.error)throw new Error(data.error&&data.error.message||'YouTube API request failed (HTTP '+response.status+').');
-    return data
-  })})
-}
-function showYtError(target,error,retry){
-  target.innerHTML='<p style="padding:24px 30px;font-size:18px;color:#ffb4ab">'+e(error.message||'YouTube search failed')+'</p><p style="padding:0 30px;font-size:14px">Retry with the key in config.js to rule out an outdated saved override. If that still fails, confirm that this key is valid, YouTube Data API v3 is enabled for its Google Cloud project, and this site is allowed by the key’s website restrictions.</p><div style="padding:0 30px;display:flex;gap:10px;flex-wrap:wrap"><button class="bt" id="yk-config" style="padding:14px 20px;border-radius:10px;border:0;font-size:16px;cursor:pointer">Use config.js key</button><button class="bt" id="ck" style="padding:14px 20px;border-radius:10px;border:0;font-size:16px;cursor:pointer">Change API key</button></div>';
-  document.getElementById('yk-config').onclick=function(){
-    delete mem['nova.yk.override'];
-    if(window.APP_CONFIG&&window.APP_CONFIG.YOUTUBE_API_KEY){
-      useConfiguredYtKey=true;
-      try{localStorage.removeItem('nova.yk.override')}catch(err){target.insertAdjacentHTML('beforeend','<p style="padding:0 30px;font-size:14px">The saved override could not be removed from browser storage, but this retry will use config.js.</p>')}
-      retry()
-    }else{
-      useConfiguredYtKey=false;
-      needKey(retry)
-    }
-  };
-  document.getElementById('ck').onclick=function(){needKey(retry)}
-}
-function needKey(cb){
-  body.innerHTML='<div class="gs"><h1 style="font-size:32px;margin-top:0">YouTube API key</h1><p style="font-size:18px;margin-bottom:26px;line-height:1.5">YouTube search needs a key with <b>YouTube Data API v3</b> enabled. Restrict browser keys by website referrer and API in Google Cloud Console.</p><input id="kk" placeholder="AIza..." autocomplete="off"><div class="row" style="margin-top:30px"><span></span><button class="nx" id="ks">Save</button></div></div>';
-  document.getElementById('ks').onclick=function(){var v=document.getElementById('kk').value.trim();if(!v){document.getElementById('kk').classList.add('bad');return}sv('nova.yk.override',v);cb()}
+  if(v.id||v.pl){launch(NovaAdd.ytMedia({id:v.id,pl:v.pl,title:v.t,thumb:v.th,live:v.d==='LIVE'}),{dur:/^\d/.test(v.d||'')?v.d:'',channel:v.ch});return}
+  NovaAdd.ytSearch({q:v.t,type:'video'}).then(function(j){var x=j.items[0];if(!x){alert('No video found');return}v.id=x.id;launch(NovaAdd.ytMedia(x),{dur:x.dur,channel:x.channel})}).catch(function(err){alert(err.message)})
 }
 function sbox(ph,go,init){
   body.innerHTML='<div class="psq">'+SEARCH+'<input id="sx" placeholder="'+ph+'" enterkeyhint="search" autocomplete="off"></div><div class="in" id="sres"></div>';
   var i=document.getElementById('sx');i.onkeydown=function(ev){if(ev.key==='Enter'&&i.value.trim())go(i.value.trim())};if(init)go(init);
 }
-function run(q,type,extra,back){
-  var k=ytKey();if(!k){needKey(back);return}
-  var r=document.getElementById('sres');r.innerHTML='<p style="padding:30px;font-size:20px">Searching…</p>';
-  ytRequest(q,type,extra,24).then(function(j){
-    list=j.items.map(function(x){var s=x.snippet;return{t:s.title,id:x.id.videoId,pl:x.id.playlistId,d:type==='playlist'?'Playlist':(s.liveBroadcastContent==='live'?'LIVE':''),a:'#222',b:'#444',x:'',th:(s.thumbnails.medium||s.thumbnails.default).url}});
-    r.innerHTML=list.length?'<div class="vg"></div>':'<p style="padding:30px;font-size:20px">No results</p>';vgrid();
-  }).catch(function(err){showYtError(r,err,back)});
+/* ---- status line / retry inside a search screen ---- */
+function msg(t,kind,retry){
+  var r=document.getElementById('sres');if(!r)return;
+  r.innerHTML='<div class="nv-msg'+(kind?' '+kind:'')+'">'+(kind==='wait'?'<i class="nv-spin"></i>':'')+'<span>'+e(t)+'</span>'+(retry?'<button class="nv-retry" type="button">Try again</button>':'')+'</div>';
+  if(retry)r.querySelector('.nv-retry').onclick=retry
+}
+function toItem(x,type){return{t:x.title,id:x.id,pl:x.pl,d:x.live?'LIVE':(x.pl&&!x.id?'Playlist':x.dur||''),ch:x.channel,a:'#222',b:'#444',x:'',th:x.thumb}}
+/* ---- YouTube / Karaoke / Playlist / Live: unlimited scrolling, no API key shown to the visitor ---- */
+var rgen=0;
+function run(q,type,extra){
+  var r=document.getElementById('sres');if(!r)return;
+  var gen=++rgen,token='',busy=false,end=false,seen={},ev=/eventType=live/.test(extra||'')?'live':'';
+  list=[];body.onscroll=null;
+  msg('Searching…','wait');
+  function check(){if(gen!==rgen||busy||end)return;if(body.scrollHeight-body.scrollTop-body.clientHeight<1100)more()}
+  function more(){
+    if(gen!==rgen||busy||end)return;busy=true;
+    NovaAdd.ytSearch({q:q,type:type||'video',eventType:ev,pageToken:token}).then(function(j){
+      if(gen!==rgen)return;busy=false;
+      j.items.forEach(function(x){var k=x.id||x.pl;if(!seen[k]){seen[k]=1;list.push(toItem(x,type))}});
+      token=j.next||'';end=!token;
+      if(!list.length){msg('No results','');return}
+      if(!r.querySelector('.vg'))r.innerHTML='<div class="vg"></div><div class="nv-foot" id="nvf"></div>';
+      vgrid();
+      var f=document.getElementById('nvf');if(f)f.innerHTML=end?'':'<i class="nv-spin"></i>';
+      setTimeout(check,60)
+    }).catch(function(err){
+      if(gen!==rgen)return;busy=false;
+      if(list.length){var f=document.getElementById('nvf');if(f)f.innerHTML='<button class="nv-retry" type="button">Load more</button>';if(f)f.firstChild.onclick=function(){more()};return}
+      msg(err.message||'Search failed','err',function(){run(q,type,extra)})
+    })
+  }
+  body.onscroll=check;more()
+}
+/* a pasted YouTube link: look it up, then ask Add / Cancel */
+function pasted(p){
+  msg('Checking link…','wait');
+  NovaAdd.ytInfo(p.id||'',p.id?'':p.pl).then(function(v){
+    if(v.embeddable===false){msg('The owner of this video does not allow it to be played outside YouTube. Try another video.','err');return}
+    var r=document.getElementById('sres');if(r)r.innerHTML='';
+    launch(NovaAdd.ytMedia({id:v.id,pl:v.pl,title:v.title,thumb:v.thumb,live:v.live}),{dur:v.dur,channel:v.channel})
+  }).catch(function(err){msg(err.message||'Could not open this link','err')})
+}
+function fileName(u){try{return decodeURIComponent(new URL(u).pathname.split('/').pop()).replace(/\.[a-z0-9]+$/i,'')||'Video'}catch(x){return'Video'}}
+/* any web page: find the video on it and bring ONLY the video into the room */
+function webImport(url){
+  var p=NovaAdd.parseInput(url);
+  if(p.t==='yt'||p.t==='ytpl')return pasted(p);
+  if(p.t==='file'&&/^https:/i.test(p.url))return launch({kind:'video',url:p.url,title:fileName(p.url),provider:'link'});
+  msg('Looking for a video on this page…','wait');
+  NovaAdd.extract(url).then(function(j){
+    if(!j.ok){msg(j.error||'Could not read that page.','err');return}
+    var v=j.videos||[];
+    if(!v.length){msg('No video found on this page. Sites with protected players (Netflix, Prime Video, Disney+ …) or videos that only load after signing in cannot be imported.','err');return}
+    var r=document.getElementById('sres');if(r)r.innerHTML='';
+    var go=function(x){launch(x,{})};
+    if(v.length===1)go(v[0]);else NovaAdd.choose(j.site,j.title,v,go)
+  }).catch(function(err){msg(err.message||'Could not read that page.','err',function(){webImport(url)})})
+}
+function webResults(q){
+  msg('Searching the web…','wait');
+  NovaAdd.webSearch(q).then(function(j){
+    var r=document.getElementById('sres');if(!r)return;
+    var l=j.results||[];
+    if(!l.length){msg('No results. Try other words, or paste a link to a page with a video.','');return}
+    r.innerHTML='<div class="nv-wr">'+l.map(function(x,i){return'<button type="button" class="nv-wi" data-u="'+e(x.url)+'"><b>'+e(x.title)+'</b><small>'+e(x.host)+'</small><span>'+e(x.snippet)+'</span></button>'}).join('')+'</div>';
+    r.onclick=function(ev){var b=ev.target.closest('.nv-wi');if(b)webImport(b.dataset.u)}
+  }).catch(function(err){msg(err.message||'Web search failed','err',function(){webResults(q)})})
 }
 function ytScreen(ph,mk,init,type,extra){
-  (function go(){sbox(ph,function(q){var u=yid(q),l=ypl(q);if(u||l){frame(emb(u,u?null:l),'YouTube');return}run(mk(q),type||'video',extra,go)},init)})();
+  sbox(ph,function(q){
+    var p=NovaAdd.parseInput(q);
+    if(p.t==='yt'||p.t==='ytpl')return pasted(p);
+    if(p.t==='file'||p.t==='url')return webImport(p.url);
+    run(mk(q),type||'video',extra)
+  },init);
+  if(!init){var r=document.getElementById('sres');if(r)r.innerHTML='<div class="nv-hint"><b>Search or paste a link</b><span>Type a song, movie or channel — or paste a YouTube link. Tap a video to add it to the room.</span></div>'}
 }
 S.youtube.b=function(){ytScreen('Search YouTube or paste a link',function(q){return q},'')};
 S.karaoke.r='';S.karaoke.b=function(){ytScreen('Search karaoke songs',function(q){return q+' karaoke'},'karaoke hits')};
 S.playlist.b=function(){ytScreen('search YouTube playlists',function(q){return q},'Bollywood Hitlist','playlist')};
 S.live.r='';S.live.b=function(){ytScreen('Search live streams',function(q){return q},'live','video','&eventType=live')};
-S.web.u='https://www.google.com/webhp?igu=1';
-S.web.b=function(){body.innerHTML='<div class="gh"><div class="glogo"><span class="g1">G</span><span class="g2">o</span><span class="g3">o</span><span class="g1">g</span><span class="g4">l</span><span class="g2">e</span></div><div class="box"><input id="wq" placeholder="Search or type a web address" enterkeyhint="go" autocomplete="off"></div></div>';
-  var i=document.getElementById('wq');i.onkeydown=function(ev){if(ev.key!=='Enter'||!i.value.trim())return;var v=i.value.trim();
-    if(yid(v)||ypl(v))frame(emb(yid(v),ypl(v)),'YouTube');else if(/^(https?:\/\/)?[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(v))frame(/^https?:/.test(v)?v:'https://'+v);else frame('https://www.google.com/search?igu=1&q='+encodeURIComponent(v),'Google')}};
+S.web.u='';
+S.web.b=function(){
+  sbox('Search the web or paste a video link',function(q){
+    var p=NovaAdd.parseInput(q);
+    if(p.t==='yt'||p.t==='ytpl')return pasted(p);
+    if(p.t==='file'||p.t==='url')return webImport(p.url);
+    webResults(q)
+  },'');
+  var r=document.getElementById('sres');
+  if(r)r.innerHTML='<div class="nv-hint"><b>Bring a video from any website</b><span>Paste a page link, a video file (.mp4, .m3u8) or search the web. Nova finds the video on the page and plays only the video in your room — like a shared screen, not a shared website.</span><span class="nv-fine">Netflix, Prime Video, Disney+ and other protected services cannot be imported.</span></div>'
+};
 S.web.r='';
 function paste(ph,fn,title){return function(){body.innerHTML='<div class="gh"><div class="box"><input id="pi" placeholder="'+ph+'" autocomplete="off" enterkeyhint="go"></div></div>';var i=document.getElementById('pi');i.oninput=function(){i.style.color='#222'};i.onkeydown=function(ev){if(ev.key!=='Enter')return;var u=fn(i.value.trim());if(u)frame(u,title);else i.style.color='#c5221f'}}}
 S.drive.b=paste('Paste a shared Google Drive link',function(v){var m=/\/folders\/([\w-]+)/.exec(v);if(m)return 'https://drive.google.com/embeddedfolderview?id='+m[1]+'#list';m=/\/file\/d\/([\w-]+)/.exec(v)||/[?&]id=([\w-]+)/.exec(v);return m?'https://drive.google.com/file/d/'+m[1]+'/preview':null},'Drive');
@@ -413,7 +467,7 @@ function open(id,push){
   var s=S[id];if(!s)return;cur=id;sqi.value='';sq.hidden=true;
   T.className='st'+(s.sc?' sc':'');T.innerHTML=s.sc?(id==='likes'?'♡ ':'')+s.t:s.t;
   R.innerHTML=s.r==='s'?SEARCH:s.r==='x'?EXT:'';R.style.visibility=R.innerHTML?'visible':'hidden';
-  body.scrollTop=0;scr.hidden=false;document.body.style.overflow='hidden';s.b();
+  body.scrollTop=0;body.onscroll=null;rgen++;scr.hidden=false;document.body.style.overflow='hidden';s.b();
   if(push)history.pushState({v:'p',id:id},'','#p-'+id);
 }
 function close(){scr.hidden=true;cur=null;document.body.style.overflow='';}

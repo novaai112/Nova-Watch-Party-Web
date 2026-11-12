@@ -103,3 +103,13 @@ Nova.audioRule(videoElement);
 - Language search also matches normalized accented text and the browser's English/native language display names when available; filtering happens immediately across the complete language list.
 - Chat requires `chat-schema.sql` to be run in Supabase after `schema.sql`. It uses accepted friendships, Row Level Security, a private media bucket, and Supabase Realtime; browser microphone access requires HTTPS or localhost. Database-backed realtime behavior requires a configured Supabase project and two signed-in accounts.
 - `HOME_URL` in `config.js` points the profile's back/home controls to `nova-home.html`.
+
+## Video search & import (server functions)
+YouTube search, pasted links and "video from any web page" run through `/api/*` serverless functions, so visitors never enter or see an API key.
+- `api/youtube.js` — YouTube Data API proxy (search with endless scrolling, link lookup). **Needs the env var `YOUTUBE_API_KEY`.**
+- `api/extract.js` — finds the playable video on a web page (mp4/webm/m3u8, `<video>`, og:video, JSON-LD, YouTube/Vimeo/Dailymotion embeds) and imports only the video. DRM sites (Netflix, Prime, Disney+) cannot be imported.
+- `api/websearch.js` — plain web search for the Web tab.
+- `nova-add.js` — client helpers: confirm popup (Add / Cancel), multi-video chooser, link parsing.
+
+**Setup:** Vercel → Project → Settings → Environment Variables → add `YOUTUBE_API_KEY` (Production, Preview, Development; mark Sensitive) → redeploy. In Google Cloud restrict the key to **YouTube Data API v3**. Do not put the key in `config.js` or any browser file.
+**Local test:** copy `.env.local.example` to `.env.local`, add the key, run `node dev-server.js`.

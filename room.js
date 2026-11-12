@@ -58,7 +58,9 @@ const MODES = [
 /* ---------- state ---------- */
 let ME = null, R = null, members = [], queue = [], msgs = [], prof = {}, ch = null;
 let skew = 0, hbT = null, tickT = null, homeT = null, homeRooms = [], mountKey = '', advAt = 0, endedAt = 0, pubT = 0, pubAt = 0;
-let ui = { settings: false, row: '', sheet: '', tab: 'members', promptDone: false, vol: +(localStorage.getItem('nova_vol') || 50), friends: [], first: true };
+let ui = { sheet: '', tab: 'members', promptDone: false, vol: +(localStorage.getItem('nova_vol') || 50), friends: [], first: true, events: [], nowKeys: {} };
+const micMap = new Map(), speak = new Map(), vad = new Map();
+let actx = null, vadT = null, micAt = 0;
 let P = freshP();
 function freshP() { return { kind: '', ready: false, yt: null, video: null, mute: 0, lastT: 0, lastC: 0, drag: false }; }
 
@@ -119,7 +121,7 @@ async function enter(row) {
   cleanup(true);
   await syncClock();
   R = row; members = []; queue = []; msgs = []; mountKey = '';
-  ui.settings = false; ui.row = ''; ui.first = true; ui.sheet = '';
+  ui.first = true; ui.sheet = ''; ui.events = []; ui.nowKeys = {}; micMap.clear(); speak.clear();
   try { ui.promptDone = !!sessionStorage.getItem('nova_pd_' + R.id); } catch (e) { ui.promptDone = false; }
   document.body.classList.add('inroom');
   buildShell();
@@ -137,6 +139,7 @@ function cleanup(keepShell) {
   clearInterval(hbT); clearInterval(tickT); hbT = tickT = null;
   if (ch) { try { sb.removeChannel(ch); } catch (e) {} ch = null; }
   closeAllPeers(); stopMic();
+  clearInterval(vadT); vadT = null; vad.clear(); speak.clear(); micMap.clear();
   destroyPlayer();
   R = null; members = []; queue = []; msgs = []; mountKey = '';
   if (!keepShell) {
@@ -176,7 +179,7 @@ async function refreshMembers() {
   members = data || [];
   await loadProfiles(members.map(m => m.user_id));
   if (!members.length) { beat(); return; }
-  renderHead(); renderSheet(); renderFeed(); voiceSync();
+  renderHead(); renderSheet(); renderFeed(); voiceSync(); renderVoice();
 }
 async function refreshQueue() {
   if (!R) return;
@@ -200,7 +203,13 @@ function subscribe() {
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'room_messages', filter: 'room_id=eq.' + id }, p => addMsg(p.new))
     .on('broadcast', { event: 'kick' }, ({ payload }) => { if (payload && payload.uid === ME.id) gone('You were removed from the room'); })
     .on('broadcast', { event: 'sig' }, ({ payload }) => onSig(payload))
-    .subscribe(st => { if (st === 'SUBSCRIBED') voiceSync(); });
+    .on('broadcast', { event: 'mic' }, ({ payload }) => {
+      if (!payload || !payload.uid || payload.uid === ME.id) return;
+      micMap.set(payload.uid, { on: !!payload.on, ts: Date.now() });
+      if (!payload.on) speak.delete(payload.uid);
+      renderVoice();
+    })
+    .subscribe(st => { if (st === 'SUBSCRIBED') { voiceSync(); if (mic) announceMic(); } });
 }
 function onRoom(p) {
   if (!R || !p.new || p.new.id !== R.id) return;
@@ -250,6 +259,23 @@ function loadYT() {
   });
   return ytWait;
 }
+let hlsWait = null;
+function loadHls() {
+  if (window.Hls) return Promise.resolve();
+  if (hlsWait) return hlsWait;
+  hlsWait = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js'; s.onload = res; s.onerror = () => rej(new Error('hls')); document.head.appendChild(s); });
+  return hlsWait;
+}
+/* plain files use <video src>; .m3u8 streams use native HLS (Safari) or hls.js */
+function attachSrc(v, url) {
+  if (!/\.m3u8(?:$|[?#])/i.test(url) || v.canPlayType('application/vnd.apple.mpegurl')) { v.src = url; return; }
+  loadHls().then(() => {
+    if (window.Hls && Hls.isSupported()) {
+      const h = new Hls({ enableWorker: true }); v._hls = h; h.loadSource(url); h.attachMedia(v);
+      h.on(Hls.Events.ERROR, (ev, d) => { if (d && d.fatal) toast('This stream cannot be played', 'err'); });
+    } else v.src = url;
+  }).catch(() => toast('Could not load the stream player', 'err'));
+}
 const pl = {
   time() { try { return P.yt ? P.yt.getCurrentTime() || 0 : P.video ? P.video.currentTime : 0; } catch (e) { return 0; } },
   dur() { try { return P.yt ? P.yt.getDuration() || 0 : P.video ? (isFinite(P.video.duration) ? P.video.duration : 0) : 0; } catch (e) { return 0; } },
@@ -262,6 +288,7 @@ const pl = {
 };
 function destroyPlayer() {
   try { if (P.yt) P.yt.destroy(); } catch (e) {}
+  try { if (P.video && P.video._hls) P.video._hls.destroy(); } catch (e) {}
   P = freshP();
   const w = $('#vwrap'); if (w) $$('#vwrap > *:not(#vgrid)').forEach(n => n.remove());
 }
@@ -277,6 +304,7 @@ async function mountMedia() {
   const w = $('#vwrap'); if (!w) return;
   const m = R.media, adm = isAdmin();
   if (!m) { w.insertAdjacentHTML('afterbegin', emptyHTML()); renderControls(); renderNow(); return; }
+  noteNow(m);
   renderControls(); renderNow();
   if (m.kind === 'embed') {
     if (!safeHttps(m.url)) return;
@@ -287,7 +315,7 @@ async function mountMedia() {
   if (m.kind === 'video') {
     if (!safeHttps(m.url)) return;
     const v = document.createElement('video');
-    v.playsInline = true; v.preload = 'auto'; v.src = m.url; v.controls = adm;
+    v.playsInline = true; v.preload = 'auto'; v.controls = adm; attachSrc(v, m.url);
     P.kind = 'video'; P.video = v;
     ['play', 'pause', 'seeked'].forEach(ev => v.addEventListener(ev, () => { if (isAdmin() && Date.now() > P.mute) publish(!v.paused, v.currentTime); updateTimeUI(); }));
     v.addEventListener('ended', () => { if (isAdmin()) ended(); });
@@ -372,6 +400,10 @@ function ended() {
 function onTick() {
   if (!R) return;
   updateTimeUI();
+  if (mic && Date.now() - micAt > 4000) { micAt = Date.now(); announceMic(); }
+  let gone_ = false;
+  micMap.forEach((v, id) => { if (v.on && Date.now() - v.ts > 11000 && !speak.get(id)) { micMap.delete(id); gone_ = true; } });
+  if (gone_) renderVoice();
   const s = R.play_state || {};
   if (s.vote_until) {
     renderHead();
@@ -410,7 +442,7 @@ const voiceVol = () => Math.min(1, ui.vol / 50);
 function sig(to, p) { if (ch) ch.send({ type: 'broadcast', event: 'sig', payload: Object.assign({ to, from: ME.id }, p) }); }
 function voiceSync() {
   if (!R || !ch || !window.RTCPeerConnection) return;
-  if (!R.voice_enabled) { closeAllPeers(); if (mic) stopMic(); renderMic(); return; }
+  if (!R.voice_enabled) { closeAllPeers(); if (mic) stopMic(); micMap.clear(); renderVoice(); return; }
   const ids = members.map(m => m.user_id).filter(i => i !== ME.id);
   ids.forEach(id => { if (!peers.has(id)) makePeer(id); });
   [...peers.keys()].forEach(id => { if (!ids.includes(id)) dropPeer(id); });
@@ -429,6 +461,7 @@ function makePeer(id) {
     o.audio.srcObject = e.streams[0] || new MediaStream([e.track]);
     o.audio.volume = voiceVol();
     o.audio.play().catch(() => {});
+    watch(id, o.audio.srcObject);
   };
   pc.onicecandidate = e => { if (e.candidate) sig(id, { t: 'ice', c: e.candidate }); };
   pc.onnegotiationneeded = () => { if (ME.id < id && pc.signalingState === 'stable') offer(id); };
@@ -440,6 +473,7 @@ function dropPeer(id) {
   const o = peers.get(id); if (!o) return;
   try { o.pc.close(); } catch (e) {}
   if (o.audio) { o.audio.srcObject = null; o.audio.remove(); }
+  unwatch(id); micMap.delete(id);
   peers.delete(id);
 }
 function closeAllPeers() { [...peers.keys()].forEach(dropPeer); }
@@ -465,19 +499,68 @@ async function toggleMic() {
   if (mic) stopMic();
   else {
     try {
+      audioCtx();
       local = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-      mic = true;
+      mic = true; micAt = Date.now();
       const t = local.getAudioTracks()[0];
       peers.forEach(o => o.tr.sender.replaceTrack(t).catch(() => {}));
-    } catch (e) { toast('Microphone permission denied', 'err'); }
+      watch(ME.id, local);
+      announceMic();
+    } catch (e) { toast(window.isSecureContext ? 'Microphone permission denied' : 'The microphone needs a secure (https) page', 'err'); }
   }
-  renderMic();
+  renderVoice();
 }
 function stopMic() {
+  const was = mic;
   mic = false;
   if (local) local.getTracks().forEach(t => t.stop());
   local = null;
   peers.forEach(o => o.tr.sender.replaceTrack(null).catch(() => {}));
+  if (ME) unwatch(ME.id);
+  if (was) announceMic();
+}
+function announceMic() { if (ch && ME) { try { ch.send({ type: 'broadcast', event: 'mic', payload: { uid: ME.id, on: mic } }); } catch (e) {} } }
+
+/* speaking detection: local mic + every remote voice, so the "On mic" strip can light up whoever talks */
+function audioCtx() {
+  try {
+    if (!actx) { const C = window.AudioContext || window.webkitAudioContext; if (C) actx = new C(); }
+    if (actx && actx.state === 'suspended') actx.resume().catch(() => {});
+  } catch (e) {}
+  return actx;
+}
+function resumeAudio() {
+  if (actx && actx.state === 'suspended') actx.resume().catch(() => {});
+  peers.forEach(o => { if (o.audio && o.audio.paused && o.audio.srcObject) o.audio.play().catch(() => {}); });
+}
+function watch(id, stream) {
+  const c = audioCtx(); if (!c || !stream) return;
+  unwatch(id);
+  try {
+    const src = c.createMediaStreamSource(stream), an = c.createAnalyser();
+    an.fftSize = 512; src.connect(an);
+    vad.set(id, { src, an, buf: new Uint8Array(an.fftSize), hold: 0 });
+  } catch (e) {}
+  if (!vadT) vadT = setInterval(vadTick, 160);
+}
+function unwatch(id) {
+  const o = vad.get(id);
+  if (o) { try { o.src.disconnect(); } catch (e) {} vad.delete(id); }
+  if (speak.get(id)) { speak.delete(id); $$('[data-vu="' + id + '"]').forEach(n => n.classList.remove('talk')); }
+}
+function vadTick() {
+  if (!R) return;
+  const now = Date.now();
+  vad.forEach((o, id) => {
+    o.an.getByteTimeDomainData(o.buf);
+    let sum = 0; for (let i = 0; i < o.buf.length; i++) { const x = (o.buf[i] - 128) / 128; sum += x * x; }
+    if (Math.sqrt(sum / o.buf.length) > 0.03) o.hold = now + 450;
+    const on = now < o.hold;
+    if (!!speak.get(id) === on) return;
+    speak.set(id, on);
+    if (on && id !== ME.id && !micOf(id)) { micMap.set(id, { on: true, ts: now }); renderVoice(); }   // heard them → they are on the mic
+    $$('[data-vu="' + id + '"]').forEach(n => n.classList.toggle('talk', on));
+  });
 }
 function applyVolume() {
   pl.vol();
@@ -492,11 +575,11 @@ function buildShell() {
   const el = document.createElement('div'); el.id = 'rm';
   el.innerHTML = `
   <header class="rh">
-    <button class="rb" data-r="leave" aria-label="Leave room">${ic('x', 26)}</button>
-    <button class="rb" data-r="settings" aria-label="Room settings">${ic('gear', 26)}</button>
+    <button class="rb" data-r="leave" aria-label="Leave room">${ic('x', 24)}</button>
+    <button class="rb" data-r="settings" aria-label="Room settings">${ic('gear', 24)}</button>
     <div class="rmid" id="rmid"></div>
-    <button class="rb" data-r="add" aria-label="Add a video">${ic('searchplay', 28)}</button>
-    <button class="rb rpb" data-r="people" aria-label="People">${ic('users', 28)}<b id="rcount">1</b></button>
+    <button class="rb" data-r="add" aria-label="Add a video">${ic('searchplay', 26)}</button>
+    <button class="rb rpb" data-r="people" aria-label="People">${ic('users', 26)}<b id="rcount">1</b></button>
   </header>
   <div class="rbody">
     <section class="vcol">
@@ -505,17 +588,14 @@ function buildShell() {
       <div class="np" id="np"></div>
     </section>
     <section class="scol">
-      <div class="set" id="set" hidden></div>
+      <div class="vbar" id="vbar" hidden></div>
       <div class="feed" id="feed"></div>
       <div class="mentions" id="mentions" hidden></div>
-      <div class="cin">
+      <div class="cin" id="cin">
         <button class="micb" id="micb" data-r="mic" aria-label="Microphone"></button>
-        <input id="cmsg" placeholder="Chat" maxlength="500" autocomplete="off" enterkeyhint="send">
-        <button class="ib2" data-r="at" aria-label="Mention">${ic('at', 22)}</button>
-        <button class="ib2" data-r="queue" aria-label="Up next" id="qbtn">${ic('list', 22)}</button>
-        <button class="ib2" data-r="invite" aria-label="Invite friends">${ic('userplus', 22)}</button>
-        <button class="ib2" data-r="share" aria-label="Share">${ic('share', 22)}</button>
-        <button class="ib2" data-r="privacy" id="pbtn" aria-label="Privacy"></button>
+        <input id="cmsg" placeholder="Message" maxlength="500" autocomplete="off" enterkeyhint="send">
+        <button class="ib2 tool" data-r="share" aria-label="Invite friends">${ic('userplus', 22)}</button>
+        <button class="sendb" data-r="send" aria-label="Send message">${ic('send', 20)}</button>
       </div>
     </section>
   </div>
@@ -525,8 +605,17 @@ function buildShell() {
   el.addEventListener('input', onInput);
   el.addEventListener('change', onChange);
   el.addEventListener('keydown', e => { if (e.target.id === 'cmsg' && e.key === 'Enter') { e.preventDefault(); sendMsg(); } });
+  /* keep the Send button tappable: pressing it must not blur the input (that would swap the icons away) */
+  el.addEventListener('pointerdown', e => { if (e.target.closest('.sendb')) e.preventDefault(); });
+  el.addEventListener('focusin', e => { if (e.target.id === 'cmsg') setTimeout(() => { const f = $('#feed'); if (f) f.scrollTop = f.scrollHeight; }, 280); });
+  /* phones: follow the visible area so the keyboard never covers the message box */
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    const fit = () => { if (!el.isConnected) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); return; } el.style.height = vv.height + 'px'; el.style.top = vv.offsetTop + 'px'; el.style.bottom = 'auto'; };
+    vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); fit();
+  }
 }
-function renderAll() { renderHead(); renderSettings(); renderControls(); renderNow(); renderFeed(); renderVote(); renderMic(); renderBadges(); }
+function renderAll() { renderHead(); renderSettings(); renderControls(); renderNow(); renderFeed(); renderVote(); renderMic(); renderVoice(); renderBadges(); }
 
 function votingNow() { return !!(R && R.play_state && R.play_state.vote_until); }
 function renderHead() {
@@ -538,17 +627,28 @@ function renderHead() {
     mid.innerHTML = `<div class="cd" style="--p:${Math.min(100, left / 12 * 100)}%"><span>${Math.ceil(left)}</span></div>`;
   } else if (!mid.querySelector('.brand')) mid.innerHTML = '<div class="brand">nova</div>';
 }
-function renderBadges() {
-  const q = $('#qbtn'); if (!q) return;
-  q.innerHTML = ic('list', 22) + (queue.length ? `<i>${queue.length}</i>` : '');
-  const p = $('#pbtn'), pv = PRIV.find(x => x[0] === R.privacy) || PRIV[0];
-  if (p) p.innerHTML = ic(pv[1], 22);
-}
+function renderBadges() { /* queue count lives in the People sheet (Up next tab) */ }
 function renderMic() {
   const b = $('#micb'); if (!b) return;
-  b.className = 'micb' + (mic ? ' on' : '');
-  b.innerHTML = ic(mic ? 'mic' : 'micoff', 24);
-  b.title = mic ? 'Mute microphone' : 'Unmute microphone';
+  const off = !(R && R.voice_enabled);
+  b.className = 'micb' + (mic ? ' on' : '') + (off ? ' dis' : '');
+  b.innerHTML = ic(mic ? 'mic' : 'micoff', 22);
+  b.title = off ? 'Voice chat is off' : mic ? 'Mute microphone' : 'Turn on microphone';
+  b.setAttribute('aria-pressed', mic ? 'true' : 'false');
+}
+const micOf = id => id === (ME && ME.id) ? mic : !!(micMap.get(id) || {}).on;
+/* strip above the chat: who is on the mic right now (ring pulses while they talk) */
+function renderVoice() {
+  const bar = $('#vbar'); if (!bar || !R) return;
+  renderMic();
+  const ids = R.voice_enabled ? members.map(m => m.user_id).filter(micOf) : [];
+  bar.hidden = !ids.length;
+  if (!ids.length) { bar.innerHTML = ''; if (ui.sheet === 'people') openPeople(true); return; }
+  bar.innerHTML = `<span class="vb-l">${ic('mic', 14)}On mic</span>` + ids.map(id => {
+    const u = who(id);
+    return `<span class="chip${speak.get(id) ? ' talk' : ''}" data-vu="${id}">${Nova.avatar(u, 24)}<em>${esc(id === ME.id ? 'You' : nm(u))}</em></span>`;
+  }).join('');
+  if (ui.sheet === 'people') openPeople(true);
 }
 function renderNow() {
   const el = $('#np'); if (!el) return;
@@ -579,21 +679,26 @@ function updateTimeUI() {
 }
 
 function optBtn(v, icon, label, on, dis) {
-  return `<button class="op${on ? ' on' : ''}" data-r="set" data-v="${v}" ${dis ? 'disabled' : ''}>${ic(icon, 30)}<span>${label}</span></button>`;
+  return `<button class="op${on ? ' on' : ''}" data-r="set" data-v="${v}" ${dis ? 'disabled' : ''}>${ic(icon, 18)}<span>${label}</span></button>`;
 }
-function renderSettings() {
-  const el = $('#set'); if (!el) return;
-  el.hidden = !ui.settings;
-  if (!ui.settings) return;
+function openSettings(refresh) {
+  ui.sheet = 'settings';
   const adm = isAdmin();
   const pv = PRIV.find(x => x[0] === R.privacy) || PRIV[0], md = MODES.find(x => x[0] === R.playback_mode) || MODES[0];
-  const row = (key, title, desc, cur, opts) => `<div class="srow"><button class="sr-top" data-r="row" data-k="${key}" ${adm ? '' : 'disabled'}><div><b>${title}</b><small>${esc(desc)}</small></div><span class="sr-cur">${ic(cur[0], 34)}${esc(cur[1])}</span></button>${adm && ui.row === key ? `<div class="opt">${opts}</div>` : ''}</div>`;
-  el.innerHTML = `<button class="sh" data-r="settings">${ic('chev', 22)}<span>SETTINGS</span></button>
-    ${row('privacy', 'PRIVACY', pv[3], [pv[1], pv[2].toUpperCase()], PRIV.map(p => optBtn('privacy:' + p[0], p[1], p[2], p[0] === R.privacy)).join(''))}
-    ${row('mode', 'PLAYBACK', md[3], [md[1], md[2].toUpperCase()], MODES.map(p => optBtn('mode:' + p[0], p[1], p[2], p[0] === R.playback_mode)).join(''))}
-    ${row('voice', 'VOICE', R.voice_enabled ? 'Microphones enabled' : 'Microphones disabled', [R.voice_enabled ? 'mic' : 'micoff', R.voice_enabled ? 'ON' : 'OFF'], optBtn('voice:on', 'mic', 'On', R.voice_enabled) + optBtn('voice:off', 'micoff', 'Off', !R.voice_enabled))}
-    <div class="vol">${ic('vol', 28)}<input type="range" id="volr" min="0" max="100" value="${ui.vol}" aria-label="Video / voice balance">${ic('phone', 28)}</div>
-    <label class="tr"><span>Auto-translate chat</span><input type="checkbox" class="sw" id="trsw" ${Nova.S.translate ? 'checked' : ''}></label>`;
+  const group = (title, desc, opts) => `<section class="sg"><div class="sgh"><b>${title}</b><small>${esc(desc)}</small></div><div class="opt">${opts}</div></section>`;
+  const html = `<div class="mh"><h3>Room settings</h3><button class="mx" data-r="close" aria-label="Close">${ic('x', 18)}</button></div>
+    ${adm ? '' : '<p class="mnote">Only the room admin can change these settings.</p>'}
+    ${group('Privacy', pv[3], PRIV.map(p => optBtn('privacy:' + p[0], p[1], p[2], p[0] === R.privacy, !adm)).join(''))}
+    ${group('Playback', md[3], MODES.map(p => optBtn('mode:' + p[0], p[1], p[2], p[0] === R.playback_mode, !adm)).join(''))}
+    <section class="sg row"><span class="sgi">${ic(R.voice_enabled ? 'mic' : 'micoff', 18)}</span><div class="sgh"><b>Voice chat</b><small>${R.voice_enabled ? 'Everyone can talk and listen' : 'Microphones are off for everyone'}</small></div><input type="checkbox" class="sw" id="voicesw" ${R.voice_enabled ? 'checked' : ''} ${adm ? '' : 'disabled'} aria-label="Voice chat"></section>
+    <section class="sg"><div class="sgh"><b>Volume</b><small>Balance between the video and voices</small></div><div class="vol">${ic('vol', 18)}<input type="range" id="volr" min="0" max="100" value="${ui.vol}" aria-label="Video and voice balance">${ic('phone', 18)}</div></section>
+    <section class="sg row"><span class="sgi">${ic('globe', 18)}</span><div class="sgh"><b>Auto-translate chat</b><small>Translate messages into your language</small></div><input type="checkbox" class="sw" id="trsw" ${Nova.S.translate ? 'checked' : ''} aria-label="Auto-translate chat"></section>`;
+  if (refresh && $('#rmodal')) $('#rmodal .mb').innerHTML = html; else sheet(html);
+}
+function renderSettings() {
+  if (ui.sheet !== 'settings' || !$('#rmodal')) return;
+  if (document.activeElement && document.activeElement.id === 'volr') return;   // don't reset the slider while it is dragged
+  openSettings(true);
 }
 
 function thumbCell(q) {
@@ -612,41 +717,47 @@ function renderVote() {
 /* chat feed */
 function msgHTML(m) {
   const u = who(m.user_id);
-  if (m.kind === 'system') return `<div class="sy"><b>${esc(nm(u))}</b> ${esc(m.body)}${Nova.avatar(u, 24)}</div>`;
+  if (m.kind === 'system') return `<div class="sy">${Nova.avatar(u, 20)}<span><b>${esc(nm(u))}</b> ${esc(m.body)}</span></div>`;
   const me = m.user_id === ME.id;
   const text = esc(m.tr || m.body).replace(/@([\w.]{2,24})/g, (a, n) =>
     members.some(x => (who(x.user_id).username || '').toLowerCase() === n.toLowerCase()) ? `<span class="mn">${a}</span>` : a);
-  return `<div class="cm${me ? ' me' : ''}">${Nova.avatar(u, 38, 'ring')}<div><small>${esc(nm(u))}</small><p>${text}</p></div></div>`;
+  return `<div class="cm${me ? ' me' : ''}">${me ? '' : Nova.avatar(u, 30, 'ring')}<div class="cb2">${me ? '' : `<small>${esc(nm(u))}</small>`}<p>${text}</p></div></div>`;
+}
+/* "Now playing" notice: a normal centred chat line that scrolls away with the conversation */
+function noteNow(m) {
+  const key = [m.kind, m.id || '', m.pl || '', m.url || '', R.media_ver || ''].join('|');
+  if (ui.nowKeys[key]) return;
+  ui.nowKeys[key] = 1;
+  ui.events.push({ t: snow(), title: m.title || 'Video', th: thumb(m), kind: m.kind });
+  if (ui.events.length > 40) ui.events.shift();
+  renderFeed();
+}
+function nowHTML(e) {
+  return `<div class="nowm"><div class="nowc">${e.th ? `<img src="${esc(e.th)}" alt="" referrerpolicy="no-referrer">` : `<span class="nowi">${ic('play', 14)}</span>`}<span class="nowt"><small>Now playing</small><b>${esc(e.title)}</b></span></div></div>`;
 }
 function cardsHTML() {
-  let h = '';
-  if (isAdmin() && !ui.promptDone) {
-    h += `<div class="cg"><div class="cgt"><b class="brand2">nova</b><span>Who should be able to join this room?</span></div><div class="opt">${PRIV.map(p => optBtn('privacy:' + p[0], p[1], p[2], p[0] === R.privacy)).join('')}</div></div>`;
-  }
-  h += `<div class="cg"><button class="lnk" data-r="copy">${ic('share', 24)}<span>Invite link: <u>${esc(link())}</u></span></button><div class="cgt"><b class="brand2">nova</b><span>Invite friends to watch with you!</span></div></div>
-  <div class="apps">
-    <button class="app a-se" data-r="invite"><i>${ic('search', 26)}</i>Search</button>
-    <button class="app a-sms" data-r="app" data-a="sms"><i>${ic('chat', 26)}</i>Messages</button>
-    <button class="app a-sc" data-r="app" data-a="sc"><i>${ic('ghost', 26)}</i>Snapchat</button>
-    <button class="app a-wa" data-r="app" data-a="wa"><i>${ic('phone', 26)}</i>WhatsApp</button>
-    <button class="app a-tg" data-r="app" data-a="tg"><i>${ic('send', 26)}</i>Telegram</button>
-    <button class="app" data-r="app" data-a="more"><i>${ic('more', 26)}</i>More</button>
-  </div>`;
-  return h;
+  /* only the one-time "who can join?" question for a new room's admin — invite link & share apps were removed */
+  if (!(isAdmin() && !ui.promptDone)) return '';
+  return `<div class="cg"><div class="cgt"><span>Who can join this room?</span></div><div class="opt">${PRIV.map(p => optBtn('privacy:' + p[0], p[1], p[2], p[0] === R.privacy)).join('')}</div></div>`;
 }
 function renderFeed() {
   const f = $('#feed'); if (!f || !R) return;
   const near = f.scrollHeight - f.scrollTop - f.clientHeight < 90;
+  const items = msgs.map(m => ({ t: Date.parse(m.created_at) || 0, h: msgHTML(m), sys: m.kind === 'system' }))
+    .concat(ui.events.map(e => ({ t: e.t, h: nowHTML(e), sys: false })));
+  items.sort((a, b) => a.t - b.t);
   let h = '', done = false;
-  msgs.forEach(m => { h += msgHTML(m); if (!done && m.kind === 'system') { done = true; h += cardsHTML(); } });
+  items.forEach(i => { h += i.h; if (!done && i.sys) { done = true; h += cardsHTML(); } });
   if (!done) h += cardsHTML();
+  if (!msgs.some(m => m.kind === 'chat')) h += '<div class="fempty">No messages yet — say hi 👋</div>';
   f.innerHTML = h;
   if (near || ui.first) { f.scrollTop = f.scrollHeight; ui.first = false; }
 }
+function syncTyping() { const c = $('#cin'), i = $('#cmsg'); if (c && i) c.classList.toggle('has-text', !!i.value.trim()); }
 async function sendMsg() {
   const i = $('#cmsg'); if (!i || !R) return;
   const body = i.value.trim().slice(0, 500); if (!body) return;
-  i.value = ''; $('#mentions').hidden = true;
+  i.value = ''; $('#mentions').hidden = true; syncTyping();
   const { data, error } = await sb.from('room_messages').insert({ room_id: R.id, user_id: ME.id, body, kind: 'chat' })
     .select('id,user_id,kind,body,created_at').single();
   if (error) { toast(error.message, 'err'); i.value = body; return; }
@@ -662,7 +773,7 @@ function openPeople(refresh) {
   const adm = isAdmin();
   const mem = members.map(m => {
     const u = who(m.user_id), me = m.user_id === ME.id, isA = m.user_id === R.admin_id;
-    return `<div class="li">${Nova.avatar(u, 42)}<div><b>${esc(nm(u))}</b>${isA ? ' <span class="crownb">' + ic('crown', 15) + '</span>' : ''}${me ? ' (you)' : ''}<small>@${esc(u.username || '')}</small></div>
+    return `<div class="li">${Nova.avatar(u, 42)}<div><b>${esc(nm(u))}</b>${isA ? ' <span class="crownb">' + ic('crown', 15) + '</span>' : ''}${me ? ' (you)' : ''}${micOf(m.user_id) ? ' <span class="micon" data-vu="' + m.user_id + '">' + ic('mic', 14) + '</span>' : ''}<small>@${esc(u.username || '')}</small></div>
       ${adm && !me ? `<button class="cb crownb" data-r="transfer" data-id="${m.user_id}" title="Make admin" aria-label="Make admin">${ic('crown', 18)}</button><button class="cb" data-r="kick" data-id="${m.user_id}" title="Remove from room" aria-label="Remove">${ic('x', 18)}</button>` : ''}</div>`;
   }).join('');
   const sorted = queue.slice().sort((a, b) => (b.votes || []).length - (a.votes || []).length);
@@ -672,7 +783,7 @@ function openPeople(refresh) {
       <button class="cb${mine ? ' on' : ''}" data-r="vote" data-id="${q.id}" aria-label="Vote">${ic('heart', 16)} ${v}</button>
       ${adm ? `<button class="cb" data-r="playq" data-id="${q.id}" aria-label="Play now">${ic('play', 16)}</button>` : ''}
       ${adm || q.added_by === ME.id ? `<button class="cb" data-r="rmq" data-id="${q.id}" aria-label="Remove">${ic('trash', 16)}</button>` : ''}</div>`;
-  }).join('') : '<p class="em">Nothing queued. Use the search button to add videos.</p>';
+  }).join('') : '<p class="em">Nothing queued yet. Tap the search button at the top to add videos.</p>';
   const html = `<div class="tabs"><button class="${ui.tab === 'members' ? 'on' : ''}" data-r="tab" data-t="members">Members (${members.length})</button><button class="${ui.tab === 'queue' ? 'on' : ''}" data-r="tab" data-t="queue">Up next (${queue.length})</button></div>${ui.tab === 'members' ? mem : que}<div class="row"><button class="s" data-r="close">Close</button></div>`;
   if (refresh && $('#rmodal')) { $('#rmodal .mb').innerHTML = html; } else sheet(html);
 }
@@ -700,17 +811,6 @@ function renderFriends(q) {
   const list = ui.friends.filter(u => !inRoom.has(u.id) && (!t || (nm(u) + ' ' + (u.username || '')).toLowerCase().includes(t)));
   f.innerHTML = list.length ? list.map(u => `<label>${Nova.avatar(u, 38)}<span style="flex:1"><b>${esc(nm(u))}</b><br><small>@${esc(u.username || '')}</small></span><input type="checkbox" value="${u.id}"></label>`).join('') : '<p class="em">No friends to invite.</p>';
 }
-function openPrivacy() {
-  ui.sheet = 'privacy';
-  const adm = isAdmin();
-  sheet(`<h3>Who can join?</h3><div class="opt" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">${PRIV.map(p => optBtn('privacy:' + p[0], p[1], p[2], p[0] === R.privacy, !adm)).join('')}</div>${adm ? '' : '<p class="em">Only the admin can change this.</p>'}<div class="row"><button class="s" data-r="close">Close</button></div>`);
-}
-function askPick(m) {
-  ui.sheet = 'pick';
-  window.__pickMedia = m;
-  sheet(`<h3>Add “${esc(m.title || 'video')}”</h3><div class="row"><button class="s" data-r="close">Cancel</button><button class="s" data-r="pickq">Add to queue</button><button class="p" data-r="pickn">Play now</button></div>`);
-}
-
 /* actions */
 async function pick(m, now) {
   try {
@@ -720,7 +820,8 @@ async function pick(m, now) {
     await refreshRoom(); renderAll(); mountMedia();
   } catch (e) { oops(e); }
 }
-async function handle(m) {
+async function handle(m, o) {
+  o = o || {};
   if (!await auth()) return false;
   try {
     if (!R) {
@@ -728,11 +829,13 @@ async function handle(m) {
       await enter(row);
       return true;
     }
-    const busy = R.media && !(R.play_state || {}).ended && !votingNow();
-    if (isAdmin() && busy && !['leader', 'play'].includes(R.playback_mode)) { afterPick(); askPick(m); return true; }
-    await pick(m, false);
+    await pick(m, !!o.now);
   } catch (e) { oops(e); }
   return true;
+}
+function ctx() {
+  const busy = !!(R && R.media && !(R.play_state || {}).ended && !votingNow());
+  return { inRoom: !!R, admin: isAdmin(), busy };
 }
 async function setOpt(v) {
   if (!isAdmin()) return toast('Only the admin can change this');
@@ -746,7 +849,7 @@ async function setOpt(v) {
     ui.promptDone = true; try { sessionStorage.setItem('nova_pd_' + R.id, '1'); } catch (e) {}
   } else if (k === 'mode') a.p_mode = val;
   else if (k === 'voice') a.p_voice = val === 'on';
-  try { R = Object.assign({}, R, await rpc('room_update', a)); closeSheet(); renderAll(); voiceSync(); } catch (e) { oops(e); }
+  try { R = Object.assign({}, R, await rpc('room_update', a)); if (ui.sheet !== 'settings') closeSheet(); renderAll(); voiceSync(); } catch (e) { oops(e); }
 }
 function shareText() { return 'Join my Nova watch party' + (R.media && R.media.title ? ': ' + R.media.title : '') + ' ' + link(); }
 async function copyLink() {
@@ -764,27 +867,26 @@ function shareApp(a) {
 }
 
 function onClick(e) {
+  if (R) resumeAudio();
   const el = e.target.closest('[data-r]'); if (!el || !R) return;
   const d = el.dataset, r = d.r;
   if (r === 'leave') leave();
-  else if (r === 'settings') { ui.settings = !ui.settings; renderSettings(); }
-  else if (r === 'row') { ui.row = ui.row === d.k ? '' : d.k; renderSettings(); }
+  else if (r === 'settings') openSettings();
   else if (r === 'set') setOpt(d.v);
   else if (r === 'add') {
     if (!isAdmin() && R.playback_mode === 'leader') return toast('Only the admin can pick videos');
     closeSheet(); if (typeof show === 'function') show('picker', true);
   }
   else if (r === 'people') { ui.tab = 'members'; openPeople(); }
-  else if (r === 'queue') { ui.tab = 'queue'; openPeople(); }
   else if (r === 'tab') { ui.tab = d.t; openPeople(true); }
   else if (r === 'close') closeSheet();
   else if (r === 'mic') toggleMic();
   else if (r === 'share') openShare();
   else if (r === 'invite') openInvite();
-  else if (r === 'privacy') openPrivacy();
+  else if (r === 'send') sendMsg();
   else if (r === 'copy') copyLink();
   else if (r === 'app') shareApp(d.a);
-  else if (r === 'at') { const i = $('#cmsg'); i.value += (i.value && !/\s$/.test(i.value) ? ' ' : '') + '@'; i.focus(); onInput({ target: i }); }
+  else if (r === 'openset') openSettings();
   else if (r === 'tap') { hideTap(); pl.play(); applyState(true); }
   else if (r === 'toggle' && isAdmin()) { if (pl.playing()) { pl.pause(); publish(false, pl.time()); } else { pl.play(); publish(true, pl.time()); } updateTimeUI(); }
   else if ((r === 'back' || r === 'fwd') && isAdmin()) { const t = Math.max(0, pl.time() + (r === 'back' ? -10 : 10)); pl.seek(t); publish(pl.playing(), t); }
@@ -810,8 +912,6 @@ function onClick(e) {
     if (!ids.length) return toast('Select at least one friend');
     rpc('room_invite', { p_room: R.id, p_users: ids }).then(n => { toast(n + ' friend' + (n === 1 ? '' : 's') + ' invited'); closeSheet(); }).catch(oops);
   }
-  else if (r === 'pickq') { const m = window.__pickMedia; closeSheet(); if (m) pick(m, false); }
-  else if (r === 'pickn') { const m = window.__pickMedia; closeSheet(); if (m) pick(m, true); }
 }
 function onInput(e) {
   const t = e.target;
@@ -821,6 +921,7 @@ function onInput(e) {
     ui.vol = +t.value; localStorage.setItem('nova_vol', ui.vol); applyVolume();
   } else if (t.id === 'fq') renderFriends(t.value);
   else if (t.id === 'cmsg') {
+    syncTyping();
     const box = $('#mentions'), m = /@([\w.]*)$/.exec(t.value.slice(0, t.selectionStart || t.value.length));
     if (!m) { box.hidden = true; return; }
     const c = members.filter(x => x.user_id !== ME.id && (who(x.user_id).username || '').toLowerCase().startsWith(m[1].toLowerCase())).slice(0, 8);
@@ -839,6 +940,7 @@ function onChange(e) {
     const dur = pl.dur(), pos = dur ? dur * t.value / 1000 : 0;
     pl.seek(pos); publish(pl.playing(), pos); P.drag = false;
   } else if (t.id === 'trsw') Nova.set('translate', t.checked);
+  else if (t.id === 'voicesw') setOpt('voice:' + (t.checked ? 'on' : 'off'));
 }
 
 /* =====================================================================
@@ -907,6 +1009,6 @@ async function boot() {
   homeT = setInterval(() => { if (!R && !document.hidden) loadHome(); }, 10000);
 }
 
-window.NovaRoom = { handle, renderHome, active: () => !!R, ready: true };
+window.NovaRoom = { handle, ctx, renderHome, active: () => !!R, ready: true };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();

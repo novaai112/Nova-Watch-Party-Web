@@ -14,6 +14,5 @@ window.APP_CONFIG = {
   TMDB_API_KEY: "9476e0641545c6f90f6c889866037037",
   TURN_CREDENTIAL: "1R9dsJ7xe7gOM18s",
   TURN_URL: "turn\\:global.relay.metered.ca\\:80,turns\\:global.relay.metered.ca\\:443?transport\\=tcp",
-  TURN_USERNAME: "9abf885adb934394685f9ee0",
-  YOUTUBE_API_KEY: "AIzaSyAAq4QvkKu5_jkmCKRYZQqGl0GlMVEa_uE"
+  TURN_USERNAME: "9abf885adb934394685f9ee0"
 };
