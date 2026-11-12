@@ -1,9 +1,7 @@
-/* /api/browse?url=https://…  — the in-app browser's page renderer.
-   Fetches a web page on the server and returns a SAFE, script-free copy that the room's browser shows in a
-   sandboxed iframe. Every video the visitor taps (a <video>, a YouTube/Vimeo/Dailymotion embed or link,
-   a link to a .mp4/.m3u8 file) is reported to Nova, which asks "Add / Cancel" and imports ONLY that video.
-   Safety: same SSRF guard as /api/extract; page scripts + inline handlers are removed; the response is sent with
-   a CSP `sandbox` (opaque origin: it can never read Nova's login or storage) and may only be framed by Nova. */
+/* /api/browse?url=https://… — the in-app browser's page renderer.
+   Website scripts run in an opaque-origin sandbox, separate from Nova's login and storage. Video taps are
+   reported to Nova, which asks "Add / Cancel" and imports only that video.
+   Safety: same SSRF guard as /api/extract; the response is sandboxed and may only be framed by Nova. */
 const extract = require('./extract.js');
 const get = extract._get, classify = extract._classify;
 
@@ -31,25 +29,28 @@ function rewrite(html, base, self) {
   const proxy = u => self + '/api/browse?url=' + encodeURIComponent(u);
   let out = String(html || '');
   out = out.replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/<script\b[\s\S]*?<\/script\s*>/gi, '').replace(/<script\b[^>]*>/gi, '')
-    .replace(/<\/?noscript\b[^>]*>/gi, '')
-    .replace(/<(object|applet|template)\b[\s\S]*?<\/\1\s*>/gi, '').replace(/<embed\b[^>]*>/gi, '');
-  /* embedded players -> a tappable "add this video" tile; every other frame is dropped */
+    .replace(/<(object|applet)\b[\s\S]*?<\/\1\s*>/gi, '').replace(/<embed\b[^>]*>/gi, '');
+  /* embedded video players become add-video tiles; other frames stay inside their own sandbox */
   const tiles = [];
   out = out.replace(/<iframe\b([^>]*)>[\s\S]*?<\/iframe\s*>|<iframe\b([^>]*)\/>/gi, (all, a1, a2) => {
     const t = parseTag('<iframe' + (a1 || a2 || '') + '>'); if (!t) return '';
     const u = abs(getA(t, 'src') || getA(t, 'data-src') || '', base);
     const c = u && classify(u, '', '');
-    if (!c) return '';
-    const th = c.kind === 'youtube' ? 'https://i.ytimg.com/vi/' + c.id + '/hqdefault.jpg' : '';
-    tiles.push('<a class="nv-emb" href="#" data-nv-video="' + esc(u) + '" title="' + esc(getA(t, 'title') || '') + '">' + (th ? '<img alt="" src="' + th + '">' : '') + '<span>▶ Tap to add this video</span></a>');
-    return '\u0000NVTILE' + (tiles.length - 1) + '\u0000';
+    if (c) {
+      const th = c.kind === 'youtube' ? 'https://i.ytimg.com/vi/' + c.id + '/hqdefault.jpg' : '';
+      tiles.push('<a class="nv-emb" href="#" data-nv-video="' + esc(u) + '" title="' + esc(getA(t, 'title') || '') + '">' + (th ? '<img alt="" src="' + th + '">' : '') + '<span>▶ Tap to add this video</span></a>');
+      return '\u0000NVTILE' + (tiles.length - 1) + '\u0000';
+    }
+    if (!u) return '';
+    setA(t, 'src', u);
+    setA(t, 'sandbox', 'allow-scripts allow-forms');
+    return build(t) + '</iframe>';
   });
   /* tags */
   out = out.replace(/<(?:meta|base)\b[^>]*>/gi, tag => /http-equiv|<base/i.test(tag) ? '' : tag);
   out = out.replace(/<[a-z][a-z0-9-]*\b(?:"[^"]*"|'[^']*'|[^'">])*>/gi, tag => {
     const t = parseTag(tag); if (!t) return tag;
-    t.attrs = t.attrs.filter(([k, v]) => !/^on/.test(k) && k !== 'srcdoc' && k !== 'ping' && !(v && /^\s*javascript:/i.test(v)) && !/^data-nv-/.test(k));
+    t.attrs = t.attrs.filter(([k, v]) => k !== 'srcdoc' && k !== 'ping' && !(v && /^\s*javascript:/i.test(v)) && !/^data-nv-/.test(k));
     let after = '';
     if (t.name === 'a' || t.name === 'area') {
       const h = getA(t, 'href');
@@ -106,7 +107,7 @@ document.addEventListener('play',function(e){var v=e.target;if(v&&v.tagName==='V
 function headers(self) {
   return {
     'Content-Type': 'text/html; charset=utf-8',
-    'Content-Security-Policy': "sandbox allow-scripts allow-forms; default-src 'none'; img-src * data: blob:; media-src * data: blob:; style-src * 'unsafe-inline'; font-src * data:; script-src 'unsafe-inline'; form-action " + self + "; frame-ancestors 'self'",
+    'Content-Security-Policy': "sandbox allow-scripts allow-forms; default-src 'none'; script-src https: 'unsafe-inline' 'unsafe-eval'; connect-src https: wss:; child-src https: blob:; frame-src https:; worker-src https: blob:; img-src * data: blob:; media-src * data: blob:; style-src * 'unsafe-inline'; font-src * data:; form-action " + self + "; frame-ancestors 'self'",
     'X-Frame-Options': 'SAMEORIGIN', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff'
   };
 }

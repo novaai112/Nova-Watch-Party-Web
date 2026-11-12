@@ -159,7 +159,7 @@
 
   /* o: { importUrl(url) -> opens a YouTube/file link or reads a page for videos (Add/Cancel);  launch(media, opt) -> confirm popup } */
   function browser(host, o) {
-    var hist = [], cur = null, gen = 0, lastVid = '', lastT = 0;
+    var hist = [], cur = null, gen = 0, lastVid = '', lastT = 0, loadTimer = null;
     host.innerHTML =
       '<div class="nv-br">' +
         '<form class="nv-bar" autocomplete="off" role="search">' +
@@ -178,7 +178,7 @@
     }
     function sync() { back.disabled = hist.length < 2; open.hidden = find.hidden = !(cur && cur.k === 'page'); }
     function hint() {
-      main.innerHTML = '<div class="nv-hint"><b>Search the web, then tap any video</b><span>Open a page, tap a supported video and Nova asks whether to add it to the room. You can also paste an official video link.</span><span class="nv-fine">Some sites block this safe preview. Use Open original website to view them normally; Nova can only add video links the site publicly exposes or officially allows to embed. Protected players cannot be imported.</span></div>';
+      main.innerHTML = '<div class="nv-hint"><b>Search the web, then tap any video</b><span>Open a page, tap a supported video and Nova asks whether to add it to the room. You can also paste an official video link.</span><span class="nv-fine">Websites run JavaScript in an isolated sandbox, separate from Nova login and storage. Sign-in, pop-ups, downloads, or some site features may not work; use Open original website when needed. Protected players cannot be imported.</span></div>';
     }
     function results(q) {
       var my = ++gen; status('Searching the web…', 'wait');
@@ -194,9 +194,26 @@
     }
     function page(url) {
       var my = ++gen;
+      if (loadTimer) clearTimeout(loadTimer);
+      loadTimer = null;
+      var host = ''; try { host = new URL(url).hostname.toLowerCase(); } catch (e) {}
+      if (/(^|\.)youtube(?:-nocookie)?\.com$/.test(host)) {
+        status('YouTube needs its own browser cookies to render fully. Click Open original website to browse YouTube, or paste a direct video link to add it to the room.');
+        return;
+      }
       main.innerHTML = '<div class="nv-load"><i class="nv-spin"></i></div><iframe class="nv-frame" title="Web page" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" allow="" src="/api/browse?url=' + encodeURIComponent(url) + '"></iframe>';
       var fr = main.querySelector('iframe'); fr.dataset.g = my;
-      fr.addEventListener('load', function () { var l = main.querySelector('.nv-load'); if (l) l.remove(); });
+      fr.addEventListener('load', function () {
+        if (my !== gen) return;
+        if (loadTimer) clearTimeout(loadTimer);
+        loadTimer = null;
+        var l = main.querySelector('.nv-load'); if (l) l.remove();
+      });
+      loadTimer = setTimeout(function () {
+        if (my !== gen || !main.contains(fr)) return;
+        loadTimer = null;
+        status('This website is taking too long to load in Nova. Use Open original website, or try again.', 'err', function () { page(url); });
+      }, 12000);
     }
     function show(e, push) {
       cur = e; if (push !== false) hist.push(e);
@@ -232,6 +249,8 @@
       if (!fr || ev.source !== fr.contentWindow || !d || d.nova !== 1) return;
       if (d.t === 'nav') {
         if (typeof d.url !== 'string') return;
+        if (loadTimer) clearTimeout(loadTimer);
+        loadTimer = null;
         var l = main.querySelector('.nv-load'); if (l) l.remove();
         if (!cur || cur.k !== 'page') return;
         if (d.url !== cur.url) { cur = { k: 'page', url: d.url }; hist.push(cur); }
