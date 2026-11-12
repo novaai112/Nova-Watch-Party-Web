@@ -49,7 +49,13 @@ async function get(u) {
     let r;
     try {
       r = await fetch(url, { redirect: 'manual', signal: ac.signal, headers: { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml,video/*;q=0.9,*/*;q=0.5', 'Accept-Language': 'en' } });
-    } catch (e) { clearTimeout(t); throw new Error('The website did not respond.'); }
+    } catch (e) {
+      clearTimeout(t);
+      if (e && e.name === 'AbortError') throw new Error('The website timed out while Nova was waiting for a response.');
+      const code = e && e.cause && e.cause.code;
+      if (code && /CERT|TLS/.test(code)) throw new Error("Nova could not verify this website's HTTPS certificate. Certificate checks stay enabled; open the original site in your browser or try an official video link.");
+      throw new Error("Nova's server could not reach this website. The site may reject server requests or require a browser session; try opening it in your browser or use an official video link.");
+    }
     if (r.status >= 300 && r.status < 400 && r.headers.get('location')) { clearTimeout(t); cur = new URL(r.headers.get('location'), url).href; continue; }
     const type = (r.headers.get('content-type') || '').toLowerCase();
     if (/^(video|audio)\/|mpegurl/.test(type)) { clearTimeout(t); try { r.body && r.body.cancel(); } catch (e) {} return { url: url.href, type, direct: true, html: '' }; }
@@ -176,3 +182,5 @@ module.exports = async (req, res) => {
   }
 };
 module.exports._parse = parse;   // for tests
+module.exports._get = get;     // shared with /api/browse (same SSRF guard)
+module.exports._classify = classify;

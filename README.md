@@ -30,6 +30,7 @@ It creates (Part 4 = username check, avatar bucket, gallery limits): `profiles` 
 - Photos go to two Storage buckets: `avatars` and `gallery` (both created by `schema.sql`).
 - Re-run `schema.sql` once if you already ran an older version: Part 4 is safe to repeat.
 - Run `chat-schema.sql` after `schema.sql` to enable direct and group conversations, message storage, Realtime publication, private media storage, and RLS.
+- Run `rooms-schema.sql` after `schema.sql` to enable watch-party rooms, mic permissions, moderation actions, and public-room profile cards. Re-running it applies the room updates safely.
 - Re-running `schema.sql` removes the obsolete room-invitation RPC and profile setting.
 
 ## 2. Auth settings (Dashboard → Authentication)
@@ -72,6 +73,7 @@ Nova.audioRule(videoElement);
 - **Nova home:** Signed-in users open `nova-home.html` after login. The settings gear opens the full Profile page; the floating + opens the platform picker. The YouTube tile and Karaoke, Playlist, and Live sections show responsive, searchable results inside Nova, with channel/date details, likes, and YouTube’s official embedded player. YouTube’s complete website interface cannot be embedded as a page. Embedded playback requires Nova to be served from an HTTP(S) origin (not opened as `file://`). Search uses `YOUTUBE_API_KEY` from `config.js` before an older browser-saved key; **Change API key** stores an explicit local override, and **Use config.js key** retries without it. Restrict browser keys by website referrer and to the YouTube Data API v3 in Google Cloud Console.
 - **In-app chat media search:** Deploy `supabase/functions/chat-media-search` to the Supabase project used in `config.js` with `supabase functions deploy chat-media-search`. Add `SEARXNG_BASE_URL` as a Supabase Edge Function secret/config value pointing to your HTTPS SearXNG instance, plus `GIPHY_API_KEY` and/or `KLIPY_API_KEY` for those optional providers. SearXNG does not require a Google/Yandex API key. Configure your SearXNG `settings.yml` to enable the desired image engines and allow JSON output under `search.formats`; the function requests `format=json` in the `images` category. Many public instances disable JSON or rate-limit shared traffic. SearXNG pages load only when **Load more results** is selected, and the function observes the instance's `Retry-After` value when provided; unlimited third-party capacity cannot be guaranteed. For predictable higher-volume use, operate your own SearXNG instance with an appropriate capacity and bot-protection configuration. `.env.example` lists variable names only; it is not loaded by the static site or deployed automatically. Keep GIPHY/KLIPY keys server-side, never in `config.js` or browser code. A function 404 means it is missing from the configured Supabase project or the project URL is wrong.
 - **People:** The Friends page has Friends, Recents, Requests, and Blocked tabs. Recents lists every other profile from your latest direct and group conversations. Username search shows each result's friend/request/blocked state. Blocking removes the friendship and pending requests, prevents new requests and conversations in either direction, and hides shared conversation history from both users. Unblocking does not restore a friendship.
+- **Watch-party rooms:** Member photos open their profiles; right-click (desktop) or long-press (mobile) opens friend, mute, block, report, and admin-only kick actions. Admin avatars have a gradient ring. Public rooms allow all members to use voice when enabled; non-public rooms require admin approval per member. Kicked members can return only after the admin invites them again. A user's public active room appears on their profile with a Join button. Room block/report actions use `chat-schema.sql` and the latest `rooms-schema.sql`; reports are stored privately in `room_reports`.
 
 ## 6. Test checklist (use two accounts)
 1. Sign up, confirm email, log in → Nova home opens. Use the gear to open Profile.
@@ -83,6 +85,8 @@ Nova.audioRule(videoElement);
 7. After running `chat-schema.sql`, search users by username; test friend requests, the Friends/Recents/Requests/Blocked tabs, block/unblock and verify blocked users cannot request or open shared chats.
 8. Accept a friend request on two accounts, exchange messages, and verify updates arrive without refreshing. Test group creation, @username suggestions, document/photo/video/audio uploads, contact sharing, camera capture, and microphone permissions. Verify incoming bubbles remain left-aligned and outgoing bubbles right-aligned with the chat surface transparent.
 9. Deploy the `chat-media-search` Edge Function and configure SearXNG/GIPHY/KLIPY as needed. Search and send SearXNG images/GIFs, GIPHY GIFs/stickers, and KLIPY GIFs/stickers; verify results stay in the page and arrive for the other member through Realtime.
+10. After running `rooms-schema.sql`, create a private room with two accounts. Confirm the guest mic is blocked until the admin enables it in People, then revoke access and verify the mic turns off. Test avatar click, right-click/long-press actions, friend/mute/block/report, and admin-only kick; confirm the kicked account cannot rejoin until the admin invites it again.
+11. Create a public room and verify member avatars replace the Nova wordmark while mics are active, the admin has a gradient ring, and the room appears on the admin's profile with a working Join button.
 
 ## 7. Notes
 - The anon key in `config.js` is meant to be public. Never put the `service_role` key in any file here.
@@ -106,6 +110,7 @@ Nova.audioRule(videoElement);
 
 ## Video search & import (server functions)
 YouTube search, pasted links and "video from any web page" run through `/api/*` serverless functions, so visitors never enter or see an API key.
+- These features require the site to be served by Vercel (or another host configured to run the `/api` functions); opening `nova-home.html` as a local file or hosting only static files will not work. For local testing, add `YOUTUBE_API_KEY=...` to the ignored `.env.local` file and run `node dev-server.js`.
 - `api/youtube.js` — YouTube Data API proxy (search with endless scrolling, link lookup). **Needs the env var `YOUTUBE_API_KEY`.**
 - `api/extract.js` — finds the playable video on a web page (mp4/webm/m3u8, `<video>`, og:video, JSON-LD, YouTube/Vimeo/Dailymotion embeds) and imports only the video. DRM sites (Netflix, Prime, Disney+) cannot be imported.
 - `api/websearch.js` — plain web search for the Web tab.
@@ -113,3 +118,8 @@ YouTube search, pasted links and "video from any web page" run through `/api/*` 
 
 **Setup:** Vercel → Project → Settings → Environment Variables → add `YOUTUBE_API_KEY` (Production, Preview, Development; mark Sensitive) → redeploy. In Google Cloud restrict the key to **YouTube Data API v3**. Do not put the key in `config.js` or any browser file.
 **Local test:** copy `.env.local.example` to `.env.local`, add the key, run `node dev-server.js`.
+
+### In-app browser (Web tab)
+Search the web (or type an address) and pages open **inside Nova** through `api/browse.js`: a safe, script-free copy of the page in a sandboxed iframe. Tap any video on the page (a `<video>`, an embedded YouTube/Vimeo/Dailymotion player, a YouTube link, a link to an `.mp4`/`.m3u8`) and Nova asks **Add / Cancel**; only that video goes to the room, never the website. The video icon in the bar ("Find video on this page") reads the page for videos when a site only shows its player through JavaScript.
+- Safety: same SSRF guard as `api/extract.js` (no localhost / private networks / cloud metadata); page scripts and inline handlers are removed; the response carries a CSP `sandbox` (no access to Nova's login or storage) and can only be framed by Nova.
+- Limits: this is a safe, script-free preview, not a full browser. Sites that require JavaScript, login, or block server requests may not load; certificate errors are not bypassed. Use "Open original website" to view the page in your browser. Nova can sync only direct secure video links and officially embeddable players; it cannot extract protected or account-bound streams.

@@ -13,12 +13,18 @@
     return fetch(u, { headers: { Accept: 'application/json' } }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
         if (!r.ok) {
-          var e = new Error(j.error || (r.status === 429 ? 'Too many searches — wait a moment and try again.' : 'Something went wrong. Please try again.'));
+          var message = j.error || (r.status === 429 ? 'Too many searches — wait a moment and try again.' : 'Something went wrong. Please try again.');
+          if (r.status === 404) message = 'Nova video services are not available on this host. Deploy the /api functions or run node dev-server.js locally.';
+          var e = new Error(message);
           e.status = r.status; throw e;
         }
         return j;
       });
-    }, function () { throw new Error('No connection. Check your internet and try again.'); });
+    }, function () {
+      if (location.protocol === 'file:') throw new Error('Nova was opened as a local file, so its video services cannot load. Run node dev-server.js or open the deployed site.');
+      if (navigator.onLine === false) throw new Error('You appear to be offline. Check your internet connection and try again.');
+      throw new Error('Could not reach Nova video services. Check that the /api functions are deployed and the server is reachable.');
+    });
   }
   function ytSearch(o) {
     return api('/api/youtube', { q: o.q, type: o.type === 'playlist' ? 'playlist' : '', eventType: o.eventType, pageToken: o.pageToken, safe: o.safe })
@@ -120,6 +126,134 @@
     };
   }
 
+
+  /* ---------------- in-app browser (the Web tab) ----------------
+     Search the web or type an address; pages open inside Nova via /api/browse (script-free, sandboxed).
+     Tapping any video on a page reports it here -> confirm popup -> only that video goes to the room. */
+  function toast(t) {
+    var el = document.createElement('div'); el.className = 'nv-toast'; el.setAttribute('role', 'status'); el.textContent = t;
+    document.body.appendChild(el); setTimeout(function () { el.classList.add('out'); }, 2600); setTimeout(function () { el.remove(); }, 3000);
+  }
+  function fileName(u) { try { return decodeURIComponent(new URL(u).pathname.split('/').pop()).replace(/\.[a-z0-9]+$/i, '') || 'Video'; } catch (e) { return 'Video'; } }
+  /* a tapped video URL -> room media (null when it is not a playable video URL) */
+  function mediaFromUrl(u, title, thumb) {
+    var p = parseInput(u), m;
+    if (p.t === 'yt') return ytMedia({ id: p.id, title: title, thumb: thumb });
+    if (p.t === 'ytpl') return ytMedia({ pl: p.pl, title: title, thumb: thumb });
+    if ((m = /player\.vimeo\.com\/video\/(\d+)/.exec(u) || /^https?:\/\/vimeo\.com\/(\d+)/.exec(u)))
+      return { kind: 'embed', url: 'https://player.vimeo.com/video/' + m[1] + '?autoplay=1', title: title || 'Vimeo video', thumb: thumb || '', provider: 'vimeo' };
+    if ((m = /dailymotion\.com\/(?:embed\/)?video\/([a-z0-9]+)/i.exec(u)))
+      return { kind: 'embed', url: 'https://www.dailymotion.com/embed/video/' + m[1] + '?autoplay=1', title: title || 'Dailymotion video', thumb: thumb || '', provider: 'dailymotion' };
+    if (p.t === 'file') {
+      var t = (title || '').trim(); if (!t || t.length > 120 || /^(download|play|watch)$/i.test(t)) t = fileName(u);
+      return { kind: 'video', url: p.url, title: t, thumb: /^https:/.test(thumb || '') ? thumb : '', provider: 'link' };
+    }
+    return null;
+  }
+  function shortUrl(u) { try { var x = new URL(u); return x.hostname.replace(/^www\./, '') + (x.pathname === '/' ? '' : x.pathname) + x.search; } catch (e) { return u; } }
+
+  var SEARCH_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+  var BACK_SVG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>';
+  var FIND_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/></svg>';
+  var OPEN_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/></svg>';
+
+  /* o: { importUrl(url) -> opens a YouTube/file link or reads a page for videos (Add/Cancel);  launch(media, opt) -> confirm popup } */
+  function browser(host, o) {
+    var hist = [], cur = null, gen = 0, lastVid = '', lastT = 0;
+    host.innerHTML =
+      '<div class="nv-br">' +
+        '<form class="nv-bar" autocomplete="off" role="search">' +
+          '<button type="button" class="nv-ib nv-back" aria-label="Back" disabled>' + BACK_SVG + '</button>' +
+          '<label class="nv-addr">' + SEARCH_SVG + '<input id="nvq" type="text" inputmode="url" enterkeyhint="go" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Search the web or type a web address" aria-label="Search the web or type a web address"></label>' +
+          '<button type="button" class="nv-ib nv-open" aria-label="Open original website" title="Open original website" hidden>' + OPEN_SVG + '</button>' +
+          '<button type="button" class="nv-ib nv-find" aria-label="Find video on this page" title="Find video on this page" hidden>' + FIND_SVG + '</button>' +
+        '</form>' +
+        '<div class="nv-main"><div class="nv-pane"></div><div class="nv-status" id="sres"></div></div>' +
+      '</div>';
+    var form = host.querySelector('.nv-bar'), input = host.querySelector('#nvq'), back = host.querySelector('.nv-back'), open = host.querySelector('.nv-open'), find = host.querySelector('.nv-find'), main = host.querySelector('.nv-pane'), over = host.querySelector('#sres');
+    over.addEventListener('click', function (ev) { if (!ev.target.closest('button')) over.innerHTML = ''; });   // tap a status message to dismiss it
+    function status(t, kind, retry) {
+      main.innerHTML = '<div class="nv-msg' + (kind ? ' ' + kind : '') + '">' + (kind === 'wait' ? '<i class="nv-spin"></i>' : '') + '<span>' + esc(t) + '</span>' + (retry ? '<button class="nv-retry" type="button">Try again</button>' : '') + '</div>';
+      if (retry) main.querySelector('.nv-retry').onclick = retry;
+    }
+    function sync() { back.disabled = hist.length < 2; open.hidden = find.hidden = !(cur && cur.k === 'page'); }
+    function hint() {
+      main.innerHTML = '<div class="nv-hint"><b>Search the web, then tap any video</b><span>Open a page, tap a supported video and Nova asks whether to add it to the room. You can also paste an official video link.</span><span class="nv-fine">Some sites block this safe preview. Use Open original website to view them normally; Nova can only add video links the site publicly exposes or officially allows to embed. Protected players cannot be imported.</span></div>';
+    }
+    function results(q) {
+      var my = ++gen; status('Searching the web…', 'wait');
+      webSearch(q).then(function (j) {
+        if (my !== gen) return;
+        var l = j.results || [];
+        if (!l.length) { status('No results. Try other words, or paste a link to a page with a video.', ''); return; }
+        main.innerHTML = '<div class="nv-wr">' + l.map(function (x, i) {
+          return '<button type="button" class="nv-wi" data-u="' + esc(x.url) + '"><small>' + esc(x.host) + '</small><b>' + esc(x.title) + '</b><span>' + esc(x.snippet) + '</span></button>';
+        }).join('') + '</div>';
+        main.scrollTop = 0;
+      }).catch(function (err) { if (my === gen) status(err.message || 'Web search failed', 'err', function () { results(q); }); });
+    }
+    function page(url) {
+      var my = ++gen;
+      main.innerHTML = '<div class="nv-load"><i class="nv-spin"></i></div><iframe class="nv-frame" title="Web page" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" allow="" src="/api/browse?url=' + encodeURIComponent(url) + '"></iframe>';
+      var fr = main.querySelector('iframe'); fr.dataset.g = my;
+      fr.addEventListener('load', function () { var l = main.querySelector('.nv-load'); if (l) l.remove(); });
+    }
+    function show(e, push) {
+      cur = e; if (push !== false) hist.push(e);
+      input.value = e.k === 'results' ? e.q : e.url;
+      sync();
+      if (e.k === 'results') results(e.q); else page(e.url);
+    }
+    function go(raw) {
+      raw = String(raw || '').trim(); if (!raw) return;
+      var p = parseInput(raw);
+      if (p.t === 'yt' || p.t === 'ytpl' || p.t === 'file') return o.importUrl(p.url);
+      if (p.t === 'url') return show({ k: 'page', url: p.url });
+      show({ k: 'results', q: raw });
+    }
+    form.onsubmit = function (ev) { ev.preventDefault(); input.blur(); go(input.value); };
+    input.addEventListener('focus', function () { try { input.select(); } catch (e) {} });
+    back.onclick = function () { if (hist.length > 1) { hist.pop(); show(hist[hist.length - 1], false); } };
+    open.onclick = function () {
+      if (!cur || cur.k !== 'page') return;
+      var a = document.createElement('a'); a.href = cur.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.click();
+    };
+    find.onclick = function () { if (cur && cur.k === 'page') o.importUrl(cur.url); };
+    main.addEventListener('click', function (ev) {
+      var b = ev.target.closest('.nv-wi'); if (!b) return;
+      var p = parseInput(b.dataset.u);
+      if (p.t === 'yt' || p.t === 'ytpl' || p.t === 'file') return o.importUrl(p.url);   // a video result: straight to Add / Cancel
+      show({ k: 'page', url: b.dataset.u });
+    });
+    /* messages from the page the visitor is looking at */
+    function onMsg(ev) {
+      if (!document.body.contains(host)) { window.removeEventListener('message', onMsg); return; }
+      var fr = main.querySelector('iframe'), d = ev.data;
+      if (!fr || ev.source !== fr.contentWindow || !d || d.nova !== 1) return;
+      if (d.t === 'nav') {
+        if (typeof d.url !== 'string') return;
+        var l = main.querySelector('.nv-load'); if (l) l.remove();
+        if (!cur || cur.k !== 'page') return;
+        if (d.url !== cur.url) { cur = { k: 'page', url: d.url }; hist.push(cur); }
+        input.value = cur.url; sync(); return;
+      }
+      if (d.t !== 'video' && d.t !== 'page') return;
+      var u = String(d.url || ''), now = Date.now();
+      if (u === lastVid && now - lastT < 350) return; lastVid = u; lastT = now;
+      if (d.t === 'page') return o.importUrl(cur ? cur.url : String(d.page || ''));
+      if (!/^https?:/i.test(u)) return toast('This video cannot be added.');
+      var m = mediaFromUrl(u, String(d.title || ''), String(d.thumb || ''));
+      if (!m) return o.importUrl(String(d.page || (cur && cur.url) || u));
+      if (m.kind === 'youtube') return o.importUrl(u);                    // looks the video up (real title, embeddable check)
+      if (m.kind === 'video' && !/^https:/i.test(m.url)) return toast('Only secure (https) videos can be added.');
+      o.launch(m, { channel: shortUrl(cur ? cur.url : u).split('/')[0] });
+    }
+    window.addEventListener('message', onMsg);
+    hint(); sync();
+    if (o.init) go(o.init); else setTimeout(function () { try { input.focus(); } catch (e) {} }, 60);
+    return { go: go };
+  }
+
   /* ---------------- styles ---------------- */
   var css = '' +
     '.nv-ov{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;padding:16px;background:rgba(10,16,28,.38);-webkit-backdrop-filter:blur(10px) saturate(1.1);backdrop-filter:blur(10px) saturate(1.1);animation:nvf .16s ease-out;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}' +
@@ -150,10 +284,23 @@
     '.nv-wi{display:flex;flex-direction:column;gap:3px;align-items:flex-start;text-align:left;width:100%;border:0;border-radius:14px;padding:14px 16px;background:#ffffff14;color:#fff;font:inherit;cursor:pointer}.nv-wi:hover{background:#ffffff22}' +
     '.nv-wi b{font-size:17px;line-height:1.3}.nv-wi small{color:#9fd0ff;font-size:13px}.nv-wi span{color:#cfd8e6;font-size:14px;line-height:1.4}' +
     '.vc .ti .ch{display:block;font-style:normal;font-size:12px;opacity:.85;margin-top:2px}' +
+    /* in-app browser */
+    '.nv-br{position:absolute;inset:0;display:flex;flex-direction:column}' +
+    '.nv-bar{display:flex;align-items:center;gap:8px;padding:8px 10px;flex:0 0 auto}' +
+    '.nv-ib{flex:0 0 44px;height:44px;border:0;border-radius:12px;background:#ffffff1a;color:#fff;display:grid;place-items:center;cursor:pointer}.nv-ib:hover:not(:disabled){background:#ffffff2e}.nv-ib:disabled{opacity:.35;cursor:default}.nv-ib[hidden]{display:none}' +
+    '.nv-addr{flex:1;min-width:0;display:flex;align-items:center;gap:10px;height:44px;padding:0 14px;border-radius:14px;background:#fff;color:#667085}' +
+    '.nv-addr input{flex:1;min-width:0;border:0;outline:0;background:transparent;font:inherit;font-size:16px;color:#0b1220}.nv-addr input::placeholder{color:#8a94a6}' +
+    '.nv-addr:focus-within{box-shadow:0 0 0 3px #60a5fa88}' +
+    '.nv-main{position:relative;flex:1;min-height:0}.nv-pane{position:absolute;inset:0;overflow:auto;-webkit-overflow-scrolling:touch}' +
+    '.nv-status{position:absolute;inset:0;z-index:3;overflow:auto;background:rgba(14,18,28,.96)}.nv-status:empty{display:none}' +
+    '.nv-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff}' +
+    '.nv-load{position:absolute;inset:0;display:grid;place-items:center;background:#fff;z-index:1;pointer-events:none}.nv-load .nv-spin{border-color:#0b122033;border-top-color:#0b1220}' +
+    '.nv-toast{position:fixed;left:50%;bottom:calc(28px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:2147483100;max-width:calc(100vw - 32px);padding:12px 18px;border-radius:999px;background:#0b1220;color:#fff;font:600 15px system-ui,sans-serif;box-shadow:0 10px 30px #0006;transition:opacity .3s}.nv-toast.out{opacity:0}' +
+    '.nv-fine{font-size:13px!important;opacity:.7}' +
     '@keyframes nvf{from{opacity:0}to{opacity:1}}@keyframes nvu{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}@keyframes nvr{to{transform:rotate(360deg)}}' +
     '@media (prefers-reduced-motion:reduce){.nv-ov,.nv-card,.nv-spin{animation:none}}' +
     '@media (max-width:520px){.nv-ov{align-items:end;padding:12px}.nv-ac .nv-b{flex:1}}';
   var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
 
-  window.NovaAdd = { ytSearch: ytSearch, ytInfo: ytInfo, ytMedia: ytMedia, extract: extract, webSearch: webSearch, parseInput: parseInput, confirm: confirm, choose: choose, close: close };
+  window.NovaAdd = { ytSearch: ytSearch, ytInfo: ytInfo, ytMedia: ytMedia, extract: extract, webSearch: webSearch, parseInput: parseInput, mediaFromUrl: mediaFromUrl, browser: browser, toast: toast, confirm: confirm, choose: choose, close: close };
 })();

@@ -58,8 +58,15 @@ const MODES = [
 /* ---------- state ---------- */
 let ME = null, R = null, members = [], queue = [], msgs = [], prof = {}, ch = null;
 let skew = 0, hbT = null, tickT = null, homeT = null, homeRooms = [], mountKey = '', advAt = 0, endedAt = 0, pubT = 0, pubAt = 0;
+let roomSchemaWarned = false;
 let ui = { sheet: '', tab: 'members', promptDone: false, vol: +(localStorage.getItem('nova_vol') || 50), friends: [], first: true, events: [], nowKeys: {} };
 const micMap = new Map(), speak = new Map(), vad = new Map();
+const mutedUsers = new Set();
+try {
+  const saved = JSON.parse(localStorage.getItem('nova_room_muted_users') || '[]');
+  if (Array.isArray(saved)) saved.filter(x => typeof x === 'string').forEach(x => mutedUsers.add(x));
+} catch (e) {}
+let pressTimer = null, longPressed = false;
 let actx = null, vadT = null, micAt = 0;
 let P = freshP();
 function freshP() { return { kind: '', ready: false, yt: null, video: null, mute: 0, lastT: 0, lastC: 0, drag: false }; }
@@ -70,6 +77,12 @@ const nm = u => u.full_name || u.username || 'Someone';
 const snow = () => Date.now() + skew;
 const toast = (m, k) => Nova.toast(m, k);
 const afterPick = () => { try { if (window.novaAfterPick) window.novaAfterPick(); } catch (e) {} };
+const profileHref = id => 'profile.html#user/' + encodeURIComponent(id);
+function userAvatar(u, size, active, isHost) {
+  const id = String(u.id || ''), host = !!isHost || !!(R && id === R.admin_id);
+  if (!id) return Nova.avatar(u, size);
+  return `<button type="button" class="uav${active ? ' mic-on' : ''}${host ? ' host' : ''}" style="width:${size}px;height:${size}px" data-user-id="${esc(id)}" aria-label="Open ${esc(nm(u))}'s profile" title="${esc(nm(u))}">${Nova.avatar(u, Math.max(12, size - 4))}</button>`;
+}
 const oops = e => {
   const m = (e && e.message) || 'Something went wrong';
   toast(/schema cache|does not exist|Could not find the function/i.test(m) ? 'Run rooms-schema.sql in Supabase first.' : m, 'err');
@@ -174,9 +187,14 @@ async function refreshRoom() {
 }
 async function refreshMembers() {
   if (!R) return;
-  const { data, error } = await sb.from('room_members').select('user_id,joined_at').eq('room_id', R.id).order('joined_at');
-  if (error) return;
-  members = data || [];
+  let result = await sb.from('room_members').select('user_id,joined_at,mic_allowed').eq('room_id', R.id).order('joined_at');
+  if (result.error && /mic_allowed/i.test(result.error.message || '')) {
+    if (!roomSchemaWarned) { toast('Run the latest rooms-schema.sql to enable member microphone controls', 'err'); roomSchemaWarned = true; }
+    result = await sb.from('room_members').select('user_id,joined_at').eq('room_id', R.id).order('joined_at');
+    if (!result.error) result.data = (result.data || []).map(m => Object.assign({ mic_allowed: false }, m));
+  }
+  if (result.error) { oops(result.error); return; }
+  members = result.data || [];
   await loadProfiles(members.map(m => m.user_id));
   if (!members.length) { beat(); return; }
   renderHead(); renderSheet(); renderFeed(); voiceSync(); renderVoice();
@@ -205,6 +223,7 @@ function subscribe() {
     .on('broadcast', { event: 'sig' }, ({ payload }) => onSig(payload))
     .on('broadcast', { event: 'mic' }, ({ payload }) => {
       if (!payload || !payload.uid || payload.uid === ME.id) return;
+      if (!canMic(payload.uid)) { micMap.delete(payload.uid); renderVoice(); return; }
       micMap.set(payload.uid, { on: !!payload.on, ts: Date.now() });
       if (!payload.on) speak.delete(payload.uid);
       renderVoice();
@@ -430,6 +449,11 @@ function onTick() {
    VOICE (WebRTC mesh, signalling over the room's realtime channel)
    ===================================================================== */
 const peers = new Map(); let local = null, mic = false;
+function canMic(id) {
+  if (!R || !R.voice_enabled) return false;
+  const member = members.find(m => m.user_id === id);
+  return !!member && (id === R.admin_id || R.privacy === 'public' || !!member.mic_allowed);
+}
 function iceServers() {
   const s = [{ urls: 'stun:stun.l.google.com:19302' }];
   try {
@@ -443,9 +467,11 @@ function sig(to, p) { if (ch) ch.send({ type: 'broadcast', event: 'sig', payload
 function voiceSync() {
   if (!R || !ch || !window.RTCPeerConnection) return;
   if (!R.voice_enabled) { closeAllPeers(); if (mic) stopMic(); micMap.clear(); renderVoice(); return; }
+  if (mic && !canMic(ME.id)) stopMic();
   const ids = members.map(m => m.user_id).filter(i => i !== ME.id);
   ids.forEach(id => { if (!peers.has(id)) makePeer(id); });
   [...peers.keys()].forEach(id => { if (!ids.includes(id)) dropPeer(id); });
+  applyRemoteVoiceAccess();
 }
 async function offer(id) {
   const o = peers.get(id); if (!o) return;
@@ -460,6 +486,7 @@ function makePeer(id) {
     if (!o.audio) { const a = document.createElement('audio'); a.autoplay = true; a.playsInline = true; ($('#rm') || document.body).appendChild(a); o.audio = a; }
     o.audio.srcObject = e.streams[0] || new MediaStream([e.track]);
     o.audio.volume = voiceVol();
+    o.audio.muted = mutedUsers.has(id) || !canMic(id);
     o.audio.play().catch(() => {});
     watch(id, o.audio.srcObject);
   };
@@ -480,7 +507,7 @@ function closeAllPeers() { [...peers.keys()].forEach(dropPeer); }
 async function onSig(pl_) {
   if (!pl_ || pl_.to !== ME.id || !R || !R.voice_enabled || !window.RTCPeerConnection) return;
   const id = pl_.from;
-  if (!members.some(m => m.user_id === id)) return;
+  if (!members.some(m => m.user_id === id)) { dropPeer(id); return; }
   if (!peers.has(id)) makePeer(id);
   const o = peers.get(id), pc = o.pc;
   try {
@@ -498,6 +525,14 @@ async function toggleMic() {
   if (!R.voice_enabled) return toast('Voice chat is off in this room');
   if (mic) stopMic();
   else {
+    if (!canMic(ME.id)) return toast('The room admin must enable your microphone', 'err');
+    if (R.privacy !== 'public') {
+      let access;
+      try {
+        access = await rpc('room_can_mic', { p_room: R.id });
+      } catch (e) { oops(e); return; }
+      if (!access) return toast('The room admin must enable your microphone', 'err');
+    }
     try {
       audioCtx();
       local = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
@@ -552,6 +587,10 @@ function vadTick() {
   if (!R) return;
   const now = Date.now();
   vad.forEach((o, id) => {
+    if (id !== ME.id && (!canMic(id) || mutedUsers.has(id))) {
+      if (speak.get(id)) { speak.set(id, false); $$('[data-vu="' + id + '"]').forEach(n => n.classList.remove('talk')); }
+      return;
+    }
     o.an.getByteTimeDomainData(o.buf);
     let sum = 0; for (let i = 0; i < o.buf.length; i++) { const x = (o.buf[i] - 128) / 128; sum += x * x; }
     if (Math.sqrt(sum / o.buf.length) > 0.03) o.hold = now + 450;
@@ -565,6 +604,18 @@ function vadTick() {
 function applyVolume() {
   pl.vol();
   peers.forEach(o => { if (o.audio) o.audio.volume = voiceVol(); });
+}
+function applyRemoteVoiceAccess() {
+  peers.forEach((o, id) => {
+    if (o.audio) o.audio.muted = mutedUsers.has(id) || !canMic(id);
+  });
+}
+function setUserMuted(id, muted) {
+  if (muted) mutedUsers.add(id); else mutedUsers.delete(id);
+  try { localStorage.setItem('nova_room_muted_users', JSON.stringify([...mutedUsers])); } catch (e) {}
+  const peer = peers.get(id);
+  if (peer && peer.audio) peer.audio.muted = muted || !canMic(id);
+  renderVoice();
 }
 
 /* =====================================================================
@@ -604,6 +655,22 @@ function buildShell() {
   el.addEventListener('click', onClick);
   el.addEventListener('input', onInput);
   el.addEventListener('change', onChange);
+  el.addEventListener('contextmenu', e => {
+    const avatar = e.target.closest && e.target.closest('.uav[data-user-id]');
+    if (!avatar) return;
+    e.preventDefault();
+    openUserMenu(avatar.dataset.userId);
+  });
+  el.addEventListener('pointerdown', e => {
+    const avatar = e.target.closest && e.target.closest('.uav[data-user-id]');
+    if (!avatar || e.pointerType === 'mouse') return;
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      longPressed = true;
+      openUserMenu(avatar.dataset.userId);
+    }, 600);
+  });
+  ['pointerup', 'pointercancel', 'pointermove', 'pointerleave'].forEach(name => el.addEventListener(name, () => clearTimeout(pressTimer)));
   el.addEventListener('keydown', e => { if (e.target.id === 'cmsg' && e.key === 'Enter') { e.preventDefault(); sendMsg(); } });
   /* keep the Send button tappable: pressing it must not blur the input (that would swap the icons away) */
   el.addEventListener('pointerdown', e => { if (e.target.closest('.sendb')) e.preventDefault(); });
@@ -622,6 +689,12 @@ function renderHead() {
   if (!R || !$('#rmid')) return;
   $('#rcount').textContent = members.length || 1;
   const mid = $('#rmid');
+  const activeMic = R.voice_enabled ? members.map(m => m.user_id).filter(micOf) : [];
+  const timer = votingNow() ? `<div class="cd" style="--p:${Math.min(100, Math.max(0, (R.play_state.vote_until - snow()) / 120))}%"><span>${Math.ceil(Math.max(0, (R.play_state.vote_until - snow()) / 1000))}</span></div>` : '';
+  if (activeMic.length) {
+    mid.innerHTML = `${timer}<div class="mic-header" aria-label="Members on microphone">${activeMic.map(id => userAvatar(who(id), 36, true)).join('')}</div>`;
+    return;
+  }
   if (votingNow()) {
     const left = Math.max(0, (R.play_state.vote_until - snow()) / 1000);
     mid.innerHTML = `<div class="cd" style="--p:${Math.min(100, left / 12 * 100)}%"><span>${Math.ceil(left)}</span></div>`;
@@ -630,23 +703,25 @@ function renderHead() {
 function renderBadges() { /* queue count lives in the People sheet (Up next tab) */ }
 function renderMic() {
   const b = $('#micb'); if (!b) return;
-  const off = !(R && R.voice_enabled);
-  b.className = 'micb' + (mic ? ' on' : '') + (off ? ' dis' : '');
+  const off = !(R && R.voice_enabled), denied = !off && !canMic(ME.id);
+  b.className = 'micb' + (mic ? ' on' : '') + ((off || denied) ? ' dis' : '');
   b.innerHTML = ic(mic ? 'mic' : 'micoff', 22);
-  b.title = off ? 'Voice chat is off' : mic ? 'Mute microphone' : 'Turn on microphone';
+  b.title = off ? 'Voice chat is off' : denied ? 'The room admin must enable your microphone' : mic ? 'Mute microphone' : 'Turn on microphone';
+  b.disabled = off || denied;
   b.setAttribute('aria-pressed', mic ? 'true' : 'false');
 }
-const micOf = id => id === (ME && ME.id) ? mic : !!(micMap.get(id) || {}).on;
+const micOf = id => canMic(id) && (id === (ME && ME.id) ? mic : !!(micMap.get(id) || {}).on);
 /* strip above the chat: who is on the mic right now (ring pulses while they talk) */
 function renderVoice() {
   const bar = $('#vbar'); if (!bar || !R) return;
   renderMic();
   const ids = R.voice_enabled ? members.map(m => m.user_id).filter(micOf) : [];
+  renderHead();
   bar.hidden = !ids.length;
   if (!ids.length) { bar.innerHTML = ''; if (ui.sheet === 'people') openPeople(true); return; }
   bar.innerHTML = `<span class="vb-l">${ic('mic', 14)}On mic</span>` + ids.map(id => {
     const u = who(id);
-    return `<span class="chip${speak.get(id) ? ' talk' : ''}" data-vu="${id}">${Nova.avatar(u, 24)}<em>${esc(id === ME.id ? 'You' : nm(u))}</em></span>`;
+    return `<span class="chip${speak.get(id) ? ' talk' : ''}" data-vu="${id}">${userAvatar(u, 28, true)}<em>${esc(id === ME.id ? 'You' : nm(u))}</em></span>`;
   }).join('');
   if (ui.sheet === 'people') openPeople(true);
 }
@@ -690,7 +765,7 @@ function openSettings(refresh) {
     ${adm ? '' : '<p class="mnote">Only the room admin can change these settings.</p>'}
     ${group('Privacy', pv[3], PRIV.map(p => optBtn('privacy:' + p[0], p[1], p[2], p[0] === R.privacy, !adm)).join(''))}
     ${group('Playback', md[3], MODES.map(p => optBtn('mode:' + p[0], p[1], p[2], p[0] === R.playback_mode, !adm)).join(''))}
-    <section class="sg row"><span class="sgi">${ic(R.voice_enabled ? 'mic' : 'micoff', 18)}</span><div class="sgh"><b>Voice chat</b><small>${R.voice_enabled ? 'Everyone can talk and listen' : 'Microphones are off for everyone'}</small></div><input type="checkbox" class="sw" id="voicesw" ${R.voice_enabled ? 'checked' : ''} ${adm ? '' : 'disabled'} aria-label="Voice chat"></section>
+    <section class="sg row"><span class="sgi">${ic(R.voice_enabled ? 'mic' : 'micoff', 18)}</span><div class="sgh"><b>Voice chat</b><small>${R.voice_enabled ? (R.privacy === 'public' ? 'Everyone can talk and listen' : 'Only admin-approved members can talk') : 'Microphones are off for everyone'}</small></div><input type="checkbox" class="sw" id="voicesw" ${R.voice_enabled ? 'checked' : ''} ${adm ? '' : 'disabled'} aria-label="Voice chat"></section>
     <section class="sg"><div class="sgh"><b>Volume</b><small>Balance between the video and voices</small></div><div class="vol">${ic('vol', 18)}<input type="range" id="volr" min="0" max="100" value="${ui.vol}" aria-label="Video and voice balance">${ic('phone', 18)}</div></section>
     <section class="sg row"><span class="sgi">${ic('globe', 18)}</span><div class="sgh"><b>Auto-translate chat</b><small>Translate messages into your language</small></div><input type="checkbox" class="sw" id="trsw" ${Nova.S.translate ? 'checked' : ''} aria-label="Auto-translate chat"></section>`;
   if (refresh && $('#rmodal')) $('#rmodal .mb').innerHTML = html; else sheet(html);
@@ -717,11 +792,11 @@ function renderVote() {
 /* chat feed */
 function msgHTML(m) {
   const u = who(m.user_id);
-  if (m.kind === 'system') return `<div class="sy">${Nova.avatar(u, 20)}<span><b>${esc(nm(u))}</b> ${esc(m.body)}</span></div>`;
+  if (m.kind === 'system') return `<div class="sy">${userAvatar(u, 24)}<span><b>${esc(nm(u))}</b> ${esc(m.body)}</span></div>`;
   const me = m.user_id === ME.id;
   const text = esc(m.tr || m.body).replace(/@([\w.]{2,24})/g, (a, n) =>
     members.some(x => (who(x.user_id).username || '').toLowerCase() === n.toLowerCase()) ? `<span class="mn">${a}</span>` : a);
-  return `<div class="cm${me ? ' me' : ''}">${me ? '' : Nova.avatar(u, 30, 'ring')}<div class="cb2">${me ? '' : `<small>${esc(nm(u))}</small>`}<p>${text}</p></div></div>`;
+  return `<div class="cm${me ? ' me' : ''}">${userAvatar(u, 32)}<div class="cb2">${me ? '' : `<small>${esc(nm(u))}</small>`}<p>${text}</p></div></div>`;
 }
 /* "Now playing" notice: a normal centred chat line that scrolls away with the conversation */
 function noteNow(m) {
@@ -773,8 +848,8 @@ function openPeople(refresh) {
   const adm = isAdmin();
   const mem = members.map(m => {
     const u = who(m.user_id), me = m.user_id === ME.id, isA = m.user_id === R.admin_id;
-    return `<div class="li">${Nova.avatar(u, 42)}<div><b>${esc(nm(u))}</b>${isA ? ' <span class="crownb">' + ic('crown', 15) + '</span>' : ''}${me ? ' (you)' : ''}${micOf(m.user_id) ? ' <span class="micon" data-vu="' + m.user_id + '">' + ic('mic', 14) + '</span>' : ''}<small>@${esc(u.username || '')}</small></div>
-      ${adm && !me ? `<button class="cb crownb" data-r="transfer" data-id="${m.user_id}" title="Make admin" aria-label="Make admin">${ic('crown', 18)}</button><button class="cb" data-r="kick" data-id="${m.user_id}" title="Remove from room" aria-label="Remove">${ic('x', 18)}</button>` : ''}</div>`;
+    return `<div class="li">${userAvatar(u, 42, micOf(m.user_id))}<div><b>${esc(nm(u))}</b>${isA ? ' <span class="crownb">' + ic('crown', 15) + '</span>' : ''}${me ? ' (you)' : ''}${micOf(m.user_id) ? ' <span class="micon" data-vu="' + m.user_id + '">' + ic('mic', 14) + '</span>' : ''}<small>@${esc(u.username || '')}</small></div>
+      ${adm && !me ? `${R.privacy !== 'public' ? `<button class="cb${m.mic_allowed ? ' on' : ''}" data-r="member-mic" data-id="${esc(m.user_id)}" data-on="${m.mic_allowed ? 'false' : 'true'}" title="${m.mic_allowed ? 'Disable microphone' : 'Enable microphone'}" aria-label="${m.mic_allowed ? 'Disable microphone' : 'Enable microphone'}">${ic(m.mic_allowed ? 'mic' : 'micoff', 17)}</button>` : ''}<button class="cb crownb" data-r="transfer" data-id="${esc(m.user_id)}" title="Make admin" aria-label="Make admin">${ic('crown', 18)}</button><button class="cb" data-r="kick" data-id="${esc(m.user_id)}" title="Kick from room" aria-label="Kick from room">${ic('x', 18)}</button>` : ''}</div>`;
   }).join('');
   const sorted = queue.slice().sort((a, b) => (b.votes || []).length - (a.votes || []).length);
   const que = sorted.length ? sorted.map(q => {
@@ -784,7 +859,8 @@ function openPeople(refresh) {
       ${adm ? `<button class="cb" data-r="playq" data-id="${q.id}" aria-label="Play now">${ic('play', 16)}</button>` : ''}
       ${adm || q.added_by === ME.id ? `<button class="cb" data-r="rmq" data-id="${q.id}" aria-label="Remove">${ic('trash', 16)}</button>` : ''}</div>`;
   }).join('') : '<p class="em">Nothing queued yet. Tap the search button at the top to add videos.</p>';
-  const html = `<div class="tabs"><button class="${ui.tab === 'members' ? 'on' : ''}" data-r="tab" data-t="members">Members (${members.length})</button><button class="${ui.tab === 'queue' ? 'on' : ''}" data-r="tab" data-t="queue">Up next (${queue.length})</button></div>${ui.tab === 'members' ? mem : que}<div class="row"><button class="s" data-r="close">Close</button></div>`;
+  const micHint = adm && R.privacy !== 'public' ? '<p class="mnote">Tap a member microphone button to enable or disable their mic.</p>' : '';
+  const html = `<div class="tabs"><button class="${ui.tab === 'members' ? 'on' : ''}" data-r="tab" data-t="members">Members (${members.length})</button><button class="${ui.tab === 'queue' ? 'on' : ''}" data-r="tab" data-t="queue">Up next (${queue.length})</button></div>${ui.tab === 'members' ? micHint + mem : que}<div class="row"><button class="s" data-r="close">Close</button></div>`;
   if (refresh && $('#rmodal')) { $('#rmodal .mb').innerHTML = html; } else sheet(html);
 }
 function openShare() {
@@ -809,7 +885,71 @@ function renderFriends(q) {
   const f = $('#fl'); if (!f) return;
   const inRoom = new Set(members.map(m => m.user_id)), t = q.trim().toLowerCase();
   const list = ui.friends.filter(u => !inRoom.has(u.id) && (!t || (nm(u) + ' ' + (u.username || '')).toLowerCase().includes(t)));
-  f.innerHTML = list.length ? list.map(u => `<label>${Nova.avatar(u, 38)}<span style="flex:1"><b>${esc(nm(u))}</b><br><small>@${esc(u.username || '')}</small></span><input type="checkbox" value="${u.id}"></label>`).join('') : '<p class="em">No friends to invite.</p>';
+  f.innerHTML = list.length ? list.map(u => `<label>${userAvatar(u, 38)}<span style="flex:1"><b>${esc(nm(u))}</b><br><small>@${esc(u.username || '')}</small></span><input type="checkbox" value="${esc(u.id)}"></label>`).join('') : '<p class="em">No friends to invite.</p>';
+}
+async function openUserMenu(id) {
+  if (!R || !members.some(m => m.user_id === id) || id === ME.id) return;
+  ui.sheet = 'user-menu';
+  const u = who(id);
+  sheet(`<div class="mh"><h3>${esc(nm(u))}</h3><button class="mx" data-r="close" aria-label="Close">${ic('x', 18)}</button></div><p class="em">Loading actions…</p>`);
+  try {
+    const { data, error } = await sb.from('friendships').select('user_id,friend_id,status')
+      .or(`and(user_id.eq.${ME.id},friend_id.eq.${id}),and(user_id.eq.${id},friend_id.eq.${ME.id})`);
+    if (error) throw error;
+    if (!R || !members.some(m => m.user_id === id)) return closeSheet();
+    const relation = (data || [])[0];
+    const friend = relation && relation.status === 'accepted';
+    const incoming = relation && relation.status === 'pending' && relation.user_id === id;
+    const outgoing = relation && relation.status === 'pending' && relation.user_id === ME.id;
+    const actions = [
+      `<button class="op" data-r="user-action" data-a="profile" data-id="${esc(id)}">${ic('userplus', 18)}<span>Profile</span></button>`,
+      friend
+        ? `<button class="op" data-r="user-action" data-a="unfriend" data-id="${esc(id)}">${ic('users', 18)}<span>Remove Friend</span></button>`
+        : incoming
+          ? `<button class="op" data-r="user-action" data-a="accept" data-id="${esc(id)}">${ic('check', 18)}<span>Accept Friend Request</span></button>`
+          : outgoing
+            ? `<button class="op" disabled>${ic('check', 18)}<span>Friend Request Sent</span></button>`
+            : `<button class="op" data-r="user-action" data-a="friend" data-id="${esc(id)}">${ic('userplus', 18)}<span>Add Friend</span></button>`,
+      `<button class="op" data-r="user-action" data-a="mute" data-id="${esc(id)}">${ic(mutedUsers.has(id) ? 'vol' : 'micoff', 18)}<span>${mutedUsers.has(id) ? 'Unmute' : 'Mute'}</span></button>`,
+      `<button class="op" data-r="user-action" data-a="block" data-id="${esc(id)}">${ic('x', 18)}<span>Block</span></button>`,
+      `<button class="op" data-r="user-action" data-a="report" data-id="${esc(id)}">${ic('at', 18)}<span>Report</span></button>`
+    ];
+    if (isAdmin()) actions.push(`<button class="op danger" data-r="user-action" data-a="kick" data-id="${esc(id)}">${ic('trash', 18)}<span>Kick from room</span></button>`);
+    $('#rmodal .mb').innerHTML = `<div class="mh"><h3>${esc(nm(u))}</h3><button class="mx" data-r="close" aria-label="Close">${ic('x', 18)}</button></div><div class="user-actions">${actions.join('')}</div>`;
+  } catch (e) {
+    const box = $('#rmodal .mb');
+    if (box) box.innerHTML = `<div class="mh"><h3>${esc(nm(u))}</h3><button class="mx" data-r="close" aria-label="Close">${ic('x', 18)}</button></div><p class="hint err">Could not load friendship actions: ${esc(e.message || 'Please try again.')}</p><div class="user-actions"><button class="op" data-r="user-action" data-a="profile" data-id="${esc(id)}"><span>Profile</span></button><button class="op" data-r="user-action" data-a="friend" data-id="${esc(id)}"><span>Add Friend</span></button><button class="op" data-r="user-action" data-a="mute" data-id="${esc(id)}"><span>${mutedUsers.has(id) ? 'Unmute' : 'Mute'}</span></button><button class="op" data-r="user-action" data-a="block" data-id="${esc(id)}"><span>Block</span></button><button class="op" data-r="user-action" data-a="report" data-id="${esc(id)}"><span>Report</span></button>${isAdmin() ? `<button class="op danger" data-r="user-action" data-a="kick" data-id="${esc(id)}"><span>Kick from room</span></button>` : ''}</div>`;
+  }
+}
+async function changeFriendship(id, remove) {
+  const { data, error } = await sb.from('friendships').select('user_id,friend_id,status')
+    .or(`and(user_id.eq.${ME.id},friend_id.eq.${id}),and(user_id.eq.${id},friend_id.eq.${ME.id})`);
+  if (error) throw error;
+  const relation = (data || [])[0];
+  if (remove) {
+    const first = await sb.from('friendships').delete().eq('user_id', ME.id).eq('friend_id', id);
+    if (first.error) throw first.error;
+    const second = await sb.from('friendships').delete().eq('user_id', id).eq('friend_id', ME.id);
+    if (second.error) throw second.error;
+    toast('Friend removed');
+  } else if (relation && relation.status === 'pending' && relation.user_id === id) {
+    const result = await sb.from('friendships').update({ status: 'accepted' }).eq('user_id', id).eq('friend_id', ME.id).eq('status', 'pending');
+    if (result.error) throw result.error;
+    toast('Friend request accepted');
+  } else if (!relation) {
+    const result = await sb.from('friendships').insert({ user_id: ME.id, friend_id: id });
+    if (result.error) throw result.error;
+    toast('Friend request sent');
+  } else toast('A friend request is already pending');
+  openUserMenu(id);
+}
+function openReport(id) {
+  ui.sheet = 'report';
+  sheet(`<div class="mh"><h3>Report ${esc(nm(who(id)))}</h3><button class="mx" data-r="close" aria-label="Close">${ic('x', 18)}</button></div>
+    <p class="mnote">Your report is stored privately for moderator review.</p>
+    <label class="sgh" for="reportReason"><b>Reason</b></label><select id="reportReason"><option value="harassment">Harassment or bullying</option><option value="hate_speech">Hate speech</option><option value="spam">Spam</option><option value="inappropriate">Inappropriate content</option><option value="safety">Safety concern</option><option value="other">Other</option></select>
+    <label class="sgh" for="reportDetails"><b>Details (optional)</b></label><textarea id="reportDetails" maxlength="1000" rows="4" placeholder="Add context for the reviewer"></textarea>
+    <div class="row"><button class="s" data-r="close">Cancel</button><button class="p" data-r="user-action" data-a="submit-report" data-id="${esc(id)}">Send report</button></div>`);
 }
 /* actions */
 async function pick(m, now) {
@@ -867,7 +1007,17 @@ function shareApp(a) {
 }
 
 function onClick(e) {
+  if (longPressed) { longPressed = false; e.preventDefault(); e.stopPropagation(); return; }
   if (R) resumeAudio();
+  const avatar = e.target.closest('.uav[data-user-id]');
+  if (avatar) {
+    e.preventDefault();
+    e.stopPropagation();
+    const page = window.open(profileHref(avatar.dataset.userId), '_blank');
+    if (page) page.opener = null;
+    if (!page) location.href = profileHref(avatar.dataset.userId);
+    return;
+  }
   const el = e.target.closest('[data-r]'); if (!el || !R) return;
   const d = el.dataset, r = d.r;
   if (r === 'leave') leave();
@@ -904,13 +1054,56 @@ function onClick(e) {
   }
   else if (r === 'kick') {
     const u = who(d.id);
-    if (confirm('Remove ' + nm(u) + ' from the room? They will not be able to rejoin.'))
-      rpc('room_kick', { p_room: R.id, p_user: d.id }).then(() => { if (ch) ch.send({ type: 'broadcast', event: 'kick', payload: { uid: d.id } }); refreshMembers(); }).catch(oops);
+    if (confirm('Kick ' + nm(u) + ' from this room? They can rejoin only if you invite them again.'))
+      rpc('room_kick', { p_room: R.id, p_user: d.id }).then(() => { if (ch) ch.send({ type: 'broadcast', event: 'kick', payload: { uid: d.id } }); refreshMembers(); toast('Removed from the room'); }).catch(oops);
   }
   else if (r === 'sendinv') {
     const ids = $$('#fl input:checked').map(x => x.value);
     if (!ids.length) return toast('Select at least one friend');
     rpc('room_invite', { p_room: R.id, p_users: ids }).then(n => { toast(n + ' friend' + (n === 1 ? '' : 's') + ' invited'); closeSheet(); }).catch(oops);
+  }
+  else if (r === 'member-mic') {
+    rpc('room_set_member_mic', { p_room: R.id, p_user: d.id, p_allowed: d.on === 'true' })
+      .then(refreshMembers).catch(oops);
+  }
+  else if (r === 'user-action') {
+    if (d.a === 'profile') {
+      const page = window.open(profileHref(d.id), '_blank');
+      if (page) page.opener = null;
+      if (!page) location.href = profileHref(d.id);
+    } else if (d.a === 'friend' || d.a === 'accept') {
+      changeFriendship(d.id, false).catch(e => toast(e.message || 'Friend request failed', 'err'));
+    } else if (d.a === 'unfriend') {
+      if (confirm('Remove this friend?')) changeFriendship(d.id, true).catch(e => toast(e.message || 'Could not remove friend', 'err'));
+    } else if (d.a === 'mute') {
+      setUserMuted(d.id, !mutedUsers.has(d.id));
+      toast(mutedUsers.has(d.id) ? 'User muted' : 'User unmuted');
+      openUserMenu(d.id);
+    } else if (d.a === 'block') {
+      if (confirm('Block this user? This also removes any friendship and prevents friend requests and direct chats.')) {
+        rpc('block_user', { p_blocked_id: d.id }).then(() => {
+          setUserMuted(d.id, true);
+          toast('User blocked');
+          closeSheet();
+        }).catch(oops);
+      }
+    } else if (d.a === 'report') openReport(d.id);
+    else if (d.a === 'submit-report') {
+      const reason = $('#reportReason'), details = $('#reportDetails');
+      el.disabled = true;
+      rpc('room_report_user', { p_room: R.id, p_user: d.id, p_reason: reason ? reason.value : 'other', p_details: details ? details.value.trim() : '' })
+        .then(() => { closeSheet(); toast('Report sent'); })
+        .catch(e => { el.disabled = false; oops(e); });
+    } else if (d.a === 'kick') {
+      const u = who(d.id);
+      if (isAdmin() && confirm('Kick ' + nm(u) + ' from this room? They can rejoin only if you invite them again.')) {
+        rpc('room_kick', { p_room: R.id, p_user: d.id }).then(() => {
+          if (ch) ch.send({ type: 'broadcast', event: 'kick', payload: { uid: d.id } });
+          refreshMembers();
+          closeSheet();
+        }).catch(oops);
+      }
+    }
   }
 }
 function onInput(e) {
@@ -926,7 +1119,7 @@ function onInput(e) {
     if (!m) { box.hidden = true; return; }
     const c = members.filter(x => x.user_id !== ME.id && (who(x.user_id).username || '').toLowerCase().startsWith(m[1].toLowerCase())).slice(0, 8);
     if (!c.length) { box.hidden = true; return; }
-    box.innerHTML = c.map(x => { const u = who(x.user_id); return `<button data-u="${esc(u.username || '')}">${Nova.avatar(u, 24)}@${esc(u.username || '')}</button>`; }).join('');
+    box.innerHTML = c.map(x => { const u = who(x.user_id); return `${userAvatar(u, 24)}<button data-u="${esc(u.username || '')}">@${esc(u.username || '')}</button>`; }).join('');
     box.hidden = false;
     box.onclick = ev => {
       const b = ev.target.closest('[data-u]'); if (!b) return;
@@ -951,7 +1144,7 @@ function card(r) {
   const pos = ps.playing ? (ps.pos || 0) + (snow() - ps.ts) / 1000 : (ps.pos || 0);
   const pct = dur ? Math.max(2, Math.min(100, pos / dur * 100)) : 0;
   const pv = (PRIV.find(x => x[0] === r.privacy) || PRIV[0])[1];
-  const av = (r.members || []).slice(0, 4).map(u => Nova.avatar(u, 30)).join('');
+  const av = (r.members || []).slice(0, 4).map(u => userAvatar(u, 30, false, u.id === r.admin_id)).join('');
   const more = Math.max(0, (r.count || 0) - 4);
   return `<div class="room${r.invited ? ' inv' : ''}" role="button" tabindex="0" data-code="${esc(r.code)}">
     <div class="cover">${thumb(m) ? `<img src="${esc(thumb(m))}" alt="">` : ''}<span class="pv">${ic(pv, 16)}</span></div>
@@ -984,7 +1177,17 @@ function hashJoin() {
   if (m) { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {} joinByCode(m[1]); return true; }
   return false;
 }
-document.addEventListener('click', e => { const c = e.target.closest('.room[data-code]'); if (c) joinByCode(c.dataset.code); });
+document.addEventListener('click', e => {
+  const avatar = e.target.closest('.uav[data-user-id]');
+  if (avatar) {
+    e.preventDefault();
+    const url = profileHref(avatar.dataset.userId), page = window.open(url, '_blank');
+    if (page) page.opener = null;
+    if (!page) location.href = url;
+    return;
+  }
+  const c = e.target.closest('.room[data-code]'); if (c) joinByCode(c.dataset.code);
+});
 document.addEventListener('keydown', e => { if (e.key === 'Enter') { const c = e.target.closest && e.target.closest('.room[data-code]'); if (c) joinByCode(c.dataset.code); } });
 window.addEventListener('hashchange', hashJoin);
 

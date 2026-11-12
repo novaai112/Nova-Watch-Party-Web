@@ -335,6 +335,22 @@ body.message-page-active.people-experience-active .people-list{grid-column:2;gri
  .lite .profile-friends-grid .frc b{font-size:11px}
  .lite .profile-friends-grid .frc small{font-size:10px}
 }
+.public-room-card{display:flex;align-items:center;gap:12px;padding:14px 18px;flex-wrap:wrap}
+.public-room-title{display:flex;flex-direction:column;min-width:120px;flex:1}
+.public-room-title span{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mu)}
+.public-room-title b{font-size:15px}
+.public-room-media{display:flex;align-items:center;gap:8px;min-width:0;max-width:38%}
+.public-room-media img{width:72px;height:44px;object-fit:cover;border-radius:8px;background:var(--chip)}
+.public-room-media b{font-size:12px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.public-room-members{display:flex;align-items:center}
+.public-room-members small{margin-left:7px;color:var(--mu);white-space:nowrap}
+.public-room-avatar{width:36px;height:36px;display:grid;place-items:center;padding:2px;margin-left:-7px;border-radius:50%;background:var(--card);border:0}
+.public-room-avatar:first-child{margin-left:0}
+.public-room-avatar.admin{background:conic-gradient(from 25deg,#f7c96a,#d641cc,#4f73ff,#54e2c2,#f7c96a)}
+.public-room-avatar .avt{display:block;width:32px!important;height:32px!important}
+.public-room-unavailable{display:flex;flex-direction:column;gap:3px}
+.public-room-unavailable small{color:var(--mu)}
+@media(max-width:600px){.public-room-card{gap:9px;padding:12px}.public-room-media{max-width:100%;order:2;flex:1 1 100%}.public-room-card>.btn{margin-left:auto}}
 </style></head><body><div id="app"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script><script src="nova-core.js"></script>
@@ -444,6 +460,11 @@ async function loadP(){
 async function fetchPD(id){
  const {data,error}=await sb.rpc('public_profile',{p_uid:id,p_preview:PREVIEW&&id===U.id,p_nsfw:NSFW});
  PD=error?null:data;FAILED=PD?null:id;
+ if(PD&&!PD.own&&id!==U.id){
+  const room=await sb.rpc('public_room_for_user',{p_user:id});
+  PD.public_room=room.error?null:room.data;
+  PD.public_room_error=room.error?room.error.message:null;
+ }
  PROFILE_RELATION=null;
  if(PD&&!PD.own&&id!==U.id)await loadProfileRelationship(id);
  if(PD&&PD.own){const r=(await sb.from('friendships').select('user_id').eq('friend_id',U.id).eq('status','pending')).data||[],ids=r.map(x=>x.user_id);

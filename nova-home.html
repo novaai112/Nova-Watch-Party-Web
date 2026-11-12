@@ -79,16 +79,18 @@ input::placeholder{color:#000;opacity:.55}
 #scr .st{justify-self:center;font-size:26px;font-weight:700;letter-spacing:-.02em;display:flex;align-items:center;gap:6px}
 #scr .st.sc{font-family:"Snell Roundhand","Segoe Script","Brush Script MT","Lucida Handwriting",cursive;font-style:italic;font-weight:600;font-size:32px}
 #scr .sb{position:relative;z-index:1;flex:1;overflow:auto;padding-bottom:env(safe-area-inset-bottom)}
-#scr .in{max-width:900px;margin:0 auto}
+#scr .in{width:100%;max-width:none;margin:0 auto}
 #scr .sq{position:relative;z-index:2;background:#0006;padding:6px 16px}#scr .sq input{width:100%;height:44px;border:0;border-radius:999px;background:#ffffff26;color:#fff;font-size:16px;padding:0 18px;outline:0}
 #scr .sq input::placeholder{color:#fff;opacity:.7}
 #scr .dark{background:#0f0f0f;min-height:100%}
-.vg{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;padding:0 6px 20px}
-.vc{position:relative;aspect-ratio:16/9;border-radius:0;overflow:hidden;cursor:pointer;display:flex;align-items:flex-end;background:#222;border:0;padding:0;text-align:left;width:100%}
-.vc .tt{position:absolute;left:0;right:0;top:0;bottom:0;display:grid;place-items:center;padding:8px 14px;text-align:center;font-weight:800;font-size:clamp(15px,3.6vw,26px);line-height:1.05;color:#ffd24a;text-shadow:0 2px 4px #000a}
-.vc .ti{position:relative;z-index:1;width:100%;padding:24px 10px 8px;font-size:15px;line-height:1.15;color:#fff;text-shadow:0 1px 3px #000;background:linear-gradient(transparent,#0008);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.vc .du{position:absolute;right:8px;top:6px;z-index:2;font-size:15px;background:#0007;border-radius:6px;padding:1px 6px}
-.hist .vg{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.vg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 8px;padding:8px 12px 20px}
+.vc{position:relative;min-width:0;cursor:pointer;background:transparent;border:0;padding:0;text-align:left;width:100%;color:#fff}
+.vc .vthumb{position:relative;width:100%;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background-color:#222;background-position:center;background-size:cover}
+.vc .tt{position:absolute;inset:0;display:grid;place-items:center;padding:8px 14px;text-align:center;font-weight:800;font-size:clamp(15px,3.6vw,26px);line-height:1.05;color:#ffd24a;text-shadow:0 2px 4px #000a}
+.vc .ti{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:8px;font-size:14px;font-weight:600;line-height:1.3;color:#f1f1f1}
+.vc .ch{display:block;overflow:hidden;margin-top:4px;color:#aaa;font-size:12px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}
+.vc .du{position:absolute;right:8px;bottom:8px;z-index:2;font-size:12px;background:#000b;border-radius:4px;padding:2px 5px}
+.hist .vg{grid-template-columns:repeat(2,minmax(0,1fr))}
 .empty2{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;min-height:60vh;font-size:26px;color:#e8e8e8}
 .psq{display:flex;align-items:center;gap:14px;background:#00000050;padding:0 22px;height:58px;position:relative;z-index:1}
 .psq input{flex:1;border:0;background:transparent;color:#fff;font-size:24px;outline:0}.psq input::placeholder{color:#fffa}
@@ -107,8 +109,7 @@ input::placeholder{color:#000;opacity:.55}
 .gh .box input{flex:1;border:0;outline:0;font-size:24px;color:#222;background:transparent;min-width:0}.gh .box input::placeholder{color:#666}
 .gh small{font-size:19px;max-width:560px;line-height:1.35}
 .hid{display:none!important}
-@media (min-width:700px){.vg{grid-template-columns:repeat(3,1fr)}}
-@media (min-width:1000px){.vg{grid-template-columns:repeat(4,1fr)}}
+@media (min-width:700px){.vg,.hist .vg{grid-template-columns:repeat(3,minmax(0,1fr));gap:24px 12px;padding:14px 16px 24px}}
 
 #fr{position:fixed;inset:0;z-index:80;background:#000;display:flex;flex-direction:column}
 #fr .fh{display:flex;align-items:center;gap:6px;min-height:calc(56px + env(safe-area-inset-top));padding:env(safe-area-inset-top) 8px 0;background:#111;color:#fff}
@@ -119,7 +120,7 @@ input::placeholder{color:#000;opacity:.55}
 .yt-local h2{margin:0;font-size:24px}.yt-local p{max-width:560px;margin:0;color:#bbb;line-height:1.55}
 .yt-local a{padding:12px 22px;border-radius:999px;background:#fff;color:#111;font-weight:700;text-decoration:none}
 
-.vc .hr{position:absolute;left:6px;top:4px;z-index:2;width:34px;height:34px;border:0;border-radius:50%;background:#0006;color:#fff;display:grid;place-items:center;cursor:pointer}
+.vc .hr{position:absolute;left:6px;top:6px;z-index:2;width:34px;height:34px;border:0;border-radius:50%;background:#0006;color:#fff;display:grid;place-items:center;cursor:pointer}
 .vc .hr.on{color:#ff4d6d}
 #scr .st img{height:34px;border-radius:8px}
 .na{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;min-height:100%;padding:30px;text-align:center;background:#0f0f0f;color:#fff}
@@ -332,7 +333,7 @@ function e(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;',
 function vgrid(){
   var q=sqi.value.trim().toLowerCase(),l=list.filter(function(v){return !q||v.t.toLowerCase().indexOf(q)>-1});
   var h=l.map(function(v){var i=list.indexOf(v);
-    return '<div class="vc" role="button" tabindex="0" data-i="'+i+'" style="background:'+(v.th?'url('+e(v.th)+') center/cover':'linear-gradient(135deg,'+v.a+','+v.b+')')+'"><span class="tt">'+e(v.x)+'</span><span class="du">'+v.d+'</span><button class="hr'+(isL(v)?' on':'')+'" data-heart="'+i+'" aria-label="Like">'+HEART+'</button><span class="ti">'+e(v.t)+(v.ch?'<em class="ch">'+e(v.ch)+'</em>':'')+'</span></div>'}).join('');
+    return '<div class="vc" role="button" tabindex="0" data-i="'+i+'"><div class="vthumb" style="'+(v.th?'background-image:url('+e(v.th)+')':'background-image:linear-gradient(135deg,'+e(v.a)+','+e(v.b)+')')+'">'+(v.x?'<span class="tt">'+e(v.x)+'</span>':'')+(v.d?'<span class="du">'+e(v.d)+'</span>':'')+'<button class="hr'+(isL(v)?' on':'')+'" data-heart="'+i+'" aria-label="Like">'+HEART+'</button></div><span class="ti">'+e(v.t)+'</span>'+(v.ch?'<em class="ch">'+e(v.ch)+'</em>':'')+'</div>'}).join('');
   var g=body.querySelector('.vg');
   if(g)g.innerHTML=h;
 }
@@ -447,14 +448,10 @@ S.playlist.b=function(){ytScreen('search YouTube playlists',function(q){return q
 S.live.r='';S.live.b=function(){ytScreen('Search live streams',function(q){return q},'live','video','&eventType=live')};
 S.web.u='';
 S.web.b=function(){
-  sbox('Search the web or paste a video link',function(q){
-    var p=NovaAdd.parseInput(q);
-    if(p.t==='yt'||p.t==='ytpl')return pasted(p);
-    if(p.t==='file'||p.t==='url')return webImport(p.url);
-    webResults(q)
-  },'');
-  var r=document.getElementById('sres');
-  if(r)r.innerHTML='<div class="nv-hint"><b>Bring a video from any website</b><span>Paste a page link, a video file (.mp4, .m3u8) or search the web. Nova finds the video on the page and plays only the video in your room — like a shared screen, not a shared website.</span><span class="nv-fine">Netflix, Prime Video, Disney+ and other protected services cannot be imported.</span></div>'
+  NovaAdd.browser(body,{
+    importUrl:function(u){webImport(u)},
+    launch:function(m,opt){launch(m,opt)}
+  })
 };
 S.web.r='';
 function paste(ph,fn,title){return function(){body.innerHTML='<div class="gh"><div class="box"><input id="pi" placeholder="'+ph+'" autocomplete="off" enterkeyhint="go"></div></div>';var i=document.getElementById('pi');i.oninput=function(){i.style.color='#222'};i.onkeydown=function(ev){if(ev.key!=='Enter')return;var u=fn(i.value.trim());if(u)frame(u,title);else i.style.color='#c5221f'}}}

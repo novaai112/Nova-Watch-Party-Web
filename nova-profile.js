@@ -64,6 +64,17 @@ ${g.length ? `<div class=gg>${g.length<MAXG?`<label class="gt gadd" for=gf aria-
   };
   const frTile = u => `<button class=frc data-go="user/${u.id}">${Nova.avatar(u, 56)}<b>${esc(u.full_name || u.username || '')}</b><small>@${esc(u.username || '')}</small></button>`;
   const profileAvatar = (u, size) => `<button class=profile-avatar-link data-go="user/${esc(u.id)}" aria-label="View ${esc(u.full_name || u.username || 'user')} profile">${Nova.avatar(u, size)}</button>`;
+  const publicRoomCard = (room, error) => {
+    if (!room) return error
+      ? `<section class="card pad public-room-unavailable"><b>Public room status unavailable</b><small>Run the latest rooms-schema.sql in Supabase to enable room profiles.</small></section>`
+      : '';
+    const media = room.media || {}, thumbnail = media.thumb || (media.kind === 'youtube' && media.id ? `https://i.ytimg.com/vi/${encodeURIComponent(media.id)}/mqdefault.jpg` : '');
+    const members = (room.members || []).map(u => `<button class="public-room-avatar${u.is_admin ? ' admin' : ''}" data-go="user/${esc(u.id)}" aria-label="View ${esc(u.full_name || u.username || 'member')} profile" title="${esc(u.full_name || u.username || 'Member')}">${Nova.avatar(u, 32)}</button>`).join('');
+    return `<section class="card public-room-card"><div class="public-room-title"><span>Public room</span><b>${esc(room.title || 'Nova room')}</b></div>
+      <div class="public-room-media">${thumbnail ? `<img src="${esc(thumbnail)}" alt="" referrerpolicy="no-referrer">` : ''}<b>${esc(media.title || 'Watch together')}</b></div>
+      <div class="public-room-members">${members}<small>${Number(room.count) || 0} member${Number(room.count) === 1 ? '' : 's'}</small></div>
+      <a class="btn pri sm" href="nova-home.html#join/${encodeURIComponent(room.code)}">Join room</a></section>`;
+  };
 
   /* ---------- OWN VIEWS ---------- */
   V.info = () => shell('info', mbar(t('info')) + panel(t('info'), 'Your photo, name, username and bio',
@@ -177,6 +188,7 @@ ${sh('keywords', 'Keywords', kwHTML(d.titles))}${sh('channels', 'Channels', chHT
     const s = d.stats;
     return `<div class=lite>${pv ? `<div class=pvb><span>${ic('eye', 16)}Previewing as a visitor</span><button class="btn sec sm" data-go=info>Exit preview</button></div>` : `<button class="btn sec sm" data-go=friends style="margin:14px 0">${ic('left', 16)}${t('friends')}</button>`}
 <div class=card><div class=vcover></div><div class=vhb>${profileAvatar({id:d.id,full_name:d.name,username:d.username,avatar_url:d.avatar}, 96)}<h2>${esc(d.name || '')}</h2><div class=mu>@${esc(d.username || '')}</div>${profileFriendActions(d,pv)}${S.bio && d.bio ? `<p class=vbio>${esc(d.bio)}</p>` : ''}</div></div>
+${!pv && !d.own ? publicRoomCard(d.public_room, d.public_room_error) : ''}
 ${s ? sec('stats', 'chart', t('accstats'), `<div class="tiles profile-stat-tiles"><div class="tile blue"><b>${s.videos}</b><span>Videos</span></div><div class="tile green"><b>${s.hours}</b><span>Hours</span></div><div class="tile indigo"><b>${s.friends}</b><span>${t('friends')}</span></div><div class="tile yellow"><b>${(d.gallery || []).length}</b><span>Photos</span></div></div>`) : ''}
 ${d.gallery && d.gallery.length ? sec('gallery', 'image', `${t('gallery')} (${d.gallery.length})`, gridG(d.gallery, false)) : ''}
 ${d.friends && d.friends.length ? sec('friends', 'users', t('friends'), `<div class="frg profile-friends-grid" style="margin:0">${d.friends.map(frTile).join('')}</div>`) : ''}

@@ -38,6 +38,13 @@ body.inroom{overflow:hidden}
 #rm .rpb b{position:absolute;right:-1px;top:1px;min-width:18px;height:18px;border-radius:9px;background:var(--ink);color:#fff;font-size:10.5px;display:grid;place-items:center;padding:0 5px}
 #rm .rmid{display:grid;place-items:center}
 #rm .brand{font-size:30px;font-weight:900;letter-spacing:-.05em;line-height:1}
+#rm .mic-header{display:flex;align-items:center;justify-content:center;gap:7px;max-width:min(44vw,280px);overflow-x:auto;padding:3px 4px;scrollbar-width:none}
+#rm .mic-header::-webkit-scrollbar{display:none}
+#rm .uav{display:inline-grid;place-items:center;flex:none;padding:2px;border:0;border-radius:50%;background:transparent;line-height:0;vertical-align:middle;touch-action:manipulation}
+#rm .uav .avt{display:block;border-radius:50%}
+#rm .uav.host{background:conic-gradient(from 25deg,#f7c96a,#d641cc,#4f73ff,#54e2c2,#f7c96a);box-shadow:0 0 0 1px #ffffffd9}
+#rm .uav.mic-on:not(.host){box-shadow:0 0 0 2px var(--ok)}
+#rm .uav:focus-visible{outline:2px solid #2563eb;outline-offset:3px}
 #rm .cd{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--ink) var(--p,100%),#0002 0);font-weight:800}
 #rm .cd span{width:33px;height:33px;border-radius:50%;background:#f4faf9;display:grid;place-items:center;font-size:14px}
 #rm .rbody{flex:1;min-height:0;display:flex;flex-direction:column}
@@ -76,6 +83,8 @@ body.inroom{overflow:hidden}
 #rm .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 3px;border-radius:999px;background:var(--soft);border:1px solid var(--line);white-space:nowrap;transition:background .15s,border-color .15s}
 #rm .chip em{font-style:normal;font-size:12.5px;font-weight:600;max-width:110px;overflow:hidden;text-overflow:ellipsis}
 #rm .chip .avt{box-shadow:0 0 0 2px transparent;transition:box-shadow .15s}
+#rm .chip .uav{padding:0}
+#rm .chip .uav.host{padding:2px}
 #rm .chip.talk{background:#e9f9ef;border-color:#9be5b5}
 #rm .chip.talk .avt{box-shadow:0 0 0 2px var(--ok);animation:talk 1s ease-in-out infinite}
 @keyframes talk{50%{box-shadow:0 0 0 4px #22c55e55}}
@@ -83,8 +92,9 @@ body.inroom{overflow:hidden}
 #rm .micon.talk{animation:talk 1s ease-in-out infinite;border-radius:50%}
 
 #rm .feed{flex:1;min-height:0;overflow:auto;padding:10px clamp(10px,3vw,18px);overscroll-behavior:contain}
-#rm .sy{display:flex;align-items:center;justify-content:center;gap:6px;font-size:12.5px;color:var(--mut);margin:10px 0;text-align:center}
+#rm .sy{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;font-size:12.5px;color:var(--mut);margin:12px auto;text-align:center}
 #rm .sy b{color:var(--ink);font-weight:600}
+#rm .sy span{max-width:85%;overflow-wrap:anywhere}
 #rm .fempty{text-align:center;color:var(--mut);font-size:13px;padding:22px 8px}
 #rm .nowm{display:flex;justify-content:center;margin:12px 0}
 #rm .nowc{display:inline-flex;align-items:center;gap:10px;max-width:92%;padding:6px 14px 6px 6px;border-radius:14px;background:var(--soft);border:1px solid var(--line)}
@@ -164,6 +174,11 @@ body.inroom{overflow:hidden}
 #rm .li small{color:var(--mut);display:block}
 #rm .li img.th{width:72px;height:44px;object-fit:cover;border-radius:8px;background:#0002}
 #rm .li .cb{height:34px;min-width:34px}
+#rm .user-actions{display:grid;gap:7px;margin-top:12px}
+#rm .user-actions .op{width:100%;min-height:44px}
+#rm .user-actions .op.danger{color:#b42318;background:#fff2f0;border-color:#ffd0c9}
+#rm #reportReason,#rm #reportDetails{width:100%;margin:7px 0 12px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink);font:inherit;padding:10px 12px}
+#rm #reportDetails{resize:vertical;min-height:88px}
 #rm .crownb{color:#b8860b}
 #rm .em{color:var(--mut);text-align:center;padding:18px 8px}
 #rm .fl label{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #eef2f6;cursor:pointer}

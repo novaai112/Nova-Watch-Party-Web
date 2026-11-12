@@ -27,10 +27,12 @@ create index if not exists rooms_status_idx on public.rooms(status, created_at d
 create table if not exists public.room_members (
   room_id   uuid not null references public.rooms(id) on delete cascade,
   user_id   uuid not null references auth.users(id) on delete cascade,
+  mic_allowed boolean not null default false,
   joined_at timestamptz not null default now(),
   last_seen timestamptz not null default now(),
   primary key (room_id, user_id)
 );
+alter table public.room_members add column if not exists mic_allowed boolean not null default false;
 -- a user is in ONE room at a time and is listed ONCE (even with several tabs)
 create unique index if not exists room_members_one_room on public.room_members(user_id);
 
@@ -68,6 +70,17 @@ create table if not exists public.room_messages (
 );
 create index if not exists room_messages_room_idx on public.room_messages(room_id, created_at desc);
 
+create table if not exists public.room_reports (
+  id          bigint generated always as identity primary key,
+  room_id     uuid not null references public.rooms(id) on delete cascade,
+  reporter_id uuid not null references auth.users(id) on delete cascade,
+  reported_id uuid not null references auth.users(id) on delete cascade,
+  reason      text not null check (reason in ('harassment','hate_speech','spam','inappropriate','safety','other')),
+  details     text not null default '' check (char_length(details) <= 1000),
+  created_at  timestamptz not null default now(),
+  check (reporter_id <> reported_id)
+);
+
 -- ---------- row level security (reads only; ALL writes go through the RPCs below) ----------
 create or replace function public.is_room_member(rid uuid) returns boolean
 language sql stable security definer set search_path = public as $$
@@ -80,6 +93,8 @@ alter table public.room_bans     enable row level security;
 alter table public.room_invites  enable row level security;
 alter table public.room_queue    enable row level security;
 alter table public.room_messages enable row level security;
+alter table public.room_reports  enable row level security;
+revoke all on public.room_reports from public, anon, authenticated;
 
 drop policy if exists rooms_member_select    on public.rooms;
 drop policy if exists members_member_select  on public.room_members;
@@ -268,6 +283,10 @@ begin
               or exists(select 1 from public.room_invites where room_id = r.id and user_id = uid)) then
     raise exception 'This room is for the host''s friends only';
   end if;
+  if r.privacy = 'invite' and r.admin_id <> uid
+     and not exists(select 1 from public.room_invites where room_id = r.id and user_id = uid) then
+    raise exception 'This room is invite only';
+  end if;
   if (select count(*) from public.room_members where room_id = r.id) >= 50 then
     raise exception 'This room is full';
   end if;
@@ -453,24 +472,102 @@ begin
   if not exists(select 1 from public.rooms where id = p_room and admin_id = uid and status = 'open') then
     raise exception 'Only the room admin can do this'; end if;
   if p_user = uid then raise exception 'Use Leave instead'; end if;
+  delete from public.room_invites where room_id = p_room and user_id = p_user;
   insert into public.room_bans(room_id, user_id) values (p_room, p_user) on conflict do nothing;
   perform public._room_drop_member(p_room, p_user, 'was removed');
 end $$;
 
 create or replace function public.room_invite(p_room uuid, p_users uuid[]) returns int
 language plpgsql security definer set search_path = public as $$
-declare uid uuid := auth.uid(); u uuid; n int := 0;
+declare uid uuid := auth.uid(); u uuid; n int := 0; owner_id uuid;
 begin
   if not exists(select 1 from public.room_members where room_id = p_room and user_id = uid) then
     raise exception 'Join the room first'; end if;
+  select admin_id into owner_id from public.rooms where id = p_room and status = 'open';
+  if owner_id is null then raise exception 'Room is closed'; end if;
   foreach u in array coalesce(p_users, '{}') loop
     if u <> uid and public._is_friend(uid, u)
        and not exists(select 1 from public.room_members where room_id = p_room and user_id = u) then
+      if exists(select 1 from public.room_bans where room_id = p_room and user_id = u) then
+        if uid <> owner_id then raise exception 'Only the admin can invite someone removed from this room'; end if;
+        delete from public.room_bans where room_id = p_room and user_id = u;
+      end if;
       insert into public.room_invites(room_id, user_id, invited_by) values (p_room, u, uid) on conflict do nothing;
       n := n + 1;
     end if;
   end loop;
   return n;
+end $$;
+
+create or replace function public.room_can_mic(p_room uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1
+    from public.rooms r
+    join public.room_members m on m.room_id = r.id and m.user_id = auth.uid()
+    where r.id = p_room and r.status = 'open' and r.voice_enabled
+      and (r.admin_id = auth.uid() or r.privacy = 'public' or m.mic_allowed)
+  )
+$$;
+
+create or replace function public.room_set_member_mic(p_room uuid, p_user uuid, p_allowed boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare uid uuid := auth.uid();
+begin
+  if uid is null then raise exception 'Sign in required'; end if;
+  if not exists(select 1 from public.rooms where id = p_room and admin_id = uid and status = 'open') then
+    raise exception 'Only the room admin can change microphone access';
+  end if;
+  if p_user = uid then raise exception 'The admin microphone is always available'; end if;
+  update public.room_members set mic_allowed = coalesce(p_allowed, false)
+  where room_id = p_room and user_id = p_user;
+  if not found then raise exception 'That person is not in the room'; end if;
+end $$;
+
+create or replace function public.room_report_user(
+  p_room uuid, p_user uuid, p_reason text, p_details text default '')
+returns void language plpgsql security definer set search_path = public as $$
+declare uid uuid := auth.uid();
+begin
+  if uid is null then raise exception 'Sign in required'; end if;
+  if p_user is null or p_user = uid then raise exception 'Choose another room member'; end if;
+  if p_reason is null or p_reason not in ('harassment','hate_speech','spam','inappropriate','safety','other') then
+    raise exception 'Choose a valid report reason';
+  end if;
+  if not exists(select 1 from public.room_members where room_id = p_room and user_id = uid)
+     or not exists(select 1 from public.room_members where room_id = p_room and user_id = p_user) then
+    raise exception 'Both users must be in the room to report';
+  end if;
+  insert into public.room_reports(room_id, reporter_id, reported_id, reason, details)
+  values (p_room, uid, p_user, p_reason, left(trim(coalesce(p_details, '')), 1000));
+end $$;
+
+create or replace function public.public_room_for_user(p_user uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare result jsonb;
+begin
+  if auth.uid() is null or p_user is null then return null; end if;
+  select jsonb_build_object(
+    'id', r.id, 'code', r.code, 'title', r.title, 'admin_id', r.admin_id,
+    'media', r.media,
+    'count', (select count(*) from public.room_members all_members where all_members.room_id = r.id),
+    'members', (
+      select coalesce(jsonb_agg(jsonb_build_object(
+        'id', p.id, 'full_name', p.full_name, 'username', p.username,
+        'avatar_url', p.avatar_url, 'is_admin', p.id = r.admin_id
+      ) order by ordered.joined_at), '[]'::jsonb)
+      from (
+        select user_id, joined_at from public.room_members
+        where room_id = r.id order by joined_at limit 8
+      ) ordered
+      join public.public_profiles p on p.id = ordered.user_id
+    )
+  ) into result
+  from public.rooms r
+  join public.room_members target on target.room_id = r.id and target.user_id = p_user
+  where r.status = 'open' and r.privacy = 'public'
+  limit 1;
+  return result;
 end $$;
 
 -- rooms the caller may see on the Nova home screen
@@ -519,7 +616,8 @@ begin
            where n.nspname = 'public'
              and p.proname in ('room_now','is_room_member','create_room','join_room','leave_room','room_heartbeat',
                                'room_set_state','room_pick','room_ended','room_advance','room_vote','room_queue_remove',
-                               'room_update','room_transfer','room_kick','room_invite','list_rooms') loop
+                               'room_update','room_transfer','room_kick','room_invite','room_can_mic',
+                               'room_set_member_mic','room_report_user','public_room_for_user','list_rooms') loop
     execute format('revoke all on function %s from public, anon', f.sig);
     execute format('grant execute on function %s to authenticated', f.sig);
   end loop;
