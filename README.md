@@ -21,6 +21,7 @@ Static website + Supabase, with Vercel serverless API routes. No build step; dep
 | `schema.sql` | Whole database (3 parts, safe to re-run) |
 | `chat-schema.sql` | Repeatable database setup for private realtime chats and chat media |
 | `local/local-search-server.js` | Token-protected laptop bridge for DuckDuckGo web searches |
+| `api/x.js` | X (Twitter) post video detector: `/api/x?url=<post link>` returns whether the post has a video and its MP4/HLS address |
 | `supabase/functions/chat-media-search/` | Authenticated Unsplash photo search plus GIPHY and KLIPY media search |
 
 ## 1. Database
@@ -139,3 +140,11 @@ The laptop and ngrok tunnel must stay running for Production DuckDuckGo search. 
 Search the web (or type an address) and pages open **inside Nova** through `api/browse.js`. Website JavaScript runs in an isolated sandboxed iframe. Nova detects accessible HTML5 video sources (MP4/M4V, WebM, Ogg, and HLS), dynamically added video elements, and direct HTTPS video links; it asks **Add / Cancel** only after you tap a player or video link. Only the selected video goes to the room, never the website. YouTube search results are offered directly for the official synced room player instead of opening a blank proxied YouTube watch page.
 - Safety: page fetches use the same SSRF guard as `api/extract.js` (no localhost / private networks / cloud metadata). The iframe has an opaque origin with no access to Nova's login or storage, and cannot open pop-ups, download files, or navigate the top-level page. Site scripts can still make HTTPS/WSS requests; browser CORS and site restrictions still apply.
 - Limits: this sandbox is not a full browser. Site sign-in, cookies, downloads, pop-ups, nested cross-origin players, or some media features may not work. Pages still loading after 12 seconds show retry and open-original options instead of an indefinite spinner. YouTube's full homepage requires its own browser cookies, so open it with "Open original website"; use Nova search or a direct video link to add videos. DASH manifests and protected, account-bound, or paywalled streams are not supported; Nova does not bypass site access controls. The Node server adds OS-installed CA certificates to Node's trusted roots where supported, while keeping certificate verification enabled. Untrusted self-signed certificates remain blocked; install the issuing CA in the server's system trust store or set `NODE_EXTRA_CA_CERTS` to its PEM file before starting Node. Nova can sync only direct secure video links and officially embeddable players.
+
+
+## X (Twitter) videos
+Platform picker -> **X** has two options:
+1. **Paste X Post Link** — paste a post link (checked automatically on paste). `/api/x` looks the post up; if it has a video (or GIF) a popup asks *Add this X video to the room?* Yes adds only the video and plays it, No closes. Posts without a video, deleted or private posts show a clear message.
+2. **Continue to Website** — X inside Nova: Sign in / Sign up (opens x.com's own secure window — X does not allow its login to be embedded or proxied), open any profile's posts with X's official embedded timeline, tap a post and the same popup appears if it has a video. A paste box is always there as a fallback.
+Any X link pasted in the YouTube box, Web box or in-app browser is routed through the same detector.
+No new environment variables and no database change. `vercel.json` already covers `api/*.js`.

@@ -26,6 +26,7 @@ const browseHandler = require('./api/browse');
 const extractHandler = require('./api/extract');
 const configHandler = require('./api/config');
 const mediaPreviewHandler = require('./api/media-preview');
+const xHandler = require('./api/x');
 let youtubeHandler = null;
 try {
   youtubeHandler = require('./api/youtube');
@@ -56,6 +57,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/extract') return await extractHandler(req, res);
     if (pathname === '/api/config') return configHandler(req, res);
     if (pathname === '/api/media-preview') return mediaPreviewHandler(req, res);
+    if (pathname === '/api/x') return await xHandler(req, res);
     if (pathname === '/api/youtube' && youtubeHandler) return await youtubeHandler(req, res);
 
     let safePath = path.normalize(decodeURIComponent(pathname)).replace(/^(\.\.[/\\])+/, '');

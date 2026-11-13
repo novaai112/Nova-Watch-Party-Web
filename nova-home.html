@@ -465,7 +465,151 @@ S.web.b=function(){
 S.web.r='';
 function paste(ph,fn,title){return function(){body.innerHTML='<div class="gh"><div class="box"><input id="pi" placeholder="'+ph+'" autocomplete="off" enterkeyhint="go"></div></div>';var i=document.getElementById('pi');i.oninput=function(){i.style.color='#222'};i.onkeydown=function(ev){if(ev.key!=='Enter')return;var u=fn(i.value.trim());if(u)frame(u,title);else i.style.color='#c5221f'}}}
 S.drive.b=paste('Paste a shared Google Drive link',function(v){var m=/\/folders\/([\w-]+)/.exec(v);if(m)return 'https://drive.google.com/embeddedfolderview?id='+m[1]+'#list';m=/\/file\/d\/([\w-]+)/.exec(v)||/[?&]id=([\w-]+)/.exec(v);return m?'https://drive.google.com/file/d/'+m[1]+'/preview':null},'Drive');
-S.x.b=paste('Paste an X post link',function(v){var m=/status(?:es)?\/(\d+)/.exec(v);return m?'https://platform.twitter.com/embed/Tweet.html?id='+m[1]+'&theme=dark':null},'X');
+/* ================= X (TWITTER): paste a post link  /  continue to the website =================
+   Both paths end in ONE popup: "Add this X video to the room?"  Yes -> only the video joins the room.   */
+(function(){
+var xcss=document.createElement('style');xcss.textContent=
+'.xo{max-width:560px;margin:0 auto;padding:28px 18px 40px;color:#fff;text-align:center}.xo h2{font-size:28px;margin:6px 0 4px}.xo>p{color:#ffffffb8;margin:0 0 22px;font-size:16px}'+
+'.xc{display:block;width:100%;text-align:left;background:#000a;border:1px solid #ffffff2e;border-radius:16px;padding:18px 20px;margin:0 0 14px;color:#fff;cursor:pointer;font:inherit}.xc:hover{background:#000c;border-color:#fff7}.xc b{display:block;font-size:20px;margin-bottom:6px}.xc span{display:block;font-size:14.5px;line-height:1.4;color:#ffffffc4}'+
+'.xp{max-width:560px;margin:0 auto;padding:18px 16px 40px;color:#fff}.xin{display:flex;gap:8px}.xin input{flex:1;min-width:0;height:54px;border:1px solid #ffffff55;border-radius:14px;background:#000a;color:#fff;font-size:17px;padding:0 16px;outline:0}.xin input:focus{border-color:#fff}.xin button{height:54px;border:0;border-radius:14px;background:#fff;color:#000;font-weight:700;font-size:16px;padding:0 20px;cursor:pointer}'+
+'.xs{margin:16px 2px;min-height:24px;font-size:15.5px;line-height:1.45;color:#fff}.xs.err{color:#ffb4ab}.xs i{display:inline-block;width:16px;height:16px;border:2px solid #fff6;border-top-color:#fff;border-radius:50%;margin-right:8px;vertical-align:-3px;animation:xsp .8s linear infinite}@keyframes xsp{to{transform:rotate(360deg)}}'+
+'.xback{background:none;border:0;color:#fff;opacity:.85;font-size:15px;cursor:pointer;padding:8px 2px;margin-top:6px}'+
+'#xweb{position:fixed;inset:0;z-index:70;display:flex;flex-direction:column;background:#000;color:#fff;font-family:Roboto,system-ui,sans-serif}#xweb[hidden]{display:none}'+
+'#xweb .xh{display:flex;align-items:center;gap:10px;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;border-bottom:1px solid #ffffff22}#xweb .xh .ib{color:#fff}#xweb .xh b{flex:1;font-size:20px}'+
+'#xweb .xh button.xl{border:1px solid #fff8;background:transparent;color:#fff;border-radius:999px;padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer}#xweb .xh button.xl.f{background:#fff;color:#000}'+
+'#xweb .xn{padding:8px 14px;font-size:12.5px;color:#ffffffa8;line-height:1.4}#xweb .xr{display:flex;gap:8px;padding:6px 12px}#xweb .xr input{flex:1;min-width:0;height:44px;border:1px solid #ffffff44;border-radius:12px;background:#111;color:#fff;font-size:16px;padding:0 14px;outline:0}#xweb .xr button{height:44px;border:0;border-radius:12px;background:#1d9bf0;color:#fff;font-weight:700;padding:0 16px;cursor:pointer}'+
+'#xweb .xs{margin:4px 14px;min-height:0}#xweb .xt{flex:1;overflow:auto;padding:6px 10px calc(20px + env(safe-area-inset-bottom))}#xweb .xt .twitter-timeline,#xweb .xt iframe{max-width:100%!important}'+
+'#xpop{position:fixed;inset:0;z-index:95;display:flex;align-items:center;justify-content:center;background:#000b;padding:18px}#xpop[hidden]{display:none}'+
+'#xpop .xcard{width:100%;max-width:420px;background:#17181b;border:1px solid #ffffff26;border-radius:20px;overflow:hidden;color:#fff;box-shadow:0 20px 60px #000a}'+
+'#xpop .xth{position:relative;aspect-ratio:16/9;background:#000 center/cover no-repeat}#xpop .xth em{position:absolute;right:8px;bottom:8px;background:#000c;border-radius:5px;padding:2px 7px;font-size:12px;font-style:normal}#xpop .xth u{position:absolute;inset:0;margin:auto;width:58px;height:58px;border-radius:50%;background:#000a;display:grid;place-items:center;text-decoration:none}#xpop .xth u:after{content:"";border-left:18px solid #fff;border-top:11px solid transparent;border-bottom:11px solid transparent;margin-left:5px}'+
+'#xpop .xbd{padding:16px 18px 6px}#xpop .xbd h3{margin:0 0 6px;font-size:19px}#xpop .xbd p{margin:0;font-size:14.5px;line-height:1.4;color:#ffffffc8;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}'+
+'#xpop .xac{display:flex;gap:10px;padding:16px 18px 18px}#xpop .xac button{flex:1;height:50px;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;border:1px solid #ffffff55;background:transparent;color:#fff}#xpop .xac button.y{background:#1d9bf0;border-color:#1d9bf0}#xpop .xac button:disabled{opacity:.6}';
+document.head.appendChild(xcss);
+
+function say(el,t,kind){if(!el)return;el.className='xs'+(kind==='err'?' err':'');el.innerHTML=(kind==='wait'?'<i></i>':'')+e(t)}
+function isX(v){return /^(?:https?:\/\/)?(?:www\.|mobile\.|m\.)?(?:x|twitter)\.com\/(?:[\w]{1,30}\/status(?:es)?|i\/(?:web\/)?status)\/\d{5,25}/i.test(String(v||'').trim())}
+function toast2(t,k){try{if(window.Nova&&Nova.toast)return Nova.toast(t,k)}catch(x){}}
+function dur(s){s=Math.round(s||0);if(!s)return'';var m=Math.floor(s/60),r=s%60;return m+':'+(r<10?'0':'')+r}
+
+/* the popup */
+var pop=document.createElement('div');pop.id='xpop';pop.hidden=true;pop.setAttribute('role','dialog');pop.setAttribute('aria-modal','true');document.body.appendChild(pop);
+function closePop(){pop.hidden=true;pop.innerHTML=''}
+pop.addEventListener('click',function(ev){if(ev.target===pop)closePop()});
+document.addEventListener('keydown',function(ev){if(ev.key==='Escape'&&!pop.hidden){ev.stopImmediatePropagation();closePop()}},true);
+
+function xMedia(j){
+  var hls=j.streamType==='hls',url=j.streamUrl;
+  if(url.length>900&&j.variants){var s=j.variants.filter(function(v){return v.type===j.streamType&&v.url.length<=900})[0];if(s)url=s.url}
+  if(hls)url+='#nova='+encodeURIComponent(JSON.stringify({t:'hls',r:j.postUrl||'https://x.com/'}));
+  var m={kind:'video',url:url,title:(j.title||'X video').slice(0,150),provider:hls?'web':'x'};
+  if(j.thumbnail&&/^https:\/\//.test(j.thumbnail)&&j.thumbnail.length<=500)m.thumb=j.thumbnail;
+  return m
+}
+function showPop(j){
+  var busy=false;try{busy=!!(window.NovaRoom&&NovaRoom.ctx&&NovaRoom.ctx().busy)}catch(x){}
+  pop.innerHTML='<div class="xcard"><div class="xth" style="'+(j.thumbnail?'background-image:url('+e(j.thumbnail)+')':'')+'"><u></u>'+(j.duration?'<em>'+e(dur(j.duration))+'</em>':(j.gif?'<em>GIF</em>':''))+'</div>'+
+   '<div class="xbd"><h3>Add this X video to the room?</h3><p><b>'+e(j.author||'X post')+'</b>'+(j.text?' — '+e(j.text):'')+'</p></div>'+
+   '<div class="xac"><button type="button" class="n">No</button><button type="button" class="y">'+(busy?'Yes, add to queue':'Yes, add &amp; play')+'</button></div></div>';
+  pop.hidden=false;
+  pop.querySelector('.n').onclick=closePop;
+  var yes=pop.querySelector('.y');
+  yes.onclick=function(){
+    if(!(window.NovaRoom&&NovaRoom.ready)){toast2('Rooms are not ready yet. Please try again.','err');return}
+    yes.disabled=true;yes.textContent='Adding…';
+    var m=xMedia(j);
+    NovaRoom.handle(m,{now:!busy}).then(function(ok){closePop();if(!ok)toast2('Could not add this video to the room','err')}).catch(function(){closePop();toast2('Could not add this video to the room','err')})
+  };
+  yes.focus()
+}
+
+/* one function for both paths: link or status id -> detect -> popup */
+var xgen=0;
+function xImport(link,out){
+  out=out||function(t,k){msg(t,k==='err'?'err':k)};
+  var g=++xgen;
+  out('Checking this X post for a video…','wait');
+  return fetch('/api/x?url='+encodeURIComponent(link)).then(function(r){return r.json().catch(function(){return{ok:false,error:'X did not answer. Try again.'}})}).then(function(j){
+    if(g!==xgen)return;
+    if(!j.ok){out(j.error||'Could not check this post.','err');return}
+    if(!j.hasVideo){out((j.reason||'This post has no video.')+' Only posts with a video can be added to a room.','err');return}
+    out('Video found.','');
+    showPop(j)
+  }).catch(function(){if(g===xgen)out('Could not reach the server. Check your connection and try again.','err')})
+}
+window.NovaX={isPost:isX,import:xImport};
+
+/* screen 1: the two options */
+function xHome(){
+  body.innerHTML='<div class="xo"><h2>Add from X</h2><p>Choose how to bring an X video into your room.</p>'+
+   '<button type="button" class="xc" data-x="paste"><b>Paste X Post Link</b><span>Paste a post link. Nova checks for a video and asks before adding it. Only the video is added.</span></button>'+
+   '<button type="button" class="xc" data-x="web"><b>Continue to Website</b><span>Open X inside Nova, browse posts, and import any video you find.</span></button></div>';
+  body.querySelector('[data-x=paste]').onclick=xPaste;
+  body.querySelector('[data-x=web]').onclick=xWeb
+}
+/* option 1: paste link */
+function xPaste(){
+  body.innerHTML='<div class="xp"><div class="xin"><input id="xpi" type="url" inputmode="url" placeholder="Paste an X post link" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go"><button type="button" id="xpb">Check</button></div><div class="xs" id="xps"></div><button type="button" class="xback">‹ Back to options</button></div>';
+  var i=document.getElementById('xpi'),s=document.getElementById('xps'),last='';
+  function out(t,k){say(s,t,k)}
+  function go(v){v=(v||i.value).trim();if(!v)return;if(!isX(v)){out('That is not an X post link. It should look like x.com/name/status/123…','err');return}last=v;xImport(v,out)}
+  i.onkeydown=function(ev){if(ev.key==='Enter')go()};
+  i.addEventListener('paste',function(){setTimeout(function(){if(i.value.trim()&&i.value.trim()!==last)go()},30)});
+  document.getElementById('xpb').onclick=function(){
+    if(i.value.trim())return go();
+    if(navigator.clipboard&&navigator.clipboard.readText)navigator.clipboard.readText().then(function(t){i.value=(t||'').trim();go()}).catch(function(){i.focus();out('Paste the link into the box.','err')});
+    else i.focus()
+  };
+  body.querySelector('.xback').onclick=xHome;
+  setTimeout(function(){i.focus()},50)
+}
+/* option 2: X inside Nova */
+var xwEl=null,xwTried=false;
+function loadWidgets(){return new Promise(function(res,rej){
+  if(window.twttr&&twttr.widgets)return res();
+  var s=document.createElement('script');s.src='https://platform.twitter.com/widgets.js';s.async=true;s.charset='utf-8';
+  s.onload=function(){(function w(n){if(window.twttr&&twttr.widgets)return res();if(n>50)return rej(new Error('x'));setTimeout(function(){w(n+1)},100)})(0)};
+  s.onerror=function(){rej(new Error('x'))};document.head.appendChild(s)})}
+function xWeb(){
+  if(!xwEl){
+    xwEl=document.createElement('div');xwEl.id='xweb';xwEl.hidden=true;
+    xwEl.innerHTML='<div class="xh"><button type="button" class="ib xb" aria-label="Back">'+ARROW+'</button><b>X</b><button type="button" class="xl" data-s="in">Sign in</button><button type="button" class="xl f" data-s="up">Sign up</button></div>'+
+     '<div class="xn">X only allows sign-in on x.com, so Sign in / Sign up open X’s own secure window. Tap any post here — if it has a video, Nova offers to add it to the room.</div>'+
+     '<div class="xr"><input id="xwu" placeholder="Open an X profile, e.g. NASA or @NASA" autocomplete="off" autocapitalize="off" spellcheck="false"><button type="button" id="xwg">Open</button></div>'+
+     '<div class="xr"><input id="xwl" type="url" inputmode="url" placeholder="Or paste a post link you copied from X" autocomplete="off"><button type="button" id="xwc">Check</button></div>'+
+     '<div class="xs" id="xws"></div><div class="xt" id="xwt"></div>';
+    document.body.appendChild(xwEl);
+    var st=xwEl.querySelector('#xws');function out(t,k){say(st,t,k)}
+    xwEl.querySelector('.xb').onclick=function(){xwEl.hidden=true};
+    xwEl.querySelector('[data-s=in]').onclick=function(){window.open('https://x.com/i/flow/login','nova_x','popup=yes,width=520,height=720,noopener')||window.open('https://x.com/i/flow/login','_blank','noopener')};
+    xwEl.querySelector('[data-s=up]').onclick=function(){window.open('https://x.com/i/flow/signup','nova_x','popup=yes,width=520,height=760,noopener')||window.open('https://x.com/i/flow/signup','_blank','noopener')};
+    var lk=xwEl.querySelector('#xwl');
+    function chk(){var v=lk.value.trim();if(!v)return;if(!isX(v)){out('That is not an X post link. It should look like x.com/name/status/123…','err');return}xImport(v,out)}
+    lk.onkeydown=function(ev){if(ev.key==='Enter')chk()};lk.addEventListener('paste',function(){setTimeout(chk,30)});
+    xwEl.querySelector('#xwc').onclick=function(){
+      if(lk.value.trim())return chk();
+      if(navigator.clipboard&&navigator.clipboard.readText)navigator.clipboard.readText().then(function(t){lk.value=(t||'').trim();chk()}).catch(function(){lk.focus()});else lk.focus()
+    };
+    var pu=xwEl.querySelector('#xwu');
+    function open2(){
+      var h=pu.value.trim().replace(/^https?:\/\/(?:www\.)?(?:x|twitter)\.com\//i,'').replace(/^@/,'').split(/[/?#]/)[0];
+      if(!/^\w{1,15}$/.test(h)){out('Type an X username, like NASA.','err');return}
+      var box=xwEl.querySelector('#xwt');box.innerHTML='';out('Loading posts from @'+h+'…','wait');
+      loadWidgets().then(function(){
+        twttr.widgets.createTimeline({sourceType:'profile',screenName:h},box,{theme:'dark',dnt:true,chrome:'noheader nofooter transparent',height:Math.max(420,box.clientHeight-8)}).then(function(el){
+          out(el?'Tap a post. If it has a video, Nova will ask to add it. (If nothing happens, copy the post link on X and paste it above.)':'Could not load posts for @'+h+'. The account may be private, or X is blocking embeds.',el?'':'err')
+        }).catch(function(){out('Could not load posts. X may be blocking embeds in this browser. Paste a post link above instead.','err')});
+        if(!xwTried){xwTried=true;twttr.ready(function(t){t.events.bind('click',function(ev){var d=(ev&&ev.data)||{},id=d.tweet_id||d.tweetId||d.tweet_id_str;if(id)xImport(String(id),out)})})}
+      }).catch(function(){out('X could not be loaded here (an ad/tracking blocker may be stopping it). Paste a post link above instead.','err')})
+    }
+    pu.onkeydown=function(ev){if(ev.key==='Enter')open2()};xwEl.querySelector('#xwg').onclick=open2
+  }
+  xwEl.hidden=false
+}
+document.addEventListener('keydown',function(ev){if(ev.key==='Escape'&&xwEl&&!xwEl.hidden&&pop.hidden){ev.stopImmediatePropagation();xwEl.hidden=true}},true);
+S.x.b=xHome;
+/* any X link pasted elsewhere (YouTube box, Web, in-app browser) goes through the same detector */
+var _wi=webImport;webImport=function(u){if(isX(u))return xImport(u);return _wi(u)};
+})();
 S.twitch.b=paste('Twitch channel name or link',location.hostname?'Plays the channel with Twitch’s official player.':'Twitch only plays on a site served over https. Upload this page to a host first.',function(v){var c=v.replace(/^.*twitch\.tv\//,'').split(/[/?]/)[0];return c?'https://player.twitch.tv/?channel='+encodeURIComponent(c)+'&parent='+(location.hostname||'localhost'):null},'Twitch');
 document.querySelectorAll('#grid .plat').forEach(function(b){if(['netflix','prime video','crunchyroll','photos'].indexOf(b.dataset.n)>-1)b.insertAdjacentHTML('beforeend','<em class="ab">App needed</em>')});
 
