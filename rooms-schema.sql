@@ -81,6 +81,27 @@ create table if not exists public.room_reports (
   check (reporter_id <> reported_id)
 );
 
+-- rooms a user removed from their own home list (Delete) or whose invite they cancelled.
+-- A dismissed room stays hidden until somebody invites that user again (room_invite clears it).
+create table if not exists public.room_dismissed (
+  room_id    uuid not null references public.rooms(id) on delete cascade,
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (room_id, user_id)
+);
+
+-- "Report video" from a room card (long-press / right-click). media is a snapshot of what was playing.
+create table if not exists public.room_video_reports (
+  id          bigint generated always as identity primary key,
+  room_id     uuid not null references public.rooms(id) on delete cascade,
+  reporter_id uuid not null references auth.users(id) on delete cascade,
+  media       jsonb,
+  reason      text not null check (reason in ('sexual','violent','hateful','spam','copyright','misleading','other')),
+  details     text not null default '' check (char_length(details) <= 1000),
+  created_at  timestamptz not null default now()
+);
+create index if not exists room_video_reports_idx on public.room_video_reports(reporter_id, created_at desc);
+
 -- ---------- row level security (reads only; ALL writes go through the RPCs below) ----------
 create or replace function public.is_room_member(rid uuid) returns boolean
 language sql stable security definer set search_path = public as $$
@@ -95,6 +116,10 @@ alter table public.room_queue    enable row level security;
 alter table public.room_messages enable row level security;
 alter table public.room_reports  enable row level security;
 revoke all on public.room_reports from public, anon, authenticated;
+alter table public.room_dismissed enable row level security;
+revoke all on public.room_dismissed from public, anon, authenticated;
+alter table public.room_video_reports enable row level security;
+revoke all on public.room_video_reports from public, anon, authenticated;
 
 drop policy if exists rooms_member_select    on public.rooms;
 drop policy if exists members_member_select  on public.room_members;
@@ -492,6 +517,7 @@ begin
         if uid <> owner_id then raise exception 'Only the admin can invite someone removed from this room'; end if;
         delete from public.room_bans where room_id = p_room and user_id = u;
       end if;
+      delete from public.room_dismissed where room_id = p_room and user_id = u;   -- a new invite brings the room back
       insert into public.room_invites(room_id, user_id, invited_by) values (p_room, u, uid) on conflict do nothing;
       n := n + 1;
     end if;
@@ -542,6 +568,38 @@ begin
   values (p_room, uid, p_user, p_reason, left(trim(coalesce(p_details, '')), 1000));
 end $$;
 
+-- Delete / Cancel invite: remove a room from MY home list. Any invite to me is deleted too, and the
+-- room stays hidden until I am invited again.
+create or replace function public.room_dismiss(p_room uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := auth.uid();
+begin
+  if uid is null then raise exception 'Sign in required'; end if;
+  if not exists(select 1 from public.rooms where id = p_room) then raise exception 'Room not found'; end if;
+  delete from public.room_invites where room_id = p_room and user_id = uid;
+  insert into public.room_dismissed(room_id, user_id) values (p_room, uid) on conflict do nothing;
+end $$;
+
+-- Report the video that is playing in a room (the reporter does not need to be inside the room).
+create or replace function public.room_report_video(p_room uuid, p_reason text, p_details text default '')
+returns void language plpgsql security definer set search_path = public as $$
+declare uid uuid := auth.uid(); m jsonb;
+begin
+  if uid is null then raise exception 'Sign in required'; end if;
+  if p_reason is null or p_reason not in ('sexual','violent','hateful','spam','copyright','misleading','other') then
+    raise exception 'Choose a valid report reason';
+  end if;
+  select media into m from public.rooms where id = p_room;
+  if not found then raise exception 'Room not found'; end if;
+  if m is null then raise exception 'This room has no video to report'; end if;
+  if (select count(*) from public.room_video_reports
+       where reporter_id = uid and created_at > now() - interval '1 hour') >= 10 then
+    raise exception 'Too many reports. Please try again later.';
+  end if;
+  insert into public.room_video_reports(room_id, reporter_id, media, reason, details)
+  values (p_room, uid, m, p_reason, left(trim(coalesce(p_details, '')), 1000));
+end $$;
+
 create or replace function public.public_room_for_user(p_user uuid) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare result jsonb;
@@ -583,7 +641,7 @@ begin
       select r.created_at,
         jsonb_build_object(
           'id', r.id, 'code', r.code, 'title', r.title, 'privacy', r.privacy, 'media', r.media,
-          'play_state', r.play_state, 'admin_id', r.admin_id,
+          'play_state', r.play_state, 'admin_id', r.admin_id, 'created_at', r.created_at,
           'count', (select count(*) from public.room_members m where m.room_id = r.id),
           'members', (select coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'full_name', p.full_name,
                               'username', p.username, 'avatar_url', p.avatar_url, 'country_code', p.country_code) order by s.joined_at), '[]'::jsonb)
@@ -594,7 +652,9 @@ begin
           'mine', exists(select 1 from public.room_members mm where mm.room_id = r.id and mm.user_id = uid)
         ) as j
       from public.rooms r
-      where r.status = 'open' and (
+      where r.status = 'open'
+        and not exists(select 1 from public.room_dismissed d where d.room_id = r.id and d.user_id = uid)
+        and (
             r.privacy = 'public'
          or exists(select 1 from public.room_invites i where i.room_id = r.id and i.user_id = uid)
          or (r.privacy = 'friends' and public._is_friend(uid, r.admin_id))
@@ -618,7 +678,7 @@ begin
              and p.proname in ('room_now','is_room_member','create_room','join_room','leave_room','room_heartbeat',
                                'room_set_state','room_pick','room_ended','room_advance','room_vote','room_queue_remove',
                                'room_update','room_transfer','room_kick','room_invite','room_can_mic',
-                               'room_set_member_mic','room_report_user','public_room_for_user','list_rooms') loop
+                               'room_set_member_mic','room_report_user','room_dismiss','room_report_video','public_room_for_user','list_rooms') loop
     execute format('revoke all on function %s from public, anon', f.sig);
     execute format('grant execute on function %s to authenticated', f.sig);
   end loop;

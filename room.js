@@ -1263,9 +1263,9 @@ function card(r) {
   const pv = (PRIV.find(x => x[0] === r.privacy) || PRIV[0])[1];
   const av = (r.members || []).slice(0, 4).map(u => userAvatar(u, 30, false, u.id === r.admin_id)).join('');
   const more = Math.max(0, (r.count || 0) - 4);
-  return `<div class="room${r.invited ? ' inv' : ''}" role="button" tabindex="0" data-code="${esc(r.code)}">
+  return `<div class="room${r.invited ? ' inv' : ''}" role="button" tabindex="0" data-code="${esc(r.code)}" data-rid="${esc(r.id)}">
     <div class="cover">${thumb(m) ? `<img src="${esc(thumb(m))}" alt="" loading="lazy" decoding="async">` : ''}<span class="pv">${ic(pv, 16)}</span></div>
-    <div class="info"><b>${esc((m && m.title) || r.title)}</b><div class="avs">${av}${more ? `<em>+${more}</em>` : ''}</div></div>
+    <div class="info"><b class="rt">${esc((m && m.title) || r.title)}</b><div class="avs">${av}${more ? `<em>+${more}</em>` : ''}</div></div>
     ${pct ? `<i class="prog" style="width:${pct * .62}%"></i>` : ''}</div>`;
 }
 function renderHome() {
@@ -1292,6 +1292,7 @@ function renderHome() {
   };
   set('invL', 'invE', inv, 'No invited rooms right now.');
   set('pubL', 'pubE', pub, 'No public rooms right now.');
+  if (window.NovaCards) NovaCards.afterRender();
 }
 async function loadHome() {
   if (R || homeLoading) return;
@@ -1346,9 +1347,18 @@ document.addEventListener('click', e => {
     if (!page) location.href = url;
     return;
   }
-  const c = e.target.closest('.room[data-code]'); if (c) joinByCode(c.dataset.code);
+  const c = e.target.closest('.room[data-code]');
+  if (!c) return;
+  if (window.NovaCards && NovaCards.swallowClick(e)) return;   // long-press / right-click just opened the room menu
+  joinByCode(c.dataset.code);
 });
-document.addEventListener('keydown', e => { if (e.key === 'Enter') { const c = e.target.closest && e.target.closest('.room[data-code]'); if (c) joinByCode(c.dataset.code); } });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { const c = e.target.closest && e.target.closest('.room[data-code]'); if (c && e.target === c) joinByCode(c.dataset.code); }
+  else if ((e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) && window.NovaCards) {
+    const c = e.target.closest && e.target.closest('.room[data-code]');
+    if (c) { e.preventDefault(); NovaCards.openMenu(c.dataset.rid, c); }
+  }
+});
 window.addEventListener('hashchange', hashJoin);
 
 async function boot() {
@@ -1377,7 +1387,35 @@ async function boot() {
   homeT = setInterval(() => { if (!R && !document.hidden) loadHome(); }, 10000);
 }
 
-window.NovaRoom = { handle, ctx, renderHome, active: () => !!R, ready: true };
+/* Small read-only API for room-cards.js (hover preview, long-press / right-click menu) */
+function previewSource(m) {
+  if (!m) return null;
+  if (m.kind === 'youtube') return { type: 'youtube', id: m.id || '', pl: m.pl || '' };
+  if (m.kind === 'video' && safeHttps(m.url)) {
+    if (m.provider === 'web') {
+      const info = webStreamInfo(m), px = new URL('/api/browse', location.href);
+      px.searchParams.set('stream', '1'); px.searchParams.set('url', info.url);
+      if (info.ref) px.searchParams.set('ref', info.ref);
+      return { type: 'video', src: px.href, hls: info.hls || m.streamType === 'hls' };
+    }
+    return { type: 'video', src: m.url, hls: /\.m3u8(?:$|[?#])/i.test(m.url) };
+  }
+  return null;   // embeds cannot be muted / seeked from outside, so they keep the thumbnail
+}
+function livePos(r) {
+  const ps = r.play_state || {};
+  if (ps.ended) return { pos: ps.pos || 0, playing: false };
+  return { pos: ps.playing ? (ps.pos || 0) + (snow() - (ps.ts || snow())) / 1000 : (ps.pos || 0), playing: !!ps.playing };
+}
+const roomApi = {
+  rooms: () => homeRooms, byId: id => homeRooms.find(r => r.id === id) || null,
+  previewSource, livePos, now: snow, attachSrc, thumb, fmt, PRIV, ic,
+  reload: () => loadHome(),
+  dismiss: id => rpc('room_dismiss', { p_room: id }),
+  reportVideo: (id, reason, details) => rpc('room_report_video', { p_room: id, p_reason: reason, p_details: details || '' }),
+  toast, oops, inRoom: () => !!R
+};
+window.NovaRoom = { handle, ctx, renderHome, active: () => !!R, ready: true, api: roomApi };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 

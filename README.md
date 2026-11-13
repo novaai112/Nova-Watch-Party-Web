@@ -24,6 +24,7 @@ Static website + Supabase, with Vercel serverless API routes. No build step; dep
 | `api/x.js` | X (Twitter) post video detector: `/api/x?url=<post link>` returns whether the post has a video and its MP4/HLS address |
 | `api/drive.js` | Google Drive checker: `/api/drive?url=` says if a file link is a playable video, `/api/drive?folder=` lists a shared folder |
 | `api/twitch.js` | Twitch checker: `/api/twitch?url=` detects a channel / past video / clip, `?top=1` lists live channels, `?channel=` lists a channel's live status, videos and clips (no key needed) |
+| `room-cards.js` / `room-cards.css` | Home room cards: hover live preview (synced, mute button), glass info panel, avatar name tip, right-click / long-press sheet with Delete (Cancel invite) and Report video, + button aligned with the People icon. Home grid is 3 columns on desktop, 2 on tablet, 1 on phone. |
 | `room-media.js` / `room-media.css` / `room-media-schema.sql` | Watch-room attachment picker (same as the friends chat, minus Contact and voice notes) and its database setup |
 | `supabase/functions/chat-media-search/` | Authenticated Unsplash photo search plus GIPHY and KLIPY media search |
 
@@ -39,6 +40,7 @@ It creates (Part 4 = username check, avatar bucket, gallery limits): `profiles` 
 - Re-run `schema.sql` once if you already ran an older version: Part 4 is safe to repeat.
 - Run `chat-schema.sql` after `schema.sql` to enable direct and group conversations, message storage, Realtime publication, private media storage, and RLS.
 - Run `rooms-schema.sql` after `schema.sql` to enable watch-party rooms, mic permissions, moderation actions, and public-room profile cards. Re-running it applies the room updates safely.
+- **Re-run `rooms-schema.sql`** for the room-card menu: it adds `room_dismissed` (Delete / Cancel invite stay hidden until the user is invited again), `room_video_reports`, the RPCs `room_dismiss` and `room_report_video`, and `created_at` + the dismissed filter in `list_rooms`.
 - Re-running `schema.sql` removes the obsolete room-invitation RPC and profile setting.
 
 ## 2. Auth settings (Dashboard → Authentication)
