@@ -82,7 +82,7 @@ const profileHref = id => 'profile.html#user/' + encodeURIComponent(id);
 function userAvatar(u, size, active, isHost) {
   const id = String(u.id || ''), host = !!isHost || !!(R && id === R.admin_id);
   if (!id) return Nova.avatar(u, size);
-  return `<button type="button" class="uav${active ? ' mic-on' : ''}${host ? ' host' : ''}" style="width:${size}px;height:${size}px" data-user-id="${esc(id)}" aria-label="Open ${esc(nm(u))}'s profile" title="${esc(nm(u))}">${Nova.avatar(u, Math.max(12, size - 4))}</button>`;
+  return `<button type="button" class="uav${active ? ' mic-on' : ''}${host ? ' host' : ''}" style="width:${size}px;height:${size}px" data-user-id="${esc(id)}" aria-label="Open ${esc(nm(u))}'s profile" title="${esc(nm(u))}">${Nova.avatar(u, Math.max(12, size - 4))}${Nova.geo ? Nova.geo.badge(u, size) : ''}</button>`;
 }
 const oops = e => {
   const m = (e && e.message) || 'Something went wrong';
@@ -110,7 +110,7 @@ sb.auth.onAuthStateChange((e, s) => { ME = s ? s.user : null; if (!ME && R) clea
 async function loadProfiles(ids) {
   const miss = [...new Set(ids)].filter(i => i && !prof[i]);
   if (!miss.length) return;
-  const { data } = await sb.from('public_profiles').select('id,full_name,username,avatar_url').in('id', miss);
+  const { data } = await sb.from('public_profiles').select('id,full_name,username,avatar_url,country,country_code,city,region,location_lat,location_lng').in('id', miss);
   (data || []).forEach(p => { prof[p.id] = p; });
 }
 async function syncClock() {
@@ -958,7 +958,7 @@ function openPeople(refresh) {
   const adm = isAdmin();
   const mem = members.map(m => {
     const u = who(m.user_id), me = m.user_id === ME.id, isA = m.user_id === R.admin_id;
-    return `<div class="li">${userAvatar(u, 42, micOf(m.user_id))}<div><b>${esc(nm(u))}</b>${isA ? ' <span class="crownb">' + ic('crown', 15) + '</span>' : ''}${me ? ' (you)' : ''}${micOf(m.user_id) ? ' <span class="micon" data-vu="' + m.user_id + '">' + ic('mic', 14) + '</span>' : ''}<small>@${esc(u.username || '')}</small></div>
+    return `<div class="li">${userAvatar(u, 42, micOf(m.user_id))}<div><b>${esc(nm(u))}</b>${isA ? ' <span class="crownb">' + ic('crown', 15) + '</span>' : ''}${me ? ' (you)' : ''}${micOf(m.user_id) ? ' <span class="micon" data-vu="' + m.user_id + '">' + ic('mic', 14) + '</span>' : ''}<small>@${esc(u.username || '')}</small>${Nova.geo ? Nova.geo.line(u, { cls: 'sm left' }) : ''}</div>
       ${adm && !me ? `${R.privacy !== 'public' ? `<button class="cb${m.mic_allowed ? ' on' : ''}" data-r="member-mic" data-id="${esc(m.user_id)}" data-on="${m.mic_allowed ? 'false' : 'true'}" title="${m.mic_allowed ? 'Disable microphone' : 'Enable microphone'}" aria-label="${m.mic_allowed ? 'Disable microphone' : 'Enable microphone'}">${ic(m.mic_allowed ? 'mic' : 'micoff', 17)}</button>` : ''}<button class="cb crownb" data-r="transfer" data-id="${esc(m.user_id)}" title="Make admin" aria-label="Make admin">${ic('crown', 18)}</button><button class="cb" data-r="kick" data-id="${esc(m.user_id)}" title="Kick from room" aria-label="Kick from room">${ic('x', 18)}</button>` : ''}</div>`;
   }).join('');
   const sorted = queue.slice().sort((a, b) => (b.votes || []).length - (a.votes || []).length);

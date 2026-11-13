@@ -152,6 +152,10 @@ alter table public.profiles
   add column if not exists country      text,
   add column if not exists location_lat double precision,
   add column if not exists location_lng double precision,
+  add column if not exists country_code text,                 -- ISO 3166-1 alpha-2, e.g. 'IN' (drives the country flag)
+  add column if not exists city         text,
+  add column if not exists region       text,                 -- state / province
+  add column if not exists location_updated_at timestamptz,
   add column if not exists settings     jsonb not null default
     '{"quick":"❤️","hideMature":true,"haptic":true,"floating":true,"translate":false,"mute":true,"hideLoc":false,"lang":"en","notif":true,"noShare":true}'::jsonb;
 
@@ -163,13 +167,35 @@ alter table public.profiles drop constraint if exists username_format;
 alter table public.profiles add constraint username_format
   check (username is null or username ~ '^[a-z0-9_.]{3,24}$');
 
+-- Location values come from the browser (reverse-geocoded), so they are validated here too.
+alter table public.profiles drop constraint if exists location_format;
+alter table public.profiles add constraint location_format check (
+  (country_code is null or country_code ~ '^[A-Z]{2}$')
+  and (city   is null or (char_length(city)   <= 80 and city   !~ '[<>]'))
+  and (region is null or (char_length(region) <= 80 and region !~ '[<>]'))
+  and (country is null or (char_length(country) <= 80 and country !~ '[<>]'))
+  and (location_lat is null or location_lat between -90  and 90)
+  and (location_lng is null or location_lng between -180 and 180)
+) not valid;   -- NOT VALID: enforced for every new write without failing on any old rows
+
 revoke update on public.profiles from authenticated;
-grant update (full_name, avatar_url, username, bio, country, location_lat, location_lng, settings)
+grant update (full_name, avatar_url, username, bio, country, country_code, city, region, location_lat, location_lng, location_updated_at, settings)
   on public.profiles to authenticated;
 
 -- Public-safe view of other users (no email). Used by friends and chat.
+-- "Hide Location" ON  -> others get NO city, state or coordinates (the map pin disappears) but still get country_code (the flag).
+create or replace function public._loc_hidden(s jsonb)
+returns boolean language sql immutable set search_path = '' as $$
+  select coalesce((s ->> 'hideLoc')::boolean, false);
+$$;
 create or replace view public.public_profiles as
-  select id, full_name, username, avatar_url, country, bio, created_at from public.profiles;
+  select id, full_name, username, avatar_url, country, bio, created_at,
+         country_code,
+         case when public._loc_hidden(settings) then null else city   end as city,
+         case when public._loc_hidden(settings) then null else region end as region,
+         case when public._loc_hidden(settings) then null else round(location_lat::numeric, 2)::double precision end as location_lat,
+         case when public._loc_hidden(settings) then null else round(location_lng::numeric, 2)::double precision end as location_lng
+  from public.profiles;
 grant select on public.public_profiles to authenticated;
 
 -- Map: users with "Hide Location" ON never appear.
@@ -335,6 +361,11 @@ begin
   ) into vids;
   return jsonb_build_object(
     'id', p.id, 'name', p.full_name, 'username', p.username, 'avatar', p.avatar_url, 'country', p.country,
+    'country_code', p.country_code,
+    'city',   case when public._loc_hidden(p.settings) then null else p.city end,
+    'region', case when public._loc_hidden(p.settings) then null else p.region end,
+    'lat',    case when public._loc_hidden(p.settings) then null else round(p.location_lat::numeric, 2) end,
+    'lng',    case when public._loc_hidden(p.settings) then null else round(p.location_lng::numeric, 2) end,
     'joined', p.created_at, 'own', own, 'visibility', case when own then p.visibility end, 's', s,
     'bio',     case when (s->>'bio')::boolean then coalesce(p.bio,'') end,
     'socials', case when (s->>'socials')::boolean then p.socials end,
@@ -474,7 +505,7 @@ grant select, insert, update, delete  on public.watch_history   to authenticated
 grant select, insert                  on public.support_tickets to authenticated;
 grant select                          on public.subscriptions   to authenticated;
 grant select                          on public.profiles        to authenticated;
-grant update (full_name, avatar_url, username, bio, country, location_lat, location_lng, settings, visibility, socials)
+grant update (full_name, avatar_url, username, bio, country, country_code, city, region, location_lat, location_lng, location_updated_at, settings, visibility, socials)
   on public.profiles to authenticated;
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -498,7 +529,7 @@ alter table public.profiles
 
 -- (re)state the browser's column grants WITHOUT the maturity_* columns
 revoke update on public.profiles from authenticated;
-grant update (full_name, avatar_url, username, bio, country, location_lat, location_lng, settings, visibility, socials)
+grant update (full_name, avatar_url, username, bio, country, country_code, city, region, location_lat, location_lng, location_updated_at, settings, visibility, socials)
   on public.profiles to authenticated;
 
 create or replace function public.enforce_mature_gate()

@@ -63,7 +63,16 @@ ${g.length ? `<div class=gg>${g.length<MAXG?`<label class="gt gadd" for=gf aria-
     return chips ? `<div class=chips>${chips}</div>` : `<div class=empty>${ic('link', 28)}<p>${own ? 'No social links yet' : 'No links'}</p>${own ? `<button class="btn pri sm" data-act=editsoc>${ic('plus', 15)}Add links</button>` : ''}</div>`;
   };
   const frTile = u => `<button class=frc data-go="user/${u.id}">${Nova.avatar(u, 56)}<b>${esc(u.full_name || u.username || '')}</b><small>@${esc(u.username || '')}</small></button>`;
-  const profileAvatar = (u, size) => `<button class=profile-avatar-link data-go="user/${esc(u.id)}" aria-label="View ${esc(u.full_name || u.username || 'user')} profile">${Nova.avatar(u, size)}</button>`;
+  /* "Location" card on the user's own profile. Hide Location ON -> no city/map, the country flag stays. */
+  const locCard = () => {
+    const g = Nova.geo, hide = !!Nova.S.hideLoc, m = g.mask(P, hide), tx = g.text(m);
+    const upd = label => `<button type="button" class="btn sm" data-geo-update>${label}</button>`;
+    if (!P.country_code) return `<div class="geo-card"><span class="biot mu">Not shared yet</span><div class="geo-acts">${upd('Allow location')}</div></div>`;
+    const cn = esc(g.cname(P.country_code, P.country || ''));
+    if (hide) return `<div class="geo-card"><b>${g.flag(P.country_code, 16)}${cn}</b><span class="geo-hint">Your city and map location are hidden. Only your country flag is visible.</span><div class="geo-acts">${upd('Update')}</div></div>`;
+    return `<div class="geo-card"><b>${tx ? esc(tx) : cn}</b><div class="geo-acts">${g.mapBtn(m)}${upd('Update')}</div></div>`;
+  };
+  const profileAvatar = (u, size) => `<button class=profile-avatar-link data-go="user/${esc(u.id)}" aria-label="View ${esc(u.full_name || u.username || 'user')} profile">${Nova.avatar(u, size)}${Nova.geo.badge(u, size)}</button>`;
   const publicRoomCard = (room, error) => {
     if (!room) return error
       ? `<section class="card pad public-room-unavailable"><b>Public room status unavailable</b><small>Run the latest rooms-schema.sql in Supabase to enable room profiles.</small></section>`
@@ -83,8 +92,8 @@ ${g.length ? `<div class=gg>${g.length<MAXG?`<label class="gt gadd" for=gf aria-
   /* ---------- OWN VIEWS ---------- */
   V.info = () => shell('info', mbar(t('info')) + panel(t('info'), 'Your photo, name, username and bio',
     `<div class=actg>${eye('bio')}<button class="btn sec sm" data-go=preview>${ic('eye', 16)}${t('preview')}</button><button class="btn pri sm" data-act=editinfo>${ic('pencil', 15)}${t('edit')}</button></div>`,
-    `<div class=idstrip>${avtap(76, 'ring')}<div class=idt><h3>${esc(P.full_name || '')}</h3><p>@${esc(P.username || '')}</p><div class=pills>${isVer() ? `<span class="pill ok">✓ ${t('verified')}</span>` : ''}${planPill()}</div></div></div>
-<div class=fgrid>${fc('user', 'Full name', `<b>${esc(P.full_name || '—')}</b>`)}${fc('at', 'Username', `<b>@${esc(P.username || '')}</b>`)}${fc('mail', 'Email address', `<b>${esc(U.email)}</b>`, 'wide')}${fc('pencil', 'Bio', P.bio ? `<span class=biot>${esc(P.bio)}</span>` : '<span class="biot mu">No bio yet</span>', 'wide bio')}</div>`));
+    `<div class=idstrip>${avtap(76, 'ring')}<div class=idt><h3>${esc(P.full_name || '')}</h3><p>@${esc(P.username || '')}${Nova.geo.flag(P.country_code, 16)}</p>${Nova.geo.line(Nova.geo.mask(P, Nova.S.hideLoc))}<div class=pills>${isVer() ? `<span class="pill ok">✓ ${t('verified')}</span>` : ''}${planPill()}</div></div></div>
+<div class=fgrid>${fc('user', 'Full name', `<b>${esc(P.full_name || '—')}</b>`)}${fc('at', 'Username', `<b>@${esc(P.username || '')}</b>`)}${fc('pin', 'Location', locCard(), 'wide')}${fc('mail', 'Email address', `<b>${esc(U.email)}</b>`, 'wide')}${fc('pencil', 'Bio', P.bio ? `<span class=biot>${esc(P.bio)}</span>` : '<span class="biot mu">No bio yet</span>', 'wide bio')}</div>`));
 
   V.stats = () => {
     const s = stat(), provs = ((P.providers && P.providers.length) ? P.providers : (U.app_metadata.providers || [])).map(p => p === 'email' ? 'Email & password' : p.charAt(0).toUpperCase() + p.slice(1)).join(' + ') || '—';
@@ -191,7 +200,7 @@ ${sh('keywords', 'Keywords', kwHTML(d.titles))}${sh('channels', 'Channels', chHT
     const sec = (k, icon, title, body) => S[k] ? `<section class=card><h3 class=vt>${ic(icon, 17)}${title}</h3><div class=vb>${body}</div></section>` : '';
     const s = d.stats;
     return `<div class=lite>${pv ? `<div class=pvb><span>${ic('eye', 16)}Previewing as a visitor</span><button class="btn sec sm" data-go=info>Exit preview</button></div>` : `<button class="btn sec sm" data-go=friends style="margin:14px 0">${ic('left', 16)}${t('friends')}</button>`}
-<div class=card><div class=vcover></div><div class=vhb>${profileAvatar({id:d.id,full_name:d.name,username:d.username,avatar_url:d.avatar}, 96)}<h2>${esc(d.name || '')}</h2><div class=mu>@${esc(d.username || '')}</div>${profileFriendActions(d,pv)}${S.bio && d.bio ? `<p class=vbio>${esc(d.bio)}</p>` : ''}</div></div>
+<div class=card><div class=vcover></div><div class=vhb>${profileAvatar({id:d.id,full_name:d.name,username:d.username,avatar_url:d.avatar,country_code:d.country_code}, 96)}<h2>${esc(d.name || '')}</h2><div class=mu>@${esc(d.username || '')}${Nova.geo.flag(d.country_code, 16)}</div>${Nova.geo.line({country_code:d.country_code,country:d.country,city:d.city,region:d.region,lat:d.lat,lng:d.lng})}${profileFriendActions(d,pv)}${S.bio && d.bio ? `<p class=vbio>${esc(d.bio)}</p>` : ''}</div></div>
 ${!pv && !d.own ? publicRoomCard(d.public_room, d.public_room_error) : ''}
 ${s ? sec('stats', 'chart', t('accstats'), `<div class="tiles profile-stat-tiles"><div class="tile blue"><b>${s.videos}</b><span>Videos</span></div><div class="tile green"><b>${s.hours}</b><span>Hours</span></div><div class="tile indigo"><b>${s.friends}</b><span>${t('friends')}</span></div><div class="tile yellow"><b>${(d.gallery || []).length}</b><span>Photos</span></div></div>`) : ''}
 ${d.gallery && d.gallery.length ? sec('gallery', 'image', `${t('gallery')} (${d.gallery.length})`, gridG(d.gallery, false)) : ''}

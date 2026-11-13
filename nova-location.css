@@ -1,0 +1,57 @@
+/* nova-location.css — country flag, location line, map popup, location prompt. Uses the page's theme variables when present. */
+.geo-flag{display:inline-block;width:auto;border-radius:3px;box-shadow:0 0 0 1px rgba(15,23,42,.18);vertical-align:-2px;margin-left:6px;flex:none;object-fit:contain}
+.geo-code{display:inline-block;margin-left:6px;padding:2px 5px;border-radius:5px;font:700 10px/1.2 system-ui,sans-serif;letter-spacing:.04em;background:var(--chip,#e8edf5);color:var(--mu,#5b6577);vertical-align:1px}
+
+/* flag in the corner of an avatar */
+.geo-av,.uav,.profile-avatar-link{position:relative}
+.geo-av{display:inline-block;flex:none;line-height:0}
+.geo-badge{position:absolute;right:-3px;bottom:-3px;width:var(--b,16px);height:var(--b,16px);border-radius:50%;overflow:hidden;z-index:2;pointer-events:none;
+  background:var(--chip,#dfe5ee);box-shadow:0 0 0 2px var(--card,#fff),0 1px 4px rgba(15,23,42,.35)}
+.geo-badge img{display:block;width:100%;height:100%;object-fit:cover}
+.geo-badge.txt{display:grid;place-items:center;font:700 7px/1 system-ui,sans-serif;color:var(--mu,#5b6577)}
+
+/* "<flag> Ludhiana, Punjab (India) [map]" */
+.geo-line{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px;margin:6px 0 0;font-size:13px;font-weight:500;color:var(--mu,#5b6577);line-height:1.35}
+.geo-line .geo-flag{margin-left:0}
+.geo-line .geo-text{min-width:0;overflow-wrap:anywhere}
+.idt .geo-line,.geo-line.left{justify-content:flex-start}
+.geo-line.sm{font-size:11.5px;margin-top:2px;gap:5px}
+.geo-line.sm .geo-map{width:22px;height:22px}
+.geo-map{display:inline-grid;place-items:center;width:28px;height:28px;padding:0;flex:none;border-radius:50%;cursor:pointer;
+  border:1px solid var(--line,#e2e8f0);background:var(--card,#fff);color:var(--ac,#2563eb);transition:transform .12s,background .15s}
+.geo-map:hover{background:var(--soft,#f1f5f9)}.geo-map:active{transform:scale(.92)}
+.geo-map:focus-visible,.geo-x:focus-visible,.geo-go:focus-visible,.geo-later:focus-visible{outline:2px solid var(--ac,#2563eb);outline-offset:2px}
+.geo-hint{font-size:12px;color:var(--mu,#5b6577);line-height:1.4}
+.geo-card{display:grid;gap:6px;justify-items:start;min-width:0}
+.geo-card b{display:flex;align-items:center;gap:8px;overflow-wrap:anywhere}
+.geo-card b .geo-flag{margin:0}
+.geo-acts{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+[data-geo-update].busy{opacity:.6;cursor:progress}
+
+/* overlay (map popup + permission sheet) */
+body.geo-lock{overflow:hidden}
+.geo-ov{position:fixed;inset:0;z-index:2000;display:grid;place-items:center;padding:16px;background:rgba(15,23,42,.55);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);animation:geofade .18s ease both}
+.geo-ov.geo-bottom{align-items:end}
+@media(min-width:560px){.geo-ov.geo-bottom{align-items:center}}
+@keyframes geofade{from{opacity:0}}
+@keyframes geoup{from{transform:translateY(24px);opacity:0}}
+.geo-modal,.geo-sheet{width:100%;max-width:520px;background:var(--card,#fff);color:var(--tx,#0f172a);border-radius:20px;box-shadow:0 24px 70px rgba(0,0,0,.4);animation:geoup .26s cubic-bezier(.2,.9,.3,1) both;overflow:hidden}
+.geo-mh{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line,#e2e8f0)}
+.geo-mh b{font-size:15px;min-width:0;overflow-wrap:anywhere}
+.geo-x{width:36px;height:36px;border-radius:50%;border:0;background:var(--chip,#eef2f7);color:inherit;font-size:22px;line-height:1;cursor:pointer;flex:none}
+.geo-mapbox{aspect-ratio:4/3;max-height:55dvh;width:100%;background:var(--chip,#e8edf5)}
+.geo-mapbox iframe{width:100%;height:100%;border:0;display:block}
+.geo-mf{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 14px;padding:12px 16px;font-size:13px}
+.geo-mf small{color:var(--mu,#5b6577)}
+.geo-mf span{display:flex;gap:14px}.geo-mf a{color:var(--ac,#2563eb);font-weight:600}
+
+.geo-sheet{padding:26px 22px 20px;text-align:center}
+.geo-pin{width:54px;height:54px;margin:0 auto 12px;border-radius:50%;display:grid;place-items:center;background:var(--chip,#e8f0ff);color:var(--ac,#2563eb)}
+.geo-sheet h2{margin:0 0 8px;font-size:19px;font-weight:800;letter-spacing:-.01em}
+.geo-sheet p{margin:0 0 10px;color:var(--mu,#5b6577);font-size:14px;line-height:1.5}
+.geo-sheet ul{margin:0 0 18px;padding:0;list-style:none;text-align:left;display:grid;gap:8px;font-size:12.5px;line-height:1.45;color:var(--mu,#5b6577)}
+.geo-sheet li{padding-left:18px;position:relative}
+.geo-sheet li:before{content:"";position:absolute;left:2px;top:.5em;width:7px;height:7px;border-radius:50%;background:var(--ac,#2563eb)}
+.geo-go{width:100%;min-height:48px;border:0;border-radius:999px;background:var(--ac,#2563eb);color:#fff;font-weight:700;font-size:15px;font-family:inherit;cursor:pointer}
+.geo-later{width:100%;min-height:44px;margin-top:6px;border:0;background:transparent;color:var(--mu,#5b6577);font-weight:600;font-size:14px;font-family:inherit;cursor:pointer}
+@media (prefers-reduced-motion:reduce){.geo-ov,.geo-modal,.geo-sheet{animation:none}.geo-map{transition:none}}

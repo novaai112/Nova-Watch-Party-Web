@@ -554,7 +554,8 @@ begin
     'members', (
       select coalesce(jsonb_agg(jsonb_build_object(
         'id', p.id, 'full_name', p.full_name, 'username', p.username,
-        'avatar_url', p.avatar_url, 'is_admin', p.id = r.admin_id
+        'avatar_url', p.avatar_url, 'is_admin', p.id = r.admin_id,
+        'country_code', p.country_code, 'city', p.city, 'region', p.region, 'lat', p.location_lat, 'lng', p.location_lng
       ) order by ordered.joined_at), '[]'::jsonb)
       from (
         select user_id, joined_at from public.room_members
@@ -585,7 +586,7 @@ begin
           'play_state', r.play_state, 'admin_id', r.admin_id,
           'count', (select count(*) from public.room_members m where m.room_id = r.id),
           'members', (select coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'full_name', p.full_name,
-                              'username', p.username, 'avatar_url', p.avatar_url) order by s.joined_at), '[]'::jsonb)
+                              'username', p.username, 'avatar_url', p.avatar_url, 'country_code', p.country_code) order by s.joined_at), '[]'::jsonb)
                       from (select user_id, joined_at from public.room_members mm
                             where mm.room_id = r.id order by joined_at limit 8) s
                       join public.public_profiles p on p.id = s.user_id),

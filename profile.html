@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Nova — My Account</title>
-<link rel="icon" href="7949.jpg" type="image/jpeg"><link rel="stylesheet" href="auth.css">
+<link rel="icon" href="7949.jpg" type="image/jpeg"><link rel="stylesheet" href="auth.css"><link rel="stylesheet" href="nova-location.css">
 <meta name="theme-color" content="#f4f4f2">
 <script src="theme.js"></script>
 <script src="translator.js"></script>
@@ -363,7 +363,7 @@ body.message-page-active.people-experience-active .people-list{grid-column:2;gri
 @media(max-width:899px){body.people-experience-active #app{touch-action:pan-y}}
 </style></head><body><div id="nova-auth-check" role="status" aria-live="polite"><div class="auth-card"><span class="auth-spinner" aria-hidden="true"></span><span>Checking your sign-in…</span></div></div><div id="app"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js"></script><script src="/api/config"></script><script src="nova-core.js"></script>
+<script src="config.js"></script><script src="/api/config"></script><script src="nova-core.js"></script><script src="nova-location.js"></script>
 <script>
 const {sb,t,esc}=Nova,ic=Nova.ic,app=document.getElementById('app'),$=s=>document.querySelector(s);
 let U,P={},PD=null,REQ=[],PROFILE_RELATION=null,PLAN={pro:false,end:null},PREVIEW=false,NSFW=false,FAILED=null,RT=0,UN={ok:false,val:''};
@@ -372,9 +372,9 @@ const EMOJI="👍 ❤️ 😂 😮 😢 😡 👏 🙏 🔥 🎉 😍 😎 🤣 
 const CF=window.APP_CONFIG||{},APP=esc(CF.APP_NAME||'the app'),CO=esc(CF.COMPANY_NAME||'the Company'),EM=esc(CF.SUPPORT_EMAIL||''),PH=esc(CF.SUPPORT_PHONE||''),HR=esc(CF.SUPPORT_HOURS||''),AD=esc(CF.COMPANY_ADDRESS||''),JU=esc(CF.JURISDICTION||'India'),RF=+CF.REFUND_DAYS||0;
 const POL={privacy:['privpol',[
 ['Who we are',`${APP} is operated by ${CO}, ${AD}. Questions: ${EM}.`],
-['Information we collect',`Account details (name, email, sign-in method such as email or Google, profile photo); content you add (bio, gallery photos, social links, chat messages); activity (videos watched, likes, watch time, friends, rooms); and, only if you allow it, your approximate location.`],
+['Information we collect',`Account details (name, email, sign-in method such as email or Google, profile photo); content you add (bio, gallery photos, social links, chat messages); activity (videos watched, likes, watch time, friends, rooms); and, only if you allow it, your approximate location (city, state, country and a map point rounded to about 1 km). To find the place name, your coordinates are sent once to a reverse-geocoding service (BigDataCloud, or OpenStreetMap as a fallback); country flags are loaded from flagcdn.com.`],
 ['How we use it',`To run Nova, show your profile to people you allow, remember your settings, provide support, keep the service safe and prevent abuse.`],
-['Who can see your profile',`You control each profile section (👁️ button). Hidden sections are not sent to other users. "Hide Location" removes you from the map.`],
+['Who can see your profile',`You control each profile section (👁️ button). Hidden sections are not sent to other users. "Hide Location" hides your city, state and map location from other users; your country flag stays visible.`],
 ['Sharing',`We do not sell your personal data. If "Do not share my data with third parties" is on, we share nothing beyond service providers needed to operate the app (hosting, authentication, email). We may disclose data when required by law.`],
 ['Retention and deletion',`We keep data while your account is active. You can delete your account at any time in Support > Delete Account; your profile, friends, history and tickets are then erased from our database.`],
 ['Your rights',`You may access, correct or delete your data and withdraw consent by contacting ${EM}.`],
@@ -400,7 +400,7 @@ terms:['tos',[
 const inv=()=>{PD=null};
 const isVer=()=>!!(U&&(U.email_confirmed_at||U.confirmed_at));
 const skel=()=>'<div class="sk" style="height:56px;margin:12px 0"></div><div class="sk" style="height:230px;margin:12px 0"></div><div class="sk" style="height:140px"></div>';
-const avtap=(sz,cls='')=>`<button class="avtap${sz<44?' s':''}" data-act=pickAv data-s=${sz} data-c="${cls}" aria-label="Change profile photo" title="Tap to change photo">${Nova.avatar(P,sz,cls)}</button>`;
+const avtap=(sz,cls='')=>`<button class="avtap${sz<44?' s':''}" data-act=pickAv data-s=${sz} data-c="${cls}" aria-label="Change profile photo" title="Tap to change photo">${Nova.avatar(P,sz,cls)}${Nova.geo.badge(P,sz)}</button>`;
 let AVT=null;
 const planPill=()=>`<span class="pill pl">${ic('sparkles',11)}${PLAN.pro?'Pro Plan':'Free Plan'}</span>`;
 
@@ -430,7 +430,7 @@ const languageSearchTerms=(code,name)=>{const terms=[code,name,code.replace(/[-_
 const V={
 home:()=>{const s=PD&&PD.stats||{videos:0,friends:0,hours:0};
  return shell('home',`<div class="mhero mo"><div class=cover></div><div class=mtop>${HOME?`<a class=pillb href="${esc(HOME)}">${ic('left',18)}${t('profile')}</a>`:`<span class="pillb nl">${t('profile')}</span>`}<button class=bell data-go=notifications aria-label="Notifications">${ic('bell',20)}${REQ.length?'<i></i>':''}</button></div></div>
-<div class="mid mo">${avtap(108)}<h2>${esc(P.full_name||'Your name')}</h2>${isVer()?`<span class=vf>${ic('badge',15)}${t('verified')}</span>`:''}<span class=pl2>${PLAN.pro?'Pro Plan':'Free Plan'}</span></div>
+<div class="mid mo">${avtap(108)}<h2>${esc(P.full_name||'Your name')}</h2>${Nova.geo.line(Nova.geo.mask(P,Nova.S.hideLoc))}${isVer()?`<span class=vf>${ic('badge',15)}${t('verified')}</span>`:''}<span class=pl2>${PLAN.pro?'Pro Plan':'Free Plan'}</span></div>
 <div class="hstats mo"><div><b>${s.videos}</b><span>Videos</span></div><div><b>${s.friends}</b><span>${t('friends')}</span></div><div><b>${s.hours}</b><span>Hours</span></div></div>
 <div class="mh2 mo">${t('myaccount')}</div>
 <div class=mo>${NAV.map(([r,i,k])=>`<button class=mrow data-go=${r}><span class=mi>${ic(i,19)}</span><span class=nl>${t(k)}</span>${r==='notifications'&&REQ.length?`<em class=bd>${REQ.length}</em>`:''}<span class=go>${ic('right',16)}</span></button>`).join('')}
@@ -614,6 +614,7 @@ window.addEventListener('hashchange',()=>{route();scrollTo(0,0)});
 DESK.addEventListener?DESK.addEventListener('change',()=>route()):DESK.addListener(()=>route());
 sb.auth.onAuthStateChange(ev=>{if(ev==='SIGNED_OUT')location.href='index.html'});
 /* boot only after nova-profile.js has registered its views (it loads right after this script) */
+document.addEventListener('nova-geo-updated',async()=>{try{await loadP();route()}catch(er){}});
 const boot=async()=>{app.innerHTML=skel();
  U=await Nova.requireAuth();if(!U)return;await Nova.sync(U.id);
  try{await loadP()}catch(er){app.innerHTML='<div class="card pad"><p>We could not load your profile. Check your connection and try again.</p><button class="btn pri" onclick="location.reload()">Try again</button></div>';return}
