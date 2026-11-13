@@ -18,11 +18,11 @@ export class FaceLandmarker{static FACE_LANDMARKS_FACE_OVAL=[{start:234,end:454}
  static async createFromOptions(){return new FaceLandmarker()} detectForVideo(v,t){return window.__detect(t)} close(){}}`;
 // a user who performs whatever the instruction card says (and nothing when window.__idle is set)
 const USER = `(()=>{const E=self.NovaLiveness,F=self.SyntheticFace;let last='',t0=0;
- const acts=[[/Blink both eyes twice/,t=>(t>1200&&t<1350)||(t>1650&&t<1800)?{eyeL:1,eyeR:1}:{}],[/Blink both eyes once/,t=>t>1200&&t<1380?{eyeL:1,eyeR:1}:{}],[/Close both eyes/,t=>t>1200&&t<2100?{eyeL:1,eyeR:1}:{}],
- [/Wink with your LEFT/,t=>t>1200&&t<1700?{eyeL:1}:{}],[/Wink with your RIGHT/,t=>t>1200&&t<1700?{eyeR:1}:{}],[/head to the LEFT$/,t=>t>1200&&t<2300?{yaw:30}:{}],[/head to the RIGHT$/,t=>t>1200&&t<2300?{yaw:-30}:{}],
- [/Look UP/,t=>t>1200&&t<2300?{pitch:22}:{}],[/Look DOWN/,t=>t>1200&&t<2300?{pitch:-22}:{}],[/LEFT shoulder/,t=>t>1200&&t<2300?{roll:22}:{}],[/RIGHT shoulder/,t=>t>1200&&t<2300?{roll:-22}:{}],
- [/Smile/,t=>t>1200&&t<2300?{smile:.9}:{}],[/Open your mouth/,t=>t>1200&&t<2300?{mouth:.8}:{}]];
- window.__detect=now=>{const txt=(document.getElementById('instrTxt')||{}).textContent||'';if(txt!==last){last=txt;t0=now}const dt=now-t0;let p={};
+ const acts=[[/^blink_twice$/,t=>(t>1200&&t<1350)||(t>1650&&t<1800)?{eyeL:1,eyeR:1}:{}],[/^blink_both$/,t=>t>1200&&t<1380?{eyeL:1,eyeR:1}:{}],[/^close_reopen$/,t=>t>1200&&t<2100?{eyeL:1,eyeR:1}:{}],
+ [/^wink_left$/,t=>t>1200&&t<1700?{eyeL:1}:{}],[/^wink_right$/,t=>t>1200&&t<1700?{eyeR:1}:{}],[/^turn_left$/,t=>t>1200&&t<2300?{yaw:30}:{}],[/^turn_right$/,t=>t>1200&&t<2300?{yaw:-30}:{}],
+ [/^look_up$/,t=>t>1200&&t<2300?{pitch:22}:{}],[/^look_down$/,t=>t>1200&&t<2300?{pitch:-22}:{}],[/^tilt_left$/,t=>t>1200&&t<2300?{roll:22}:{}],[/^tilt_right$/,t=>t>1200&&t<2300?{roll:-22}:{}],
+ [/^smile$/,t=>t>1200&&t<2300?{smile:.9}:{}],[/^open_mouth$/,t=>t>1200&&t<2300?{mouth:.8}:{}]];
+ window.__detect=now=>{const txt=(document.getElementById('face')||{dataset:{}}).dataset.task||'';if(txt!==last){last=txt;t0=now}const dt=now-t0;let p={};
   if(!window.__idle){for(const[re,fn]of acts)if(re.test(txt)){p=fn(dt);break}}
   if(window.__two)p.two=true; p=Object.assign({yaw:0,roll:0},p,{});p.yaw=(p.yaw||0)+Math.sin(now/230)*.6;p.roll=(p.roll||0)+Math.cos(now/310)*.5;return F.face(p)};})();`;
 
@@ -43,7 +43,6 @@ async function pageFor(browser, app, opts = {}) {
   const page = await ctx.newPage(); page.on('pageerror', e => console.log('   [pageerror]', e.message));
   await page.goto(`http://localhost:${app.port}/age-verify.html?next=profile.html%23settings`); return { ctx, page };
 }
-const ringStates = page => page.$$eval('#rings .rg', els => els.map(e => e.dataset.s));
 let ok = 0; const t = async (name, fn) => { try { await fn(); ok++; console.log('  ✓', name); } catch (e) { console.error('  ✗', name, '\n    ', e.message); process.exitCode = 1; } };
 
 (async () => {
@@ -58,26 +57,26 @@ let ok = 0; const t = async (name, fn) => { try { await fn(); ok++; console.log(
   await t('Start is disabled until consent is ticked', async () => { assert(await page.isDisabled('#startBtn')); await page.check('#consent'); assert(!(await page.isDisabled('#startBtn'))); });
   await t('camera is off before Start', async () => assert.strictEqual(await page.evaluate(() => !document.getElementById('cam').srcObject), true));
   await page.click('#startBtn');
-  await t('camera turns on and indicator shows it', async () => { await page.waitForFunction(() => document.getElementById('camState').dataset.on === 'true', null, { timeout: 15000 }); });
-  await t('exactly 4 rings, all start idle/progress', async () => assert.strictEqual((await ringStates(page)).length, 4));
-  let shot = false, seen = new Set(), instrs = [];
-  await t('rings go orange → green one by one; instructions come one at a time', async () => {
+  await t('camera turns on after Start', async () => { await page.waitForFunction(() => !!document.getElementById('cam').srcObject, null, { timeout: 15000 }); });
+  let shot = false, pcts = new Set(), instrs = [], last = -1, rises = 0;
+  await t('percentage climbs 25 → 50 → 75 → 100 as each of the 4 steps is verified; one task at a time', async () => {
     const t0 = Date.now();
     while (Date.now() - t0 < 60000) {
-      const st = await ringStates(page); st.forEach(s => seen.add(s)); const ins = await page.textContent('#instrTxt'); if (instrs[instrs.length - 1] !== ins) instrs.push(ins);
-      if (!shot && st.filter(s => s === 'ok').length === 2) { shot = true; await page.screenshot({ path: path.join(OUT, '02-capture-midway-mobile.png') }); }
-      if (await page.isVisible('#v-result')) break; await page.waitForTimeout(120);
+      const v = parseInt(await page.textContent('#pct'), 10); pcts.add(v); if (v > last) rises++; last = v;
+      const ins = await page.getAttribute('#face', 'data-task'); if (ins && instrs[instrs.length - 1] !== ins) instrs.push(ins);
+      if (!shot && v >= 50) { shot = true; await page.screenshot({ path: path.join(OUT, '02-capture-midway-mobile.png') }); }
+      if (await page.isVisible('#popup')) break; await page.waitForTimeout(100);
     }
-    assert(seen.has('progress') && seen.has('ok'), [...seen].join());
+    for (const m of [25, 50, 75, 100]) assert(pcts.has(m), 'never showed ' + m + '% — saw ' + [...pcts].join());
   });
-  await page.waitForSelector('#v-result:not([hidden])', { timeout: 30000 });
+  await page.waitForSelector('#popup:not([hidden])', { timeout: 30000 });
   await t('success screen + camera fully released', async () => {
     assert.strictEqual(await page.getAttribute('#resBox', 'data-k'), 'ok');
     assert.strictEqual(await page.evaluate(() => document.getElementById('cam').srcObject), null);
     assert.strictEqual(await page.evaluate(async () => (await navigator.mediaDevices.enumerateDevices()).length >= 0), true);
   });
   await page.screenshot({ path: path.join(OUT, '03-success-mobile.png') });
-  await t('4 distinct random tasks were asked', async () => { const tasks = instrs.filter(x => !/Look straight|Starting|Almost/.test(x)); assert.strictEqual(new Set(tasks).size, 4, tasks.join(' | ')); });
+  await t('4 distinct random tasks were asked', async () => { assert.strictEqual(new Set(instrs).size, 4, instrs.join(' | ')); });
   await t('DB: only maturity_verified set; Hide Mature turned off by the page', async () => {
     assert.strictEqual(app.db.profiles[0].maturity_verified, true);
     const upd = await page.evaluate(() => window.__updates || []); assert(upd.some(u => u.settings && u.settings.hideMature === false), JSON.stringify(upd));
@@ -90,14 +89,14 @@ let ok = 0; const t = async (name, fn) => { try { await fn(); ok++; console.log(
   ({ ctx, page } = await pageFor(browser, app, {})); 
   await page.close(); const p2 = await ctx.newPage(); await ctx.addInitScript(() => { window.__profile = { maturity_verified: true }; });
   await p2.goto(`http://localhost:${app.port}/age-verify.html`);
-  await t('already-verified user lands on "already verified"', async () => { await p2.waitForSelector('#v-result:not([hidden])', { timeout: 8000 }); assert((await p2.textContent('#resTitle')).includes('already verified')); });
+  await t('already-verified user lands on "already verified"', async () => { await p2.waitForSelector('#popup:not([hidden])', { timeout: 8000 }); assert((await p2.textContent('#resTitle')).includes('already verified')); });
   await ctx.close(); app.stop();
 
   console.log('C. provider unavailable (no AGE_PROVIDER) → fails closed with a clear next step');
   app = await startApp({ AGE_PROVIDER: '' }); ({ ctx, page } = await pageFor(browser, app, { colorScheme: 'dark', viewport: { width: 1100, height: 800 }, deviceScaleFactor: 1 }));
   await page.screenshot({ path: path.join(OUT, '04-intro-dark-desktop.png'), fullPage: true });
   await page.check('#consent'); await page.click('#startBtn');
-  await page.waitForSelector('#v-result:not([hidden])', { timeout: 70000 });
+  await page.waitForSelector('#popup:not([hidden])', { timeout: 70000 });
   await t('error screen: unavailable, not verified, retry offered', async () => {
     assert.strictEqual(await page.getAttribute('#resBox', 'data-k'), 'err'); assert((await page.textContent('#resTitle')).includes('unavailable'));
     assert.strictEqual(app.db.profiles[0].maturity_verified, false); assert(!(await page.isHidden('#resPrimary')));
@@ -106,19 +105,20 @@ let ok = 0; const t = async (name, fn) => { try { await fn(); ok++; console.log(
   await page.screenshot({ path: path.join(OUT, '05-error-dark-desktop.png') });
   await ctx.close(); app.stop();
 
-  console.log('D. user does nothing → timeout → red ring');
+  console.log('D. user does nothing → timeout → error pop-up');
   app = await startApp({ AGE_PROVIDER: 'dev' }); ({ ctx, page } = await pageFor(browser, app));
   await page.evaluate(() => { window.__idle = true; }); await page.check('#consent'); await page.click('#startBtn');
-  await t('first ring turns red on timeout; verification not granted', async () => {
-    await page.waitForFunction(() => document.querySelector('#rg0') && document.querySelector('#rg0').dataset.s === 'err', null, { timeout: 60000 });
-    await page.screenshot({ path: path.join(OUT, '06-timeout-red-mobile.png') });
-    await page.waitForSelector('#v-result:not([hidden])', { timeout: 5000 }); assert.strictEqual(app.db.profiles[0].maturity_verified, false);
+  await t('timeout → error pop-up with Try Again + Keep Mature Hidden; verification not granted', async () => {
+    await page.waitForSelector('#popup:not([hidden])', { timeout: 70000 });
+    await page.screenshot({ path: path.join(OUT, '06-timeout-popup-mobile.png') });
+    assert.strictEqual(await page.getAttribute('#resBox', 'data-k'), 'err'); assert.strictEqual(app.db.profiles[0].maturity_verified, false);
+    assert((await page.textContent('#resPrimary')).includes('Try Again')); assert(!(await page.isHidden('#resSecondary')));
   });
   await ctx.close();
 
   console.log('E. two faces in view → guidance, never proceeds');
   ({ ctx, page } = await pageFor(browser, app)); await page.evaluate(() => { window.__two = true; }); await page.check('#consent'); await page.click('#startBtn');
-  await t('"only one person" guidance shown', async () => { await page.waitForFunction(() => /one person/i.test((document.getElementById('guide') || {}).textContent || ''), null, { timeout: 20000 }); await page.screenshot({ path: path.join(OUT, '07-multi-face-mobile.png') }); });
+  await t('"Multiple faces detected" shown on the live info line', async () => { await page.waitForFunction(() => /multiple faces/i.test((document.getElementById('info') || {}).textContent || ''), null, { timeout: 20000 }); await page.screenshot({ path: path.join(OUT, '07-multi-face-mobile.png') }); });
   await ctx.close(); app.stop();
 
   console.log(`\n${ok} checks passed; screenshots in ${OUT}`); await browser.close();

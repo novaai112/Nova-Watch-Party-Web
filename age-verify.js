@@ -19,7 +19,8 @@
     camera_busy: ['Camera is already in use', 'Close other apps or browser tabs that are using the camera, then press Try again.'],
     unsupported: ['This browser can’t run the check', 'Use the latest Chrome, Edge, Safari or Firefox on a secure (https) connection, then try again.'],
     model_load: ['Couldn’t load the face check', 'Check your internet connection and try again.'],
-    network: ['Connection problem', 'Check your internet connection and press Try again.'],
+    offline: ['You’re offline', 'Reconnect to the internet, then press Try again.'],
+    network: ['Connection problem', 'We couldn’t reach the verification service. Check your connection and press Try again. If it keeps happening, the site owner should check the server settings.'],
     timeout: ['That took too long', 'Press Try again — you’ll get new random moves. Make sure your face is clearly visible and well lit.'],
     face_not_detected: ['We couldn’t see your face clearly', 'Face the camera in good light, keep your whole face inside the oval, then try again.'],
     capture_quality: ['We couldn’t get a clear view', 'Check the light and camera lens, keep still and fully in the oval, then try again.'],
@@ -40,67 +41,83 @@
     not_configured: ['Verification isn’t available yet', 'This feature isn’t set up on this site yet. Mature content stays hidden.'],
     server_error: ['Something went wrong on our side', 'Please try again in a few minutes. Mature content stays hidden.']
   };
-  const RETRYABLE = new Set(['permission_denied', 'no_camera', 'camera_busy', 'unsupported', 'model_load', 'network', 'timeout', 'face_not_detected', 'capture_quality',
+  const RETRYABLE = new Set(['permission_denied', 'no_camera', 'camera_busy', 'unsupported', 'model_load', 'offline', 'network', 'timeout', 'face_not_detected', 'capture_quality',
     'multiple_faces', 'poor_lighting', 'challenge_failed', 'liveness_failed', 'suspicious', 'age_uncertain', 'provider_unavailable', 'invalid_signature', 'expired', 'replayed', 'invalid_session', 'server_error']);
 
   /* ---------------------------------------------------------------- state */
   let runId = 0, phase = 'idle', stream = null, track = null, landmarker = null, landmarkerP = null, FL = null;
   let baseline = null, cal, guidance, signals, session = null, stepIdx = 0, challenge = null, stepStart = 0, savedFrame = null;
-  let lastInfer = 0, frameNo = 0, lastPx = null, rafId = 0, vfcId = 0, calStart = 0, lastIssueCode = '';
+  let lastInfer = 0, frameNo = 0, lastPx = null, rafId = 0, vfcId = 0, calStart = 0, lastIssueCode = '', lastSaid = '';
+  let pctTarget = 0, pctShown = 0, uiRaf = 0;
+  const RING = 305.4;
   const video = $('cam'), overlay = $('overlay'), octx = overlay.getContext('2d');
   const pxCan = document.createElement('canvas'); pxCan.width = pxCan.height = 64; const pxCtx = pxCan.getContext('2d', { willReadFrequently: true });
 
+  /* short, one-line live messages */
+  const ISSUE = {
+    no_face: 'Face not detected', multiple_faces: 'Multiple faces detected', out_of_frame: 'Full face not detected', too_far: 'Move a little closer',
+    too_close: 'Move back a little', off_center: 'Centre your face in the circle', low_light: 'Too dark — add some light', too_bright: 'Too bright — reduce glare',
+    blur: 'Image is blurry — hold steady', obstruction: 'Remove anything covering your face'
+  };
+  const SHORT = {
+    blink_both: 'Blink both eyes', blink_twice: 'Blink twice', close_reopen: 'Close your eyes, then open', wink_left: 'Wink your left eye', wink_right: 'Wink your right eye',
+    turn_left: 'Turn your head left', turn_right: 'Turn your head right', look_up: 'Look up', look_down: 'Look down', tilt_left: 'Tilt your head left', tilt_right: 'Tilt your head right',
+    smile: 'Smile', open_mouth: 'Open your mouth'
+  };
+
   /* ---------------------------------------------------------------- tiny UI helpers */
-  const say = t => { $('liveStatus').textContent = ''; setTimeout(() => { $('liveStatus').textContent = t; }, 30); };
+  const say = t => { if (t === lastSaid) return; lastSaid = t; $('liveStatus').textContent = ''; setTimeout(() => { $('liveStatus').textContent = t; }, 30); };
   function show(view) {
-    for (const v of ['intro', 'capture', 'result']) $('v-' + v).hidden = v !== view;
-    const h = view === 'intro' ? $('introTitle') : view === 'capture' ? $('capTitle') : $('resTitle');
-    if (view !== 'capture') { h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: false }); }
+    $('v-intro').hidden = view !== 'intro'; $('v-capture').hidden = view !== 'capture';
+    document.body.style.overflow = view === 'capture' ? 'hidden' : '';
+    if (view === 'intro') { const h = $('introTitle'); h.focus({ preventScroll: true }); }
     scrollTo(0, 0);
   }
-  const camUI = on => { $('camState').dataset.on = on; $('camStateTxt').textContent = on ? 'Camera on' : 'Camera off'; $('stageOff').hidden = on; };
-  const loader = t => { $('loader').hidden = !t; if (t) $('loaderTxt').textContent = t; };
-  function buildRings() {
-    $('rings').innerHTML = '';
-    for (let i = 0; i < TOTAL; i++) {
-      const li = document.createElement('li'); li.className = 'rg'; li.dataset.s = 'idle'; li.id = 'rg' + i;
-      li.innerHTML = '<svg viewBox="0 0 50 50" aria-hidden="true"><circle class="fill" cx="25" cy="25" r="20"/><circle class="trk" cx="25" cy="25" r="20"/><circle class="arc" cx="25" cy="25" r="20"/>' +
-        '<text class="num" x="25" y="25">' + (i + 1) + '</text><path class="mark" d="" /></svg><span class="lbl">Task ' + (i + 1) + '</span><span class="sr st">Waiting</span>';
-      $('rings').append(li);
-    }
+  const loader = on => { $('loader').hidden = !on; };
+  function info(text, kind) {
+    const el = $('info'); if (el.textContent !== text) el.textContent = text; el.dataset.k = kind || '';
+    if (kind === 'err' || text !== 'Look straight at the camera') say(text);
   }
-  const TICK = 'M16 26l7 7 12-14', CROSS = 'M17 17l16 16M33 17L17 33';
-  function ring(i, s, p) {
-    const el = $('rg' + i); if (!el) return;
-    if (el.dataset.s !== s) {
-      el.dataset.s = s;
-      const m = el.querySelector('.mark');
-      if (s === 'ok' || s === 'err') { m.setAttribute('d', s === 'ok' ? TICK : CROSS); m.setAttribute('fill', 'none'); m.setAttribute('stroke', 'currentColor'); m.setAttribute('stroke-width', '4'); m.setAttribute('stroke-linecap', 'round'); m.setAttribute('stroke-linejoin', 'round'); m.style.transform = 'rotate(90deg)'; m.style.transformOrigin = 'center'; }
-      el.querySelector('.st').textContent = { idle: 'Waiting', progress: 'In progress', ok: 'Completed', err: 'Failed' }[s];
-    }
-    if (s === 'progress') el.querySelector('.arc').style.strokeDashoffset = String(125.7 * (1 - Math.max(0.06, Math.min(1, p || 0))));
-    else el.querySelector('.arc').style.strokeDashoffset = '';
+  const setTarget = v => { pctTarget = Math.max(0, Math.min(100, v)); };
+  function uiLoop(my) {          // eases the big percentage (and the ring around the face) up AND down toward the real progress
+    cancelAnimationFrame(uiRaf);
+    const tick = () => {
+      if (my !== runId || phase === 'idle') return;
+      const d = pctTarget - pctShown; pctShown += Math.abs(d) < 0.15 ? d : d * (REDUCED ? 1 : 0.14);
+      const v = Math.round(pctShown); const pe = $('pct'); if (pe.textContent !== v + '%') pe.textContent = v + '%';
+      $('ringFg').style.strokeDashoffset = String(RING * (1 - pctShown / 100));
+      if (phase === 'done' && pctShown === pctTarget) return;          // finished easing after the run ended
+      uiRaf = requestAnimationFrame(tick);
+    };
+    uiRaf = requestAnimationFrame(tick);
   }
-  function guide(issue) {
-    const g = $('guide'), st = $('stage');
-    if (!issue) { g.hidden = true; st.dataset.g = phase === 'task' || phase === 'calibrate' ? 'ok' : 'idle'; return; }
-    g.hidden = false; g.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg><span></span>';
-    g.lastChild.textContent = issue.text; st.dataset.g = 'warn';
-    if (issue.code !== lastIssueCode) say(issue.text);
+  function resetPct() { pctTarget = pctShown = 0; $('pct').textContent = '0%'; $('ringFg').style.strokeDashoffset = String(RING); }
+  function showIssue(issue) {
+    const f = $('face');
+    if (!issue) { f.dataset.g = phase === 'task' || phase === 'calibrate' ? 'ok' : 'idle'; return; }
+    f.dataset.g = 'warn';
   }
 
   /* ---------------------------------------------------------------- API (server decides; we only relay evidence) */
-  async function api(action, body) {
+  async function api(action, body, tries) {
+    if (navigator.onLine === false) throw { code: 'offline' };
     const { data } = await Nova.sb.auth.getSession();
     if (!data.session) throw { code: 'unauthorized' };
-    const ac = new AbortController(), tm = setTimeout(() => ac.abort(), 25000);
+    const ac = new AbortController(), tm = setTimeout(() => ac.abort(), 30000);
     let r;
     try {
       r = await fetch('/api/age-verify', { method: 'POST', credentials: 'omit', cache: 'no-store', signal: ac.signal,
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + data.session.access_token }, body: JSON.stringify(Object.assign({ action }, body)) });
-    } catch (e) { throw { code: 'network' }; } finally { clearTimeout(tm); }
+    } catch (e) {
+      if ((tries || 0) < 1 && action === 'start') { await new Promise(res => setTimeout(res, 700)); return api(action, body, 1); }   // one quiet retry; 'start' is safe to repeat
+      throw { code: navigator.onLine === false ? 'offline' : 'network' };
+    } finally { clearTimeout(tm); }
     let j = null; try { j = await r.json(); } catch (e) { /* non-JSON */ }
-    if (!r.ok || !j || !j.ok) throw { code: (j && j.error) || (r.status === 404 ? 'not_configured' : 'server_error') };
+    if (!r.ok || !j || !j.ok) {
+      const code = (j && j.error) || (r.status === 404 ? 'not_configured' : 'server_error');
+      if ((tries || 0) < 1 && action === 'start' && (code === 'network' || code === 'server_error')) { await new Promise(res => setTimeout(res, 900)); return api(action, body, 1); }
+      throw { code };
+    }
     return j;
   }
 
@@ -115,14 +132,13 @@
     try { await video.play(); } catch (e) { throw { code: 'camera_busy' }; }
     track.addEventListener('ended', () => { if (phase !== 'idle' && phase !== 'done') failRun('no_camera'); });
     track.addEventListener('mute', () => { signals && signals.flag('track_muted'); });
-    camUI(true);
-  }
+      }
   function stopCamera() {                              // called on every exit path: success, failure, cancel, leaving the page
     cancelAnimationFrame(rafId); rafId = 0;
     if (video.cancelVideoFrameCallback && vfcId) { try { video.cancelVideoFrameCallback(vfcId); } catch (e) { } vfcId = 0; }
     if (stream) stream.getTracks().forEach(t => { try { t.stop(); } catch (e) { } });
-    stream = null; track = null; video.srcObject = null; camUI(false);
-    octx.clearRect(0, 0, overlay.width, overlay.height); $('stage').dataset.scan = 'false';
+    stream = null; track = null; video.srcObject = null;
+    octx.clearRect(0, 0, overlay.width, overlay.height); $('face').dataset.scan = 'false';
   }
   function loadLandmarker() {
     if (landmarker) return Promise.resolve(landmarker);
@@ -144,19 +160,17 @@
   function supported() { return !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.WebAssembly); }
 
   async function begin() {
-    const my = ++runId; phase = 'boot'; savedFrame = null; session = null; stepIdx = 0; challenge = null; baseline = null; lastIssueCode = '';
-    cal = E.createCalibrator(); guidance = E.createGuidance(); signals = E.createSignals(); buildRings();
-    $('stageMsg').hidden = true; guide(null); $('stage').dataset.g = 'idle';
-    $('stepLbl').textContent = 'Getting ready'; $('instrTxt').textContent = 'Starting your camera…'; $('hintTxt').textContent = ''; $('timerBar').style.transform = 'scaleX(1)';
-    show('capture'); loader('Starting camera…');
+    const my = ++runId; phase = 'boot'; savedFrame = null; session = null; stepIdx = 0; challenge = null; baseline = null; lastIssueCode = ''; lastSaid = '';
+    cal = E.createCalibrator(); guidance = E.createGuidance(); signals = E.createSignals();
+    closePopup(); resetPct(); showIssue(null); $('face').dataset.g = 'idle'; delete $('face').dataset.task;
+    info('Starting camera…'); show('capture'); loader(true); uiLoop(my);
     try {
       if (!supported()) throw { code: 'unsupported' };
       await openCamera(); if (my !== runId) return stopCamera();
-      loader('Loading face check…'); const lm = await loadLandmarker(); if (my !== runId) return stopCamera();
+      info('Loading face check…'); const lm = await loadLandmarker(); if (my !== runId) return stopCamera();
       for (const f of E.inspectCamera({ label: track.label, settings: track.getSettings(), muted: track.muted, readyState: track.readyState })) signals.flag(f);
-      loader(null); phase = 'calibrate'; calStart = performance.now(); $('stage').dataset.scan = REDUCED ? 'false' : 'true';
-      $('stepLbl').textContent = 'Get in position'; $('instrTxt').textContent = 'Look straight at the camera'; $('hintTxt').textContent = 'Keep your face inside the oval and hold still';
-      say('Camera is on. Look straight at the camera and hold still.');
+      loader(false); phase = 'calibrate'; calStart = performance.now(); $('face').dataset.scan = REDUCED ? 'false' : 'true';
+      info('Look straight at the camera'); $('capTitle').focus({ preventScroll: true });
       startLoop(my, lm);
     } catch (e) { if (my === runId) failRun(e && e.code || 'unsupported'); }
   }
@@ -195,18 +209,19 @@
     signals.push(f, res.faceLandmarks && res.faceLandmarks[0], frame, now);
     E.derive(f, baseline || E.DEFAULT_BASELINE);
     draw(res, f);
-    indicators(f);
     if (DEBUG) debug(f);
     if (phase === 'submit' || phase === 'done') return;
 
     let issue = E.checkFrame(f, lastPx);
-    if (issue && issue.code === 'no_face' && lastPx && lastPx.mean < E.CFG.lumaLow) issue = { code: 'low_light', block: true, text: 'It’s too dark. Face a window or turn on a light.' };
-    const shown = guidance.update(issue, now); guide(shown); lastIssueCode = shown ? shown.code : '';
+    if (issue && issue.code === 'no_face' && lastPx && lastPx.mean < E.CFG.lumaLow) issue = { code: 'low_light', block: true, text: '' };
+    const shown = guidance.update(issue, now); showIssue(shown); lastIssueCode = shown ? shown.code : '';
     const blocked = !!(shown && shown.block);
+    const issueText = shown ? (ISSUE[shown.code] || shown.text) : '';
 
     if (phase === 'calibrate') {
+      setTarget(0);
+      if (blocked) info(issueText, 'err'); else info('Look straight at the camera');
       if (!blocked && cal.push(f)) {
-        const p = cal.count() / E.CFG.calibrateFrames; $('hintTxt').textContent = 'Hold still… ' + Math.min(99, Math.round(p * 100)) + '%';
         if (cal.ready()) { baseline = cal.baseline(); return startSession(my); }
       }
       if (now - calStart > 30000) failRun(lastPx && lastPx.mean < E.CFG.lumaLow ? 'poor_lighting' : f.faceCount > 1 ? 'multiple_faces' : 'face_not_detected');
@@ -214,51 +229,48 @@
     }
     if (phase === 'task' && challenge) {
       const st = challenge.update(f, now, blocked);
-      ring(stepIdx, 'progress', st.progress);
-      $('timerBar').style.transform = 'scaleX(' + (st.limitMs ? Math.max(0, st.leftMs / st.limitMs) : 1) + ')';
-      if (!blocked && st.hint) $('hintTxt').textContent = st.hint; else if (blocked) $('hintTxt').textContent = 'Paused — fix the picture, then continue';
+      setTarget(stepIdx * 25 + Math.min(1, st.progress) * 24);          // drops back if the person loses the pose or leaves the frame
+      if (blocked) info(issueText || 'Hold on — adjust your position', 'err');
+      else info(st.hint && st.hint !== challenge.def.text ? st.hint : (SHORT[challenge.id] || challenge.def.text));
       if (st.done) return submitStep(st, now, my);
       if (st.failed) return failStep(st.reason === 'capture_quality' ? (f.faceCount > 1 ? 'multiple_faces' : lastPx && lastPx.mean < E.CFG.lumaLow ? 'poor_lighting' : 'capture_quality') : st.reason === 'timeout' ? 'timeout' : 'challenge_failed');
     }
   }
 
   async function startSession(my) {
-    phase = 'submit'; $('stage').dataset.scan = 'false'; loader('Preparing your check…');
+    phase = 'submit'; $('face').dataset.scan = 'false'; loader(true); info('Preparing your check…');
     try {
       const r = await api('start', {}); if (my !== runId) return;
       if (r.already) return success(true);
-      session = r; loader(null); beginStep(r.step);
+      session = r; loader(false); $('face').dataset.scan = REDUCED ? 'false' : 'true'; beginStep(r.step);
     } catch (e) { if (my === runId) failRun(e.code || 'server_error'); }
   }
 
   function beginStep(step) {
-    stepIdx = step.index; challenge = E.createChallenge(step.id, baseline); stepStart = performance.now(); phase = 'task';
-    for (let i = 0; i < TOTAL; i++) if (i > stepIdx) ring(i, 'idle');
-    ring(stepIdx, 'progress', 0);
-    $('stepLbl').textContent = 'Task ' + (stepIdx + 1) + ' of ' + TOTAL; $('instrTxt').textContent = step.text; $('hintTxt').textContent = 'Look straight at the camera first';
-    $('timerBar').style.transform = 'scaleX(1)'; say('Task ' + (stepIdx + 1) + ' of ' + TOTAL + ': ' + step.text);
+    stepIdx = step.index; challenge = E.createChallenge(step.id, baseline); stepStart = performance.now(); phase = 'task'; $('face').dataset.task = step.id;
+    setTarget(stepIdx * 25); info('Look straight at the camera');
   }
 
   async function submitStep(st, now, my) {
     phase = 'submit'; const ev = E.stepEvidence(challenge.id, st, stepStart, now); const idx = stepIdx;
+    setTarget((idx + 1) * 25);                                          // this step is verified: 25 / 50 / 75 / 100 %
     try {
       const r = await api('step', { nonce: session.nonce, index: idx, evidence: ev }); if (my !== runId) return;
-      ring(idx, 'ok'); say('Task ' + (idx + 1) + ' complete.');
       if (r.done) return finalize(my);
       session.step = r.step; guidance.reset(); beginStep(r.step);
-    } catch (e) { if (my === runId) { ring(idx, 'err'); failRun(e.code || 'server_error', 700); } }
+    } catch (e) { if (my === runId) { setTarget(idx * 25); failRun(e.code || 'server_error', 500); } }
   }
-  function failStep(code) { ring(stepIdx, 'err'); failRun(code, 700); }
+  function failStep(code) { failRun(code, 500); }
 
   async function finalize(my) {
-    $('stepLbl').textContent = 'Finishing up'; $('instrTxt').textContent = 'Almost done'; $('hintTxt').textContent = 'Camera is switching off…';
+    info('Verifying your face…');
     savedFrame = grabFrame();                // one still frame, kept in memory only until the server answers
     const summary = signals.summary(); session.signals = summary;
     stopCamera();                            // camera processing ends here, before any network wait
     await sendFinish(my);
   }
   async function sendFinish(my) {
-    phase = 'submit'; show('capture'); loader('Checking your result securely…');
+    phase = 'submit'; show('capture'); loader(true); setTarget(100); info('Verifying your face…');
     try {
       await api('finish', { nonce: session.nonce, signals: session.signals, frame: savedFrame });
       if (my !== runId) return;
@@ -272,41 +284,50 @@
     } catch (e) { return null; }
   }
 
-  /* ---------------------------------------------------------------- outcomes */
+  /* ---------------------------------------------------------------- outcomes (shown in a pop-up) */
+  function openPopup() { const p = $('popup'); p.hidden = false; $('resTitle').focus({ preventScroll: true }); }
+  function closePopup() { $('popup').hidden = true; }
+  function result(kind, title, text, note, code) {
+    $('resBox').dataset.k = kind; $('resTitle').textContent = title; $('resText').textContent = text || '';
+    const n = $('resNote'); n.hidden = !note; n.textContent = note || '';
+    const c = $('resCode'); c.hidden = !code; c.textContent = code ? 'Error code: ' + code : '';
+    $('resMark').setAttribute('d', kind === 'ok' ? 'M20 33l8 8 17-18' : 'M23 23l18 18M41 23L23 41');
+    const els = [document.querySelector('#resBox .icon circle'), $('resMark')];
+    for (const el of els) { el.style.animation = 'none'; void el.getBoundingClientRect(); el.style.animation = ''; }
+    $('resPrimary').hidden = false; openPopup();
+  }
   async function success(already) {
-    phase = 'done'; stopCamera(); savedFrame = null;
+    phase = 'done'; stopCamera(); savedFrame = null; setTarget(100); loader(false); showIssue(null); $('face').dataset.g = 'ok';
     try { Nova.maturityVerified = true; await Nova.set('hideMature', false); } catch (e) { /* settings sync is retried by the profile page */ }
-    result('ok', already ? 'You’re already verified' : 'Verified — you’re 18+', 'Mature content can now be switched on or off in Settings whenever you like. You won’t be asked to verify again.', null);
-    $('resPrimary').textContent = 'Continue'; $('resPrimary').onclick = () => location.href = nextParam; $('resSecondary').hidden = true;
-    setTimeout(() => { if (phase === 'done' && !$('v-result').hidden && $('resBox').dataset.k === 'ok') location.href = nextParam; }, REDUCED ? 6000 : 3500);
+    info('Verified', 'ok'); const my = runId;
+    setTimeout(() => {                                                 // let the ring visibly reach 100% first
+      if (my !== runId) return;
+      result('ok', already ? 'You’re already verified' : 'Verified — you’re 18+', 'Mature content can now be switched on or off in Settings whenever you like. You won’t be asked to verify again.');
+      $('resPrimary').textContent = 'Continue'; $('resPrimary').onclick = () => location.href = nextParam; $('resSecondary').hidden = true;
+      setTimeout(() => { if (phase === 'done' && !$('popup').hidden && $('resBox').dataset.k === 'ok') location.href = nextParam; }, REDUCED ? 6000 : 3500);
+    }, REDUCED ? 0 : 900);
   }
   function failRun(code, delay, canRetryFinish) {
     if (phase === 'done') return;
-    const my = runId; phase = canRetryFinish ? 'submit' : 'done'; if (!canRetryFinish) { savedFrame = null; } stopCamera(); loader(null);
+    const my = runId; phase = canRetryFinish ? 'submit' : 'done'; if (!canRetryFinish) { savedFrame = null; } stopCamera(); loader(false);
+    $('face').dataset.g = 'warn'; $('face').dataset.scan = 'false';
     setTimeout(() => {
       if (my !== runId) return;
-      const m = OUT[code] || OUT.server_error;
-      result('err', m[0], m[1], null);
-      const retry = RETRYABLE.has(code);
-      $('resNext').hidden = false; $('resNextTxt').textContent = m[1]; $('resText').textContent = 'No mature content has been unlocked.';
+      const m = OUT[code] || OUT.server_error, retry = RETRYABLE.has(code);
+      info(m[0], 'err');
+      result('err', m[0], m[1], 'No mature content has been unlocked.', DEBUG || code === 'network' || code === 'not_configured' || code === 'server_error' ? code : '');
       const p = $('resPrimary'); p.hidden = !retry && code !== 'unauthorized';
       if (code === 'unauthorized') { p.textContent = 'Sign in'; p.onclick = () => location.href = 'index.html?next=' + encodeURIComponent('age-verify.html'); }
-      else if (canRetryFinish && savedFrame && (code === 'provider_unavailable' || code === 'network' || code === 'invalid_signature') && session) { p.textContent = 'Try again'; p.onclick = () => { const r = ++runId; sendFinish(r); }; }
-      else { p.textContent = 'Try again'; p.onclick = () => { savedFrame = null; begin(); }; }
+      else if (canRetryFinish && savedFrame && (code === 'provider_unavailable' || code === 'network' || code === 'invalid_signature' || code === 'offline') && session) { p.textContent = 'Try Again'; p.onclick = () => { closePopup(); const r = ++runId; sendFinish(r); uiLoop(r); }; }
+      else { p.textContent = 'Try Again'; p.onclick = () => { savedFrame = null; begin(); }; }
       $('resSecondary').hidden = false; $('resSecondary').onclick = () => location.href = nextParam;
       say(m[0] + '. ' + m[1]);
     }, delay || 0);
   }
-  function result(kind, title, text) {
-    $('resBox').dataset.k = kind; $('resTitle').textContent = title; $('resText').textContent = text || ''; $('resNext').hidden = true;
-    $('resMark').setAttribute('d', kind === 'ok' ? 'M38 62l15 15 30-32' : 'M42 42l36 36M78 42L42 78');
-    const m = $('resMark'); m.style.animation = 'none'; void m.getBoundingClientRect(); m.style.animation = '';
-    const a = document.querySelector('.big-ring .a'); a.style.animation = 'none'; void a.getBoundingClientRect(); a.style.animation = '';
-    $('resPrimary').hidden = false; show('result');
-  }
-  function cancel() { runId++; phase = 'idle'; stopCamera(); savedFrame = null; session = null; loader(null); show('intro'); }
+  function cancel() { runId++; phase = 'idle'; cancelAnimationFrame(uiRaf); stopCamera(); savedFrame = null; session = null; loader(false); closePopup(); show('intro'); }
 
-  /* ---------------------------------------------------------------- drawing + indicators (cheap, per frame) */
+  /* ---------------------------------------------------------------- drawing: sparse "face mesh" like a scan animation */
+  const MESH = [10, 54, 284, 127, 356, 234, 454, 21, 251, 70, 105, 334, 300, 33, 133, 263, 362, 168, 1, 205, 425, 61, 291, 17, 152, 172, 397, 93, 323];
   function sizeOverlay() {
     const r = overlay.getBoundingClientRect(), d = Math.min(2, window.devicePixelRatio || 1), w = Math.round(r.width * d), h = Math.round(r.height * d);
     if (overlay.width !== w || overlay.height !== h) { overlay.width = w; overlay.height = h; }
@@ -316,56 +337,36 @@
     const d = sizeOverlay(), cw = overlay.width, ch = overlay.height; octx.clearRect(0, 0, cw, ch);
     if (!f.face || !res.faceLandmarks[0]) return;
     const lm = res.faceLandmarks[0], vw = video.videoWidth, vh = video.videoHeight, sc = Math.max(cw / vw, ch / vh), ox = (cw - vw * sc) / 2, oy = (ch - vh * sc) / 2;
-    const X = p => p.x * vw * sc + ox, Y = p => p.y * vh * sc + oy;
-    const good = !(guidance && guidance.current());
-    octx.lineWidth = Math.max(1.5, 1.6 * d); octx.lineCap = 'round';
-    const sets = FL ? [[FL.FACE_LANDMARKS_FACE_OVAL, 'rgba(255,255,255,.55)'], [FL.FACE_LANDMARKS_LIPS, '#fda4af'], [FL.FACE_LANDMARKS_LEFT_EYEBROW, '#fde68a'], [FL.FACE_LANDMARKS_RIGHT_EYEBROW, '#fde68a']] : [];
-    const eyeCol = (f.eyeL > 0.55 || f.eyeR > 0.55) ? '#fb923c' : '#7dd3fc';
-    if (FL) { sets.push([FL.FACE_LANDMARKS_LEFT_EYE, f.eyeL > 0.55 ? '#fb923c' : eyeCol], [FL.FACE_LANDMARKS_RIGHT_EYE, f.eyeR > 0.55 ? '#fb923c' : eyeCol]); }
-    for (const [conn, col] of sets) {
-      if (!conn) continue; octx.strokeStyle = good ? col : 'rgba(255,255,255,.35)'; octx.beginPath();
-      for (const c of conn) { const a = lm[c.start], b = lm[c.end]; if (a && b) { octx.moveTo(X(a), Y(a)); octx.lineTo(X(b), Y(b)); } }
-      octx.stroke();
+    const pts = [];
+    for (const i of MESH) { const p = lm[i]; if (p) pts.push([p.x * vw * sc + ox, p.y * vh * sc + oy]); }
+    const bad = !!(guidance && guidance.current());
+    octx.lineWidth = Math.max(1, 1.1 * d); octx.lineCap = 'round'; octx.strokeStyle = bad ? 'rgba(255,214,211,.75)' : 'rgba(255,255,255,.8)';
+    octx.beginPath();                                     // each point joins its 3 nearest neighbours → light triangulated mesh
+    for (let i = 0; i < pts.length; i++) {
+      const near = pts.map((q, j) => [j, Math.hypot(q[0] - pts[i][0], q[1] - pts[i][1])]).filter(a => a[0] !== i).sort((a, b) => a[1] - b[1]).slice(0, 3);
+      for (const [j] of near) { octx.moveTo(pts[i][0], pts[i][1]); octx.lineTo(pts[j][0], pts[j][1]); }
     }
-    octx.fillStyle = '#34d399';                       // nose + key points
-    for (const i of [1, 4, 168, 33, 263, 61, 291, 152]) { const p = lm[i]; if (p) { octx.beginPath(); octx.arc(X(p), Y(p), 2.2 * d, 0, 6.283); octx.fill(); } }
-  }
-  function indicators(f) {
-    const set = (id, v) => { const el = $(id); el.dataset.closed = v > 0.55; el.querySelector('i').style.height = Math.round(Math.max(0, Math.min(1, v)) * 100) + '%'; };
-    if (f.face) {
-      set('eyeL', f.eyeL || 0); set('eyeR', f.eyeR || 0);
-      const dx = Math.max(-1, Math.min(1, -f.yaw / 35)) * 30, dy = Math.max(-1, Math.min(1, -f.pitch / 20)) * 30;   // mirrored preview: your left = screen left
-      $('headDot').style.transform = 'translate(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px) rotate(' + (-(f.rollRel || 0)).toFixed(0) + 'deg)';
-    } else { set('eyeL', 0); set('eyeR', 0); $('headDot').style.transform = ''; }
+    octx.stroke(); octx.fillStyle = bad ? '#ffd6d3' : '#fff';
+    for (const p of pts) { octx.beginPath(); octx.arc(p[0], p[1], 2.6 * d, 0, 6.283); octx.fill(); }
   }
   function debug(f) {
     const d = $('debug'); d.hidden = false;
     d.textContent = ['phase ' + phase, f.face ? 'yaw ' + f.yaw.toFixed(1) + ' pitch ' + f.pitch.toFixed(1) + ' roll ' + f.rollRel.toFixed(1) : 'no face',
       f.face ? 'eyeL ' + f.eyeL.toFixed(2) + ' eyeR ' + f.eyeR.toFixed(2) + ' smile ' + f.smile.toFixed(2) + ' mouth ' + f.mouthOpen.toFixed(2) : '',
-      f.face ? 'fill ' + f.fill.toFixed(2) + ' ctr ' + f.cx.toFixed(2) + ',' + f.cy.toFixed(2) + ' anatomy ' + f.anatomyOk : '',
-      lastPx ? 'luma ' + lastPx.mean.toFixed(0) + ' lap ' + lastPx.lapVar.toFixed(0) + ' clip ' + lastPx.clipHigh.toFixed(2) : ''].join('\n');
+      lastPx ? 'luma ' + lastPx.mean.toFixed(0) + ' lap ' + lastPx.lapVar.toFixed(0) : ''].join('\n');
   }
 
   /* ---------------------------------------------------------------- wiring */
-  function initTheme() {
-    $('themeBtn').onclick = () => {
-      const cur = document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'), nx = cur === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', nx); try { localStorage.setItem('nova-watch-theme', nx); } catch (e) { }
-    };
-  }
   async function init() {
-    initTheme();
-    $('backLink').href = nextParam; $('declineLink').href = nextParam;
+    $('backLink').href = nextParam;
     if (!window.isSecureContext) {
-      const c = $('chipSecure'); c.classList.add('bad'); c.lastChild.textContent = 'Not a secure connection';
       const e = $('introError'); e.hidden = false; e.textContent = 'The camera only works on a secure (https) connection. Open Nova using its https address.';
     }
     $('consent').addEventListener('change', e => { $('startBtn').disabled = !e.target.checked || !window.isSecureContext; });
     $('startBtn').addEventListener('click', () => { if ($('consent').checked) begin(); });
     $('cancelBtn').addEventListener('click', cancel);
-    $('restartBtn').addEventListener('click', () => { runId++; stopCamera(); begin(); });
     // privacy: never keep the camera running in the background or after leaving
-    document.addEventListener('visibilitychange', () => { if (document.hidden && stream) { cancel(); const e = $('introError'); e.hidden = false; e.textContent = 'The check was stopped and your camera switched off because you left this page. Start again when you’re ready.'; } });
+    document.addEventListener('visibilitychange', () => { if (document.hidden && stream) { cancel(); const e = $('introError'); e.hidden = false; e.textContent = 'The scan was stopped and your camera switched off because you left this page. Start again when you’re ready.'; } });
     addEventListener('pagehide', () => { runId++; stopCamera(); });
     const user = await Nova.requireAuth(); if (!user) return;
     try { const { data } = await Nova.sb.from('profiles').select('maturity_verified').eq('id', user.id).single(); if (data && data.maturity_verified) { Nova.maturityVerified = true; result('ok', 'You’re already verified', 'Your account is already confirmed as 18+. Switch mature content on or off in Settings — no new check is needed.'); $('resPrimary').textContent = 'Back to settings'; $('resPrimary').onclick = () => location.href = nextParam; $('resSecondary').hidden = true; return; } } catch (e) { /* column may not exist yet; the server will report */ }
