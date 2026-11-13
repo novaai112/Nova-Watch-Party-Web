@@ -171,6 +171,29 @@ const go = async (page, port, hash = '#info') => { await page.goto(`http://local
       assert(/public_profiles'\)\.select\('id,full_name,username,avatar_url,country,country_code,city,region,location_lat,location_lng'\)/.test(roomSrc)); assert(roomSrc.includes("Nova.geo.line(u, { cls: 'sm left' })")); });
     await ctx.close(); }
 
+  console.log('G. location stays up to date; switching Hide Location OFF refreshes immediately');
+  const OLD = { country: 'India', country_code: 'IN', city: 'Old Town', region: 'Haryana', location_lat: 29.1, location_lng: 76.1 };
+  const flip = (page, on) => page.evaluate(v => { const el = document.querySelector('input[data-k="hideLoc"]'); el.checked = v; el.dispatchEvent(new Event('change', { bubbles: true })); }, on);
+  { const { ctx, page } = await newPage(browser, port, { grant: true, profile: Object.assign({}, OLD, { location_updated_at: new Date(Date.now() - 36e5).toISOString(), settings: { hideLoc: true } }) });
+    await go(page, port); await page.waitForTimeout(3500);
+    await t('Hide Location ON: nothing new is collected on a visit (old place kept, stays hidden)', async () => { assert.strictEqual((await page.evaluate(() => window.__updates || [])).length, 0); });
+    await page.goto(`http://localhost:${port}/profile.html#settings`); await page.waitForSelector('input[data-k="hideLoc"]');
+    await t('switching Hide Location ON does not request the location', async () => { await flip(page, true); await page.waitForTimeout(1500); const ups = await page.evaluate(() => window.__updates || []); assert(ups.some(u => u.settings), 'the setting itself was saved'); assert.strictEqual(ups.filter(u => 'location_lat' in u).length, 0); });
+    await t('switching Hide Location OFF refreshes the location immediately (Old Town → Ludhiana) and says so', async () => {
+      await flip(page, false); await page.waitForFunction(() => (window.__updates || []).some(u => u.city), null, { timeout: 8000 });
+      const u = await page.evaluate(() => window.__updates.find(x => x.city)); assert.deepStrictEqual([u.city, u.region, u.country_code, u.location_lat, u.location_lng], ['Ludhiana', 'Punjab', 'IN', 30.9, 75.86]);
+      assert(/Location updated/.test(await page.textContent('#toasts'))); });
+    await ctx.close(); }
+  { const { ctx, page } = await newPage(browser, port, { grant: true, profile: Object.assign({}, OLD, { location_updated_at: new Date(Date.now() - 36e5).toISOString(), settings: {} }) });
+    await go(page, port);
+    await t('location visible + older than 5 min: refreshed automatically on the visit', async () => {
+      await page.waitForFunction(() => (window.__updates || []).length > 0, null, { timeout: 9000 }); assert.strictEqual((await page.evaluate(() => window.__updates[0])).city, 'Ludhiana'); });
+    await ctx.close(); }
+  { const { ctx, page } = await newPage(browser, port, { grant: true, profile: Object.assign({}, OLD, { location_updated_at: new Date(Date.now() - 60e3).toISOString(), settings: {} }) });
+    await go(page, port); await page.waitForTimeout(3500);
+    await t('updated under 5 minutes ago: not refreshed again (no needless geocoder calls)', async () => { assert.strictEqual((await page.evaluate(() => window.__updates || [])).length, 0); });
+    await ctx.close(); }
+
   await browser.close(); server.close();
   console.log(`\n${ok} passed, ${bad} failed — screenshots in ${OUT}`); if (bad) process.exit(1);
 })();

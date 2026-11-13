@@ -609,7 +609,8 @@ document.addEventListener('change',async e=>{const x=e.target;
   /* first time: the toggle stays ON (content hidden) until the live 18+ check succeeds */
   if(await ask('Verify you are 18+','To show mature content we first need a quick live face check (about 30 seconds, one time only). Until it succeeds, mature content stays hidden.','Start verification',false))location.href='age-verify.html?next='+encodeURIComponent('profile.html#settings');
   return}
- await Nova.set(k,x.checked)});
+ await Nova.set(k,x.checked);
+ if(k==='hideLoc'&&!x.checked&&Nova.geo)Nova.geo.onUnhide()});
 window.addEventListener('hashchange',()=>{route();scrollTo(0,0)});
 DESK.addEventListener?DESK.addEventListener('change',()=>route()):DESK.addListener(()=>route());
 sb.auth.onAuthStateChange(ev=>{if(ev==='SIGNED_OUT')location.href='index.html'});

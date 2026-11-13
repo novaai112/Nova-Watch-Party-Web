@@ -151,6 +151,7 @@
     return Object.assign({ text: G.text(row) }, row);
   };
 
+  const REFRESH_MS = 5 * 60 * 1000;                              // minimum gap between automatic refreshes
   const FAIL = {
     denied: 'Location is blocked for this site. Allow it from the lock icon in the address bar, then try again.',
     timeout: 'Finding your location took too long. Please try again.',
@@ -191,12 +192,18 @@
     try {
       const { data } = await sb.auth.getSession(); if (!data.session) return;
       const uid = data.session.user.id;
-      const { data: me, error } = await sb.from('profiles').select('country_code,location_updated_at').eq('id', uid).single();
+      const { data: me, error } = await sb.from('profiles').select('country_code,location_updated_at,settings').eq('id', uid).single();
       if (error || !me) return;                                    // columns not created yet: stay quiet
       const age = me.location_updated_at ? Date.now() - Date.parse(me.location_updated_at) : Infinity, DAY = 864e5;
+      const hidden = !!(me.settings && me.settings.hideLoc);
       const st = await permState();
       if (st === 'denied') return;
-      if (st === 'granted') { if (age > 6 * 36e5) { G._busy = true; try { await G.refresh(); } catch (e) { /* silent */ } finally { G._busy = false; } } return; }
+      if (st === 'granted') {
+        // Location visible -> keep it current on every visit (at most once per 5 minutes). Hide Location ON -> collect nothing new
+        // (unless the country, i.e. the flag, is still unknown).
+        if ((!hidden || !me.country_code) && age > REFRESH_MS) { G._busy = true; try { await G.refresh(); } catch (e) { /* silent */ } finally { G._busy = false; } }
+        return;
+      }
       if (me.country_code && age < 30 * DAY) return;               // already known recently
       const key = 'nova_geo_later_' + uid, later = +localStorage.getItem(key) || 0;
       if (Date.now() - later < (me.country_code ? 7 : 1) * DAY) return;
@@ -204,6 +211,14 @@
       if (choice === 'allow') await G.request({}); else { try { localStorage.setItem(key, String(Date.now())); } catch (e) { /* ignore */ } }
     } catch (e) { /* location is optional: never break the page */ }
   };
+
+  /* Called when the user switches Hide Location OFF: show their CURRENT place straight away. */
+  G.onUnhide = () => G.request({});
+  let lastVis = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || Date.now() - lastVis < 30000) return;
+    lastVis = Date.now(); G.ensure();
+  });
 
   function boot() {
     if (/(^|\/)(index|login|age-verify)(\.html)?$/.test(location.pathname)) return;

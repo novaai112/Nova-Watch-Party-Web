@@ -1,0 +1,5 @@
+# Python 3.10 or 3.11 is the safest choice for TensorFlow/DeepFace.
+deepface>=0.0.93
+tf-keras>=2.16
+opencv-python-headless>=4.9
+numpy>=1.26
