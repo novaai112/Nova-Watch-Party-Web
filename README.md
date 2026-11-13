@@ -24,6 +24,7 @@ Static website + Supabase, with Vercel serverless API routes. No build step; dep
 | `api/x.js` | X (Twitter) post video detector: `/api/x?url=<post link>` returns whether the post has a video and its MP4/HLS address |
 | `api/drive.js` | Google Drive checker: `/api/drive?url=` says if a file link is a playable video, `/api/drive?folder=` lists a shared folder |
 | `api/twitch.js` | Twitch checker: `/api/twitch?url=` detects a channel / past video / clip, `?top=1` lists live channels, `?channel=` lists a channel's live status, videos and clips (no key needed) |
+| `room-media.js` / `room-media.css` / `room-media-schema.sql` | Watch-room attachment picker (same as the friends chat, minus Contact and voice notes) and its database setup |
 | `supabase/functions/chat-media-search/` | Authenticated Unsplash photo search plus GIPHY and KLIPY media search |
 
 ## 1. Database
@@ -171,3 +172,6 @@ Both have the same two options, ending in one "Add to room?" popup:
 - **Paste link** - detects the video and asks before adding.
 - **Continue to Website** - X: type a profile and tap one of its video posts (Nova's own list via `/api/x?user=`, since X's embedded timeline no longer loads reliably). Twitch: live channels, or open a channel for its past broadcasts and clips.
 Twitch plays in Twitch's official player (`parent` is set to your site's host name automatically); it is shared but cannot be time-synced.
+
+## 8. Watch-room attachments
+The room message bar has the same paperclip menu as the friends chat: Document, Photos & videos, Camera, Audio, Unsplash, GIPHY, KLIPY (voice notes are not duplicated: the room already has its mic). Run **`room-media-schema.sql`** once in the Supabase SQL Editor (after `rooms-schema.sql`): it adds `room_messages.attachments`, allows attachment-only messages, and creates the private `room-media` bucket (members of the room can read, you can only upload to your own folder). Until it is run, text chat keeps working and attaching a file shows a hint. The Contact option was removed from the friends chat, and its GIPHY entry is now just "GIPHY".

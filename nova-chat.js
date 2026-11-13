@@ -343,9 +343,8 @@
             <button class=media-menu-item data-media-action="gallery">${ic('image',18)}<span>Photos &amp; videos</span></button>
             <button class=media-menu-item data-media-action="camera">${ic('camera',18)}<span>Camera</span></button>
             <button class=media-menu-item data-media-action="audio">${ic('mic',18)}<span>Audio</span></button>
-            <button class=media-menu-item data-media-action="contact">${ic('users',18)}<span>Contact</span></button>
             <button class=media-menu-item data-media-provider="unsplash"><i class="media-brand unsplash-brand">U</i><span>Unsplash Photos</span></button>
-            <button class=media-menu-item data-media-provider="giphy"><i class="media-brand giphy-brand">GIF</i><span>GIPHY GIFs, Stickers &amp; more</span></button>
+            <button class=media-menu-item data-media-provider="giphy"><i class="media-brand giphy-brand">GIF</i><span>GIPHY</span></button>
             <button class=media-menu-item data-media-provider="klipy"><i class="media-brand klipy-brand">K</i><span>KLIPY</span></button>
           </div>
           <div id=mediaProviderPanel class=media-provider-panel hidden></div>

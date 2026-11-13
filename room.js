@@ -159,6 +159,7 @@ function cleanup(keepShell) {
   clearInterval(hbT); clearInterval(tickT); hbT = tickT = null;
   if (ch) { try { sb.removeChannel(ch); } catch (e) {} ch = null; }
   closeAllPeers(); stopMic();
+  if (window.NovaRoomMedia) NovaRoomMedia.reset();
   clearInterval(vadT); vadT = null; vad.clear(); speak.clear(); micMap.clear();
   destroyPlayer();
   R = null; members = []; queue = []; msgs = []; mountKey = '';
@@ -213,11 +214,19 @@ async function refreshQueue() {
   await loadProfiles(queue.map(q => q.added_by));
   renderVote(); renderSheet(); renderBadges();
 }
+/* room_messages.attachments exists once room-media-schema.sql was run; chat keeps working without it */
+let msgCols = 'id,user_id,kind,body,attachments,created_at';
+const MEDIA = () => window.NovaRoomMedia;
 async function loadMsgs() {
-  const { data } = await sb.from('room_messages').select('id,user_id,kind,body,created_at')
+  let { data, error } = await sb.from('room_messages').select(msgCols)
     .eq('room_id', R.id).order('created_at', { ascending: false }).limit(60);
+  if (error && /attachments/i.test(error.message || '')) {
+    msgCols = 'id,user_id,kind,body,created_at';
+    ({ data } = await sb.from('room_messages').select(msgCols).eq('room_id', R.id).order('created_at', { ascending: false }).limit(60));
+  }
   msgs = (data || []).reverse();
   await loadProfiles(msgs.map(m => m.user_id));
+  if (MEDIA()) MEDIA().sign(msgs).then(got => { if (got) renderFeed(); });
 }
 function subscribe() {
   const id = R.id;
@@ -254,6 +263,7 @@ function addMsg(m) {
   msgs.push(m);
   if (Nova.S.translate && m.kind === 'chat') Nova.tr(m.body).then(t => { if (t !== m.body) { m.tr = t; renderFeed(); } });
   loadProfiles([m.user_id]).then(renderFeed);
+  if (MEDIA() && Array.isArray(m.attachments) && m.attachments.length) MEDIA().sign([m]).then(got => { if (got) renderFeed(); });
 }
 async function beat() {
   if (!R) return;
@@ -714,8 +724,10 @@ function buildShell() {
       <div class="vbar" id="vbar" hidden></div>
       <div class="feed" id="feed"></div>
       <div class="mentions" id="mentions" hidden></div>
+      ${MEDIA() ? MEDIA().markup() : ''}
       <div class="cin" id="cin">
         <button class="micb" id="micb" data-r="mic" aria-label="Microphone"></button>
+        ${MEDIA() ? MEDIA().buttonHTML() : ''}
         <input id="cmsg" placeholder="Message" maxlength="500" autocomplete="off" enterkeyhint="send">
         <button class="ib2 tool" data-r="share" aria-label="Invite friends">${ic('userplus', 22)}</button>
         <button class="sendb" data-r="send" aria-label="Send message">${ic('send', 20)}</button>
@@ -724,6 +736,7 @@ function buildShell() {
   </div>
   <div id="rsheet"></div>`;
   document.body.appendChild(el);
+  if (MEDIA()) MEDIA().onChange = syncTyping;
   el.addEventListener('click', onClick);
   el.addEventListener('input', onInput);
   el.addEventListener('change', onChange);
@@ -872,7 +885,9 @@ function msgHTML(m) {
   const me = m.user_id === ME.id;
   const text = esc(m.tr || m.body).replace(/@([\w.]{2,24})/g, (a, n) =>
     members.some(x => (who(x.user_id).username || '').toLowerCase() === n.toLowerCase()) ? `<span class="mn">${a}</span>` : a);
-  return `<div class="cm${me ? ' me' : ''}">${userAvatar(u, 32)}<div class="cb2">${me ? '' : `<small>${esc(nm(u))}</small>`}<p>${text}</p></div></div>`;
+  const att = MEDIA() && Array.isArray(m.attachments) && m.attachments.length ? MEDIA().render(m.attachments) : '';
+  const time = m.created_at ? `<time>${new Date(m.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>` : '';
+  return `<div class="cm${me ? ' me' : ''}">${userAvatar(u, 32)}<div class="cb2">${me ? '' : `<small>${esc(nm(u))}</small>`}${text ? `<p>${text}</p>` : ''}${att ? `<div class="message-attachments">${att}</div>` : ''}${time}</div></div>`;
 }
 /* "Now playing" notice: a normal centred chat line that scrolls away with the conversation */
 function noteNow(m) {
@@ -907,15 +922,31 @@ function renderFeed() {
   f.innerHTML = h;
   if (near || ui.first) { f.scrollTop = f.scrollHeight; ui.first = false; }
 }
-function syncTyping() { const c = $('#cin'), i = $('#cmsg'); if (c && i) c.classList.toggle('has-text', !!i.value.trim()); }
+function syncTyping() { const c = $('#cin'), i = $('#cmsg'); if (c && i) c.classList.toggle('has-text', !!i.value.trim() || !!(MEDIA() && MEDIA().count())); }
+let sending = false;
 async function sendMsg() {
-  const i = $('#cmsg'); if (!i || !R) return;
-  const body = i.value.trim().slice(0, 500); if (!body) return;
-  i.value = ''; $('#mentions').hidden = true; syncTyping();
-  const { data, error } = await sb.from('room_messages').insert({ room_id: R.id, user_id: ME.id, body, kind: 'chat' })
-    .select('id,user_id,kind,body,created_at').single();
-  if (error) { toast(error.message, 'err'); i.value = body; return; }
-  addMsg(data);
+  const i = $('#cmsg'); if (!i || !R || sending) return;
+  const body = i.value.trim().slice(0, 500);
+  const hasMedia = !!(MEDIA() && MEDIA().count());
+  if (!body && !hasMedia) return;
+  sending = true;
+  const btn = $('.sendb'); if (btn) btn.disabled = true;
+  try {
+    let attachments = [], cleanup = null;
+    if (hasMedia) { const r = await MEDIA().prepare(R.id, ME.id); attachments = r.attachments; cleanup = r.cleanup; }
+    const row = { room_id: R.id, user_id: ME.id, body, kind: 'chat' };
+    if (attachments.length) row.attachments = attachments;
+    const { data, error } = await sb.from('room_messages').insert(row).select(msgCols).single();
+    if (error) {
+      if (cleanup) cleanup();
+      throw new Error(/attachments|room_messages_/i.test(error.message || '') && attachments.length ? 'Photos and files need room-media-schema.sql to be run in Supabase once.' : error.message);
+    }
+    i.value = ''; $('#mentions').hidden = true;
+    if (hasMedia) MEDIA().reset();
+    syncTyping();
+    addMsg(data);
+  } catch (e) { toast(e.message || 'Message was not sent.', 'err'); }
+  finally { sending = false; if (btn) btn.disabled = false; }
 }
 
 /* sheets */
