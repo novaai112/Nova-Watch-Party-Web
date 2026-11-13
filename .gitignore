@@ -31,3 +31,7 @@ Rave Screenshot 2/
 supabase/.temp/
 
 
+
+age-provider/.env
+age-provider/.venv/
+__pycache__/
