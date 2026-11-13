@@ -1,5 +1,3 @@
-const tlsTrust = require('../tls-trust');
-tlsTrust.configureSystemCa();
 const https = require('https');
 const http = require('http');
 const zlib = require('zlib');
@@ -781,7 +779,7 @@ function proxyMediaStream(targetUrl, refererUrl, req, res, redirects = 5) {
   upstreamReq.on('error', (err) => {
     if (!res.headersSent) {
       res.statusCode = 502;
-      res.end(tlsTrust.errorMessage(err, 'Stream request failed.'));
+      res.end(((err && err.message) || 'Stream request failed.'));
     }
   });
   upstreamReq.end();
@@ -928,7 +926,7 @@ module.exports = async function handler(req, res) {
   } catch (err) {
     res.statusCode = 502;
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    return res.end(`<!DOCTYPE html><html><body style="background:#121212;color:#e8eaed;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><div style="text-align:center;"><h3>Unable to load webpage</h3><p style="color:#9aa0a6;">${escapeHtml(tlsTrust.errorMessage(err, 'Connection failed'))}</p></div></body></html>`);
+    return res.end(`<!DOCTYPE html><html><body style="background:#121212;color:#e8eaed;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><div style="text-align:center;"><h3>Unable to load webpage</h3><p style="color:#9aa0a6;">${escapeHtml(((err && err.message) || 'Connection failed'))}</p></div></body></html>`);
   }
 };
 

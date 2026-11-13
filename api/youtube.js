@@ -1,5 +1,3 @@
-const tlsTrust = require('../tls-trust');
-tlsTrust.configureSystemCa();
 
 /* /api/youtube — server-side YouTube Data API proxy.
    The key lives in the Vercel env var YOUTUBE_API_KEY, so visitors never see or enter a key.
@@ -92,7 +90,7 @@ module.exports = async (req, res) => {
   } catch (e) {
     const quota = e.reason === 'quotaExceeded' || e.reason === 'dailyLimitExceeded' || e.reason === 'rateLimitExceeded';
     return send(res, quota ? 429 : (e.status && e.status < 600 ? e.status : 502), {
-      error: quota ? 'YouTube search is busy right now. Please try again in a little while.' : tlsTrust.errorMessage(e, 'YouTube request failed'),
+      error: quota ? 'YouTube search is busy right now. Please try again in a little while.' : ((e && e.message) || 'YouTube request failed'),
       reason: e.reason || ''
     });
   }

@@ -1,5 +1,3 @@
-const tlsTrust = require('../tls-trust');
-tlsTrust.configureSystemCa();
 const https = require('https');
 const http = require('http');
 const { URL } = require('url');
@@ -240,7 +238,7 @@ module.exports = async function handler(req, res) {
   } catch (err) {
     res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json');
-    return res.end(JSON.stringify({ error: tlsTrust.errorMessage(err, 'Extraction failed'), streams: [] }));
+    return res.end(JSON.stringify({ error: ((err && err.message) || 'Extraction failed'), streams: [] }));
   }
 };
 

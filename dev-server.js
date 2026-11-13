@@ -2,9 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
-const tlsTrust = require('./tls-trust');
 
-tlsTrust.configureSystemCa();
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -24,10 +22,10 @@ loadEnvFile(path.join(__dirname, '.env.local'));
 loadEnvFile(path.join(__dirname, '.env'));
 
 const websearchHandler = require('./api/websearch');
-const chatMediaSearchHandler = require('./api/chat-media-search');
 const browseHandler = require('./api/browse');
 const extractHandler = require('./api/extract');
 const configHandler = require('./api/config');
+const mediaPreviewHandler = require('./api/media-preview');
 let youtubeHandler = null;
 try {
   youtubeHandler = require('./api/youtube');
@@ -54,10 +52,10 @@ const server = http.createServer(async (req, res) => {
     const pathname = parsedUrl.pathname;
 
     if (pathname === '/api/websearch') return await websearchHandler(req, res);
-    if (pathname === '/api/chat-media-search') return await chatMediaSearchHandler(req, res);
     if (pathname === '/api/browse') return await browseHandler(req, res);
     if (pathname === '/api/extract') return await extractHandler(req, res);
     if (pathname === '/api/config') return configHandler(req, res);
+    if (pathname === '/api/media-preview') return mediaPreviewHandler(req, res);
     if (pathname === '/api/youtube' && youtubeHandler) return await youtubeHandler(req, res);
 
     let safePath = path.normalize(decodeURIComponent(pathname)).replace(/^(\.\.[/\\])+/, '');

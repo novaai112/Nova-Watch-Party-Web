@@ -355,7 +355,7 @@ var S={
  ,likes:{t:'Likes',sc:1,r:'s'},history:{t:'History',r:'s'}
 };
 /* ---- Likes & History (saved on this device, never duplicated) ---- */
-function key(v){return v.id||v.pl||v.t}
+function key(v){return v.id||v.pl||v.url||v.t}
 function lst(k){var seen={},o=[];ld(k,[]).forEach(function(v){var q=key(v);if(!seen[q]){seen[q]=1;o.push(v)}});return o}
 function addH(v){var a=lst('nova.h').filter(function(x){return key(x)!==key(v)});a.unshift(v);sv('nova.h',a.slice(0,100))}
 function isL(v){return lst('nova.likes').some(function(x){return key(x)===key(v)})}
@@ -366,6 +366,7 @@ S.likes.b=showSaved('nova.likes');S.history.b=showSaved('nova.h');
 /* ---- in-app YouTube search/play (official YouTube Data API + embed player) ---- */
 function play(v){
   if(v.id||v.pl){launch(NovaAdd.ytMedia({id:v.id,pl:v.pl,title:v.t,thumb:v.th,live:v.d==='LIVE'}),{dur:/^\d/.test(v.d||'')?v.d:'',channel:v.ch});return}
+  if(v.url){var savedMedia=mediaFrom(v.url,v.t);if(savedMedia){if(v.th)savedMedia.thumb=v.th;launch(savedMedia);return}}
   NovaAdd.ytSearch({q:v.t,type:'video'}).then(function(j){var x=j.items[0];if(!x){alert('No video found');return}v.id=x.id;launch(NovaAdd.ytMedia(x),{dur:x.dur,channel:x.channel})}).catch(function(err){alert(err.message)})
 }
 function sbox(ph,go,init){
@@ -497,7 +498,7 @@ scr.addEventListener('input',function(ev){ev.target.classList&&ev.target.classLi
 if(/^#p-(\w+)/.test(location.hash)){var m0=/^#p-(\w+)/.exec(location.hash);if(S[m0[1]])open(m0[1],false)}
 })();
 </script>
-<script src="room.js?v=2"></script>
+<script src="room.js?v=3"></script>
 <script src="mobile-navigation.js?v=2"></script>
 </body>
 </html>

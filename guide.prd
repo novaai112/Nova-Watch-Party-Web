@@ -14,10 +14,10 @@ finishing one does not automatically configure the others.
 | Documents, photos, videos, audio files, and voice notes | Run `schema.sql` and then `chat-schema.sql` in the correct Supabase project |
 | Contact cards | Same database setup; these are Nova accepted-friend profiles, not the device address book |
 | Camera capture | A supported browser/device, HTTPS (or localhost), and camera permission |
-| DuckDuckGo Images/GIFs, GIPHY GIFs/stickers, KLIPY GIFs/stickers | Deploy `chat-media-search`; configure optional GIPHY/KLIPY provider keys |
+| Unsplash photos, GIPHY media, KLIPY GIFs/stickers/Clips/Memes/AI Emoji | Deploy `chat-media-search`; configure the Unsplash Access Key and optional GIPHY/KLIPY provider keys |
 
-Provider search is optional. File uploads and contact cards do not require
-DuckDuckGo, GIPHY, or KLIPY configuration.
+Chat media search is optional. File uploads and contact cards do not require
+Unsplash, GIPHY, or KLIPY configuration.
 
 ## Prerequisites
 
@@ -49,14 +49,11 @@ attachments are stored in the private bucket. The app creates signed download
 links that expire after one hour. Re-running the SQL is important if your
 existing bucket predates the current accepted file types.
 
-## 2. Deploy the GIPHY/KLIPY media-search Edge Function
+## 2. Deploy the Unsplash/GIPHY/KLIPY media-search Edge Function
 
-GIPHY and KLIPY chat searches call the `chat-media-search` function in the
+Unsplash, GIPHY, and KLIPY chat searches call the `chat-media-search` function in the
 Supabase project configured by the website. A function 404 means it is missing
 from that project, or the website points to a different project.
-DuckDuckGo chat searches use the authenticated `/api/chat-media-search` route
-and the laptop DDG bridge described in the README; they do not call this Edge
-Function.
 
 From PowerShell, in this project folder:
 
@@ -85,26 +82,34 @@ Do not treat opening this URL in a browser as a successful search test. The
 function accepts authenticated POST requests from the signed-in chat UI, not a
 plain browser GET.
 
-## 3. Configure optional media providers
+## 3. Configure media providers
 
 In the Supabase Dashboard for the same project, open **Edge Functions** →
 **Secrets** and add:
 
 | Feature | Supabase secret(s) | Notes |
 |---|---|---|
+| Unsplash photo search | `UNSPLASH_ACCESS_KEY` | Use a fresh Access Key; requests stay server-side. The Unsplash Secret Key is not needed for search. |
 | GIPHY GIFs and stickers | `GIPHY_API_KEY` | Create an API key in the GIPHY developer portal |
-| KLIPY GIFs and stickers | `KLIPY_API_KEY` | Create an API key with access to the KLIPY search API |
+| GIPHY Clips, Emoji, and animated Text | `GIPHY_SDK_API_KEY` | Use a GIPHY SDK key; animated Text may require a new SDK key. Clips API access requires GIPHY approval. |
+| KLIPY GIFs, stickers, Clips, Memes, and AI Emoji search | `KLIPY_API_KEY` | Uses region-aware ranking, a stable signed-in user ID, and `content_filter=high`; ensure the key has access to each API |
 
-DuckDuckGo chat image/GIF search requires no API key. In local development its
-requests run from the laptop; production sends them through the same
-token-protected laptop/ngrok bridge as web search. The bridge uses DDG's
-undocumented image endpoint, which may still challenge or rate-limit requests;
-Nova does not bypass those checks. GIF mode only accepts direct `.gif` media
-URLs, so GIF results are best-effort. Follow the README's DDG bridge setup and
-keep the local service and tunnel online for production chat searches.
-GIPHY and KLIPY require provider API keys; follow their current account, quota,
-and attribution requirements. Do not paste secret values into this guide,
-source code, browser developer tools, or public issue reports.
+Unsplash search uses its Access Key from the Edge Function secret. Results
+hotlink the image URLs returned by Unsplash, show photographer and Unsplash
+attribution links, and trigger the returned download-tracking URL before a
+message containing the photo is sent. The app does not use the Unsplash Secret
+Key or implement OAuth.
+GIPHY and KLIPY require provider keys; follow their current account, quota, and
+attribution requirements. GIPHY Clips search requires approval from GIPHY.
+Emoji and animated Text use GIPHY's JavaScript SDK; animated Text is generated
+from the exact phrase entered in the Text tab. Do not paste secret values into
+this guide, source code, browser developer tools, or public issue reports.
+KLIPY media searches use the browser locale for regional ranking and request
+the provider's `high` content filter. KLIPY Clips come from its up-to-10-second
+catalog; the AI Emoji tab searches and browses the provider's library. KLIPY Ads are intentionally disabled;
+enabling them requires separate opt-in and Partner access. The public KLIPY API
+does not document Mini Games, so no game tab is included. KLIPY attribution
+requirements are reflected in the picker placeholder and provider label.
 
 Supabase automatically provides `SUPABASE_URL` and `SUPABASE_ANON_KEY` to Edge
 Functions. They are listed in `.env.example` for reference; they are not
@@ -116,6 +121,7 @@ CLI. Replace placeholders locally:
 
 ```powershell
 npx supabase secrets set GIPHY_API_KEY="<your-new-key>" --project-ref $projectRef
+npx supabase secrets set GIPHY_SDK_API_KEY="<your-sdk-key>" --project-ref $projectRef
 npx supabase secrets set KLIPY_API_KEY="<your-key>" --project-ref $projectRef
 ```
 
@@ -128,10 +134,11 @@ npx supabase secrets unset GOOGLE_CSE_API_KEY GOOGLE_CSE_ID YANDEX_SEARCH_API_KE
 
 ### Credential safety
 
-GIPHY/KLIPY API keys must stay in Supabase Edge Function secrets. Never put
-them in `config.js`, `nova-chat.js`, HTML, or any other browser-delivered file.
-Revoke/rotate any key exposed in browser code or chat. DuckDuckGo search needs
-no provider key. `.env.example` is a reference template, not a secure vault or
+Unsplash, GIPHY, and KLIPY provider keys must stay in Supabase Edge Function
+secrets. Never put them in `config.js`, `nova-chat.js`, HTML, or any other
+browser-delivered file. Revoke/rotate any key exposed in browser code or chat;
+the Unsplash Secret Key is not required for this feature and should not be
+configured. `.env.example` is a reference template, not a secure vault or
 automatic deployment mechanism.
 
 ## 4. Deploy the website
@@ -173,13 +180,15 @@ Use two signed-in accounts and ensure they are accepted friends.
 7. Test voice recording with microphone permission: record, pause/resume, finish,
    play the preview, remove it, and record again. Voice notes are limited to
    three minutes and 20 MiB and are not sent until the user presses Send.
-8. Start the local DDG bridge and ngrok tunnel for production, then search for
-   images and GIFs with DuckDuckGo. Search, select, send, and confirm the
-   recipient can view the item. If the GIF search has no direct `.gif` results,
-   try another query; DuckDuckGo may challenge or rate-limit the request.
-9. For each optional GIPHY or KLIPY provider whose key you configured, search
-   for a term, select a GIF or sticker, send it, and confirm the recipient can
-   view it.
+8. Search Unsplash photos, select and send one, and confirm the recipient sees
+   the photo with both the photographer profile link and Unsplash photo link.
+   Verify sending does not proceed when Unsplash download tracking fails.
+9. For GIPHY, search and send GIFs and stickers. With a GIPHY SDK key, browse
+   animated Emoji and type a phrase in Text to generate/send its animated
+   version. With GIPHY Clips access approved, search and send a Clip, then
+   verify its audio plays in chat. For KLIPY, search and send GIFs, stickers,
+   Clips, Memes, and AI Emoji; verify clips with audio play in chat and the
+   content filter and locale are passed to KLIPY.
 10. Repeat one upload and one media search from a mobile browser.
 
 ## 6. Diagnose common failures
@@ -190,8 +199,10 @@ Use two signed-in accounts and ensure they are accepted friends.
 | `Unsupported media provider` | The deployed Edge Function is outdated or belongs to a different project. Deploy the current `chat-media-search` function to the project ref from the site's `SUPABASE_URL` environment variable, then refresh the page. |
 | Sign-in/session or HTTP 401 error | Sign in again, verify the browser is using the correct Supabase project, and retry from the chat page. |
 | GIPHY/KLIPY HTTP 401 or 403 | The API key may be invalid, revoked, or lacking provider access. Check the provider account and update its server secret if needed. |
-| DuckDuckGo HTTP 429 or missing search token | DuckDuckGo may be challenging or rate-limiting requests from the laptop bridge. Wait and retry later, or use GIPHY/KLIPY. Nova does not bypass access checks. |
-| DuckDuckGo GIF search returns no results | GIF mode accepts direct `.gif` media URLs only. Try another query; some animated images use URLs that cannot be identified as GIF files. |
+| GIPHY Emoji or animated Text is unavailable | Set `GIPHY_SDK_API_KEY` in Supabase Edge Function secrets; animated Text requires a GIPHY SDK key. |
+| GIPHY Clips search is denied | Clips API access is approval-only. Request access from GIPHY and configure an enabled SDK key. |
+| Unsplash search reports missing or invalid credentials | Set a fresh `UNSPLASH_ACCESS_KEY` in the same Supabase project's Edge Function secrets and redeploy. The Secret Key is not needed. |
+| Unsplash photo-use tracking fails | Check the Supabase Edge Function logs and Unsplash API status/quota; the chat intentionally blocks sending until tracking succeeds. |
 | Provider HTTP 429 | The provider is rate-limiting requests. Wait before retrying and use **Load more results** only when needed. |
 | Search returns no results | Try a different query, confirm the selected provider and media type are supported, and check provider access. |
 | Upload is rejected or attachment cannot be opened | Confirm both SQL files ran in the correct project, re-run the current `chat-schema.sql`, check the private bucket and its policies, and keep each file under 20 MiB. |

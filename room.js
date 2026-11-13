@@ -765,14 +765,15 @@ function renderVoice() {
 function renderNow() {
   $$('#feed [data-event-index]').forEach(button => {
     const event = ui.events[Number(button.dataset.eventIndex)];
-    if (!event || !event.media || event.media.kind !== 'youtube' || !window.NovaApp) return;
+    if (!event || !canLike(event.media)) return;
     const liked = NovaApp.isLiked(likeItem(event.media));
     button.classList.toggle('on', liked);
     button.setAttribute('aria-label', liked ? 'Unlike video' : 'Like video');
     button.innerHTML = ic('heart', 18).replace('fill="none"', liked ? 'fill="currentColor"' : 'fill="none"');
   });
 }
-const likeItem = m => ({ t: m.title, id: m.id, pl: m.pl, d: '', a: '#222', b: '#444', x: '', th: m.thumb || thumb(m) });
+const canLike = m => !!(m && ['youtube', 'video', 'embed'].includes(m.kind) && window.NovaApp);
+const likeItem = m => ({ t: m.title || 'Video', id: m.id, pl: m.pl, url: m.url, kind: m.kind, provider: m.provider, d: '', a: '#222', b: '#444', x: '', th: m.thumb || thumb(m) });
 
 function renderControls() {
   const el = $('#ctl'); if (!el) return;
@@ -849,8 +850,9 @@ function noteNow(m) {
 }
 function nowHTML(e, index) {
   const media = e.media || {};
-  const liked = media.kind === 'youtube' && window.NovaApp && NovaApp.isLiked(likeItem(media));
-  return `<div class="nowm"><div class="nowc">${e.th ? `<img src="${esc(e.th)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : `<span class="nowi">${ic('play', 14)}</span>`}<span class="nowt"><small>Now playing</small><b>${esc(e.title)}</b></span>${media.kind === 'youtube' ? `<button class="cb${liked ? ' on' : ''}" data-r="like" data-event-index="${index}" aria-label="${liked ? 'Unlike video' : 'Like video'}">${ic('heart', 18).replace('fill="none"', liked ? 'fill="currentColor"' : 'fill="none"')}</button>` : ''}</div></div>`;
+  const canLikeMedia = canLike(media);
+  const liked = canLikeMedia && NovaApp.isLiked(likeItem(media));
+  return `<div class="nowm"><div class="nowc">${e.th ? `<img src="${esc(e.th)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : `<span class="nowi">${ic('play', 14)}</span>`}<span class="nowt"><small>Now playing</small><b>${esc(e.title)}</b></span>${canLikeMedia ? `<button class="cb${liked ? ' on' : ''}" data-r="like" data-event-index="${index}" aria-label="${liked ? 'Unlike video' : 'Like video'}">${ic('heart', 18).replace('fill="none"', liked ? 'fill="currentColor"' : 'fill="none"')}</button>` : ''}</div></div>`;
 }
 function cardsHTML() {
   /* only the one-time "who can join?" question for a new room's admin — invite link & share apps were removed */
@@ -1089,7 +1091,7 @@ function onClick(e) {
   else if (r === 'like') {
     const event = d.eventIndex == null ? null : ui.events[Number(d.eventIndex)];
     const media = event ? event.media : R.media;
-    if (media && media.kind === 'youtube' && window.NovaApp) {
+    if (canLike(media)) {
       NovaApp.toggleLike(likeItem(media));
       renderNow();
     }

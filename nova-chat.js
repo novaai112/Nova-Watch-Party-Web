@@ -344,8 +344,8 @@
             <button class=media-menu-item data-media-action="camera">${ic('camera',18)}<span>Camera</span></button>
             <button class=media-menu-item data-media-action="audio">${ic('mic',18)}<span>Audio</span></button>
             <button class=media-menu-item data-media-action="contact">${ic('users',18)}<span>Contact</span></button>
-            <button class=media-menu-item data-media-provider="duckduckgo"><i class="media-brand duckduckgo-brand">D</i><span>DuckDuckGo Images &amp; GIFs</span></button>
-            <button class=media-menu-item data-media-provider="giphy"><i class="media-brand giphy-brand">GIF</i><span>GIPHY</span></button>
+            <button class=media-menu-item data-media-provider="unsplash"><i class="media-brand unsplash-brand">U</i><span>Unsplash Photos</span></button>
+            <button class=media-menu-item data-media-provider="giphy"><i class="media-brand giphy-brand">GIF</i><span>GIPHY GIFs, Stickers &amp; more</span></button>
             <button class=media-menu-item data-media-provider="klipy"><i class="media-brand klipy-brand">K</i><span>KLIPY</span></button>
           </div>
           <div id=mediaProviderPanel class=media-provider-panel hidden></div>
@@ -378,7 +378,12 @@
         const remote = safeRemoteMedia(attachment.url, attachment.type, attachment.name);
         if (!remote) throw new Error('A shared media link is invalid or no longer supported.');
         const href = esc(remote.url), name = esc(attachment.name || remote.name);
-        if (remote.type.startsWith('image/')) return `<a class=message-image href="${href}" target=_blank rel=noopener><img src="${href}" alt="${name}" loading=lazy></a>`;
+        if (remote.type.startsWith('image/')) {
+          const image = `<a class=message-image href="${href}" target=_blank rel=noopener><img src="${href}" alt="${name}" loading=lazy></a>`;
+          const attribution = safeUnsplashAttribution(attachment.attribution);
+          if (!attribution) return image;
+          return `<figure class=message-image-credit>${image}<figcaption>Photo by <a href="${esc(attribution.photographerUrl)}" target=_blank rel="noopener noreferrer">${esc(attribution.photographer)}</a> on <a href="${esc(attribution.photoUrl)}" target=_blank rel="noopener noreferrer">Unsplash</a></figcaption></figure>`;
+        }
         if (remote.type.startsWith('video/')) return `<video class=message-video controls preload=metadata src="${href}"></video>`;
         if (remote.type.startsWith('audio/')) return `<audio class=message-audio controls preload=metadata src="${href}"></audio>`;
         throw new Error('A shared media link has an unsupported media type.');
@@ -583,6 +588,34 @@
     renderPending();
   }
 
+  function safeUnsplashLink(value) {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'https:' || url.username || url.password || !['unsplash.com', 'www.unsplash.com'].includes(url.hostname)) return null;
+      url.searchParams.set('utm_source', 'nova_watch_party');
+      url.searchParams.set('utm_medium', 'referral');
+      return url.href;
+    } catch { return null; }
+  }
+
+  function safeUnsplashAttribution(value) {
+    if (!value || typeof value !== 'object') return null;
+    const photographer = String(value.photographer || '').trim().slice(0, 120);
+    const photographerUrl = safeUnsplashLink(value.photographerUrl);
+    const photoUrl = safeUnsplashLink(value.photoUrl);
+    return photographer && photographerUrl && photoUrl ? { photographer, photographerUrl, photoUrl } : null;
+  }
+
+  function safeUnsplashDownloadLocation(value, photoId) {
+    try {
+      const url = new URL(value);
+      const match = url.pathname.match(/^\/photos\/([A-Za-z0-9_-]+)\/download\/?$/);
+      if (url.protocol !== 'https:' || url.hostname !== 'api.unsplash.com' || url.username || url.password ||
+          !match || match[1] !== photoId) return null;
+      return url.href;
+    } catch { return null; }
+  }
+
   function safeRemoteMedia(value, typeHint = '', nameHint = '') {
     try {
       const url = new URL(value);
@@ -593,7 +626,7 @@
         mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/mp4', ogv: 'video/ogg',
         mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', weba: 'audio/webm'
       };
-      const type = /^image\/(?:\*|jpeg|png|gif|webp|avif)$/.test(typeHint)
+      const type = /^video\/(?:mp4|webm)$/.test(typeHint) || /^image\/(?:\*|jpeg|png|gif|webp|avif)$/.test(typeHint)
         ? typeHint : types[extension];
       if (!type) return null;
       let name = nameHint;
@@ -603,11 +636,21 @@
     } catch { return null; }
   }
 
-  function addRemoteMedia(value, type = '', name = '') {
+  function addRemoteMedia(value, type = '', name = '', details = {}) {
     const media = safeRemoteMedia(value.trim(), type, name);
     if (!media) {
       Nova.toast('This media result is not a supported HTTPS image, GIF, video, or audio file.', 'err');
       return;
+    }
+    if (mediaProvider === 'unsplash') {
+      const attribution = safeUnsplashAttribution(details.attribution);
+      const photoId = typeof details.photoId === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(details.photoId) ? details.photoId : '';
+      const downloadLocation = safeUnsplashDownloadLocation(details.downloadLocation, photoId);
+      if (!attribution || !downloadLocation || !photoId) {
+        Nova.toast('Unsplash photo attribution or download tracking is missing. Choose another photo.', 'err');
+        return;
+      }
+      Object.assign(media, { provider: 'unsplash', photoId, downloadLocation, attribution, downloadTracked: false });
     }
     if (pendingFiles.length + pendingRemote.length + pendingContacts.length >= MAX_ATTACHMENTS) {
       Nova.toast(`You can attach up to ${MAX_ATTACHMENTS} items per message.`, 'err');
@@ -669,31 +712,104 @@
     if (!target) return;
     target.classList.toggle('media-mixed-results', mediaProvider === 'giphy' || mediaProvider === 'klipy');
     if (!items.length && !append) {
-      const mediaHint = mediaKind === 'all' ? 'Loading popular GIFs and stickers…' : mediaKind === 'sticker' ? 'Search for stickers' : mediaKind === 'gif' ? 'Search for GIFs' : 'Search to see results here';
+      const mediaHint = mediaKind === 'all' ? 'Loading popular GIFs and stickers…'
+        : mediaKind === 'sticker' ? 'Loading stickers…'
+          : mediaKind === 'clip' ? `Loading ${mediaProvider.toUpperCase()} Clips with sound…`
+            : mediaKind === 'meme' ? 'Loading KLIPY Memes…'
+              : mediaKind === 'emoji' ? (mediaProvider === 'giphy' ? 'Loading animated emoji…' : 'Loading KLIPY AI Emoji…')
+                : mediaKind === 'text' ? 'Type the exact words you want to animate'
+                  : mediaKind === 'gif' ? 'Loading GIFs…'
+                    : mediaProvider === 'unsplash' ? 'Search Unsplash photos' : 'Search to see results here';
       target.innerHTML = `<p class=chat-hint>${mediaHint}</p>`;
       return;
     }
     const offset = append ? mediaSearchItems.length - items.length : 0;
-    const markup = items.map((item, index) =>
-      `<button class=media-result data-media-result="${offset + index}" aria-label="Attach ${item.mediaKind === 'sticker' ? 'sticker' : item.mediaKind === 'image' ? 'image' : 'GIF'}: ${esc(item.title)}"><img src="${esc(item.preview)}" alt="" loading=lazy></button>`
-    ).join('');
+    const markup = items.map((item, index) => {
+      const label = ({
+        clip: 'clip with sound',
+        emoji: 'animated emoji',
+        image: 'image',
+        meme: 'meme',
+        sticker: 'sticker',
+        text: 'animated text'
+      })[item.mediaKind] || 'GIF';
+      const badge = item.mediaKind === 'clip' ? 'Clip + sound'
+        : item.mediaKind === 'meme' ? 'Meme'
+          : item.mediaKind === 'emoji' ? 'AI Emoji' : '';
+      const preview = mediaPreviewSource(item.preview);
+      const original = mediaPreviewSource(item.url);
+      const fallbackList = [
+        item.type?.startsWith('image/') && original && original !== preview ? original : '',
+        mediaProxySource(item.preview),
+        item.type?.startsWith('image/') ? mediaProxySource(item.url) : ''
+      ].filter((value, i, all) => value && value !== preview && all.indexOf(value) === i);
+      const fallback = fallbackList.length ? `data-media-fallbacks="${esc(fallbackList.join('\n'))}"` : '';
+      if (mediaProvider === 'unsplash') {
+        const attribution = safeUnsplashAttribution(item.attribution);
+        const credit = attribution
+          ? `<span class=media-result-credit>Photo by <a href="${esc(attribution.photographerUrl)}" target=_blank rel="noopener noreferrer">${esc(attribution.photographer)}</a> on <a href="${esc(attribution.photoUrl)}" target=_blank rel="noopener noreferrer">Unsplash</a></span>`
+          : '';
+        return `<div class="media-result media-result-unsplash"><button data-media-result="${offset + index}" aria-label="Attach photo: ${esc(item.title)}"><img src="${esc(preview)}" alt="" loading=lazy decoding=async referrerpolicy=no-referrer ${fallback}></button>${credit}</div>`;
+      }
+      return `<button class="media-result${item.mediaKind === 'clip' ? ' media-result-clip' : ''}" data-media-result="${offset + index}" aria-label="Attach ${label}: ${esc(item.title)}"><img src="${esc(preview)}" alt="" loading=lazy decoding=async referrerpolicy=no-referrer ${fallback}>${badge ? `<span class=media-result-badge>${badge}</span>` : ''}</button>`;
+    }).join('');
     if (append) target.insertAdjacentHTML('beforeend', markup);
     else target.innerHTML = markup;
   }
+
+  function mediaPreviewSource(value) {
+    try {
+      const url = new URL(value, window.location.href);
+      if (url.protocol !== 'https:' || url.username || url.password) return '';
+      return url.href;
+    } catch {
+      return '';
+    }
+  }
+
+  function mediaProxySource(value) {
+    try {
+      const url = new URL(value);
+      return url.hostname.endsWith('klipy.com') || url.hostname.endsWith('klipy.co')
+        ? `/api/media-preview?url=${encodeURIComponent(url.href)}`
+        : '';
+    } catch {
+      return '';
+    }
+  }
+
+  document.addEventListener('error', event => {
+    const image = event.target;
+    if (!(image instanceof HTMLImageElement) || !image.closest('.media-result')) return;
+    const queue = (image.dataset.mediaFallbacks || '').split('\n').filter(Boolean);
+    const next = queue.shift();
+    if (next && image.src !== next) {
+      image.dataset.mediaFallbacks = queue.join('\n');
+      image.src = next;
+      return;
+    }
+    const button = image.closest('button');
+    const label = document.createElement('span');
+    label.className = 'media-result-unavailable-label';
+    label.textContent = 'Preview unavailable';
+    image.replaceWith(label);
+    if (button) button.disabled = true;
+  }, true);
 
   async function mediaSearchError(error) {
     const response = error?.context;
     if (response instanceof Response) {
       if (response.status === 404) {
-        if (new URL(response.url).pathname === '/api/chat-media-search') {
-          return 'The DuckDuckGo media route is not deployed on this website. Deploy the latest site files and try again.';
-        }
         return "The chat-media-search Edge Function is not deployed to the Supabase project in this site's SUPABASE_URL setting (or the URL is wrong). Deploy the function to that project.";
       }
       try {
         const body = await response.clone().json();
-        if (body?.code === 'unsupported_media_provider' || body?.error === 'Unsupported media provider.') {
+        if (body?.code === 'unsupported_media_provider' ||
+            ['Unsupported media provider.', 'Unsupported media type for this provider.'].includes(body?.error)) {
           return "This Supabase Edge Function is outdated or belongs to a different project. Deploy the latest chat-media-search function to the Supabase project in this site's SUPABASE_URL setting, then refresh this page.";
+        }
+        if (body?.error === 'Unsplash search is not configured on the server.') {
+          return 'Unsplash needs a fresh UNSPLASH_ACCESS_KEY in the Supabase Edge Function secrets for this site’s project. Add it in Supabase, deploy chat-media-search, then refresh.';
         }
         if (typeof body?.error === 'string') return body.error;
       } catch {
@@ -741,7 +857,7 @@
 
   function renderMediaProvider(provider) {
     mediaProvider = provider;
-    mediaKind = provider === 'giphy' || provider === 'klipy' ? 'all' : 'image';
+    mediaKind = provider === 'giphy' ? 'gif' : provider === 'klipy' ? 'all' : 'image';
     mediaSearchSequence++;
     clearTimeout(mediaSearchTimer);
     mediaSearchItems = [];
@@ -755,34 +871,52 @@
     document.getElementById('mediaContactPicker').hidden = true;
     const panel = document.getElementById('mediaProviderPanel');
     panel.hidden = false;
-    const title = ({ duckduckgo: 'DuckDuckGo', giphy: 'GIPHY', klipy: 'KLIPY' })[provider];
-    const searchLabel = provider === 'duckduckgo' ? 'Search images and GIFs' : provider === 'giphy' ? 'Search GIPHY' : 'Search KLIPY';
-    const options = provider === 'duckduckgo'
-      ? `<div class=media-kind-toggle role=group aria-label="${title} search type"><button class="media-kind-option selected" aria-pressed=true data-media-kind="image">Image</button><button class=media-kind-option aria-pressed=false data-media-kind="gif">GIF</button></div>`
-      : `<div class=media-kind-toggle role=group aria-label="${title} search type"><button class="media-kind-option selected" aria-pressed=true data-media-kind="all">All</button><button class=media-kind-option aria-pressed=false data-media-kind="gif">GIFs</button><button class=media-kind-option aria-pressed=false data-media-kind="sticker">Stickers</button></div>`;
-    const search = `<label class=media-search-label><span>${ic('search',17)}</span><input id=mediaSearchInput type=search maxlength=160 placeholder="${searchLabel}" aria-label="${searchLabel}"></label>`;
-    const suggestions = provider === 'giphy'
-      ? `<div class=media-suggestions aria-label="Popular searches">${['party', 'awesome', 'funny', 'dogs'].map(term => `<button class=media-suggestion data-media-suggestion="${term}">${ic('search',14)}${term}</button>`).join('')}</div>`
-      : '';
-    const footer = provider === 'giphy' || provider === 'klipy'
-      ? `<div class=media-provider-footer>${options}<span class=media-attribution>${title}</span></div>`
+    const title = ({ unsplash: 'Unsplash', giphy: 'GIPHY', klipy: 'KLIPY' })[provider];
+    const searchLabel = provider === 'unsplash' ? 'Search Unsplash photos' : provider === 'giphy' ? 'Search GIPHY' : 'Search KLIPY';
+    const kindOptions = provider === 'giphy'
+      ? [['gif', 'GIFs'], ['sticker', 'Stickers'], ['clip', 'Clips'], ['emoji', 'Emoji'], ['text', 'Text']]
+      : provider === 'klipy'
+        ? [['all', 'All'], ['gif', 'GIFs'], ['sticker', 'Stickers'], ['clip', 'Clips'], ['meme', 'Memes'], ['emoji', 'AI Emoji']]
+        : [];
+    const options = `<div class=media-kind-toggle role=group aria-label="${title} content type">${kindOptions.map(([kind, label]) => `<button class="media-kind-option${mediaKind === kind ? ' selected' : ''}" aria-pressed="${mediaKind === kind}" data-media-kind="${kind}">${label}</button>`).join('')}</div>`;
+    const search = `<label class=media-search-label><span>${ic('search',17)}</span><input id=mediaSearchInput type=search maxlength=100 placeholder="${searchLabel}" aria-label="${searchLabel}"></label>`;
+    const footer = provider === 'giphy' || provider === 'klipy' || provider === 'unsplash'
+      ? `<div class="media-provider-footer media-provider-footer-${provider}">${provider === 'giphy' || provider === 'klipy' ? options : ''}<span class=media-attribution>${provider === 'klipy' ? 'Powered by KLIPY' : provider === 'unsplash' ? 'Powered by Unsplash' : 'Powered by GIPHY'}</span></div>`
       : '';
     panel.innerHTML = `<div class="media-provider-head"><button class=media-back data-media-back aria-label="Back to attachments">${ic('left',18)}</button><b>${title}</b><button class=media-close data-close-media aria-label="Close attachment picker">${ic('x',18)}</button></div>
       ${provider === 'klipy' ? '' : search}
-      ${provider === 'duckduckgo' ? `<div class=media-provider-subhead><span>${title}</span>${options}</div>` : ''}
-      ${suggestions}
-      <div id=mediaSearchResults class=media-search-results aria-live=polite></div>
+      <div id=mediaSearchScroll class=media-results-scroll role=region aria-label="Media search results"><div id=mediaSearchResults class=media-search-results aria-live=polite></div></div>
       ${provider === 'klipy' ? search : ''}
       ${footer}`;
     renderMediaResults();
+    updateMediaSearchInput();
     panel.querySelector('#mediaSearchInput').focus();
     if (provider === 'giphy' || provider === 'klipy') searchMediaPicker('');
+  }
+
+  function updateMediaSearchInput() {
+    const input = document.getElementById('mediaSearchInput');
+    if (!input) return;
+    const emojiLibrary = mediaProvider === 'giphy' && mediaKind === 'emoji';
+    input.disabled = emojiLibrary;
+    input.placeholder = mediaProvider === 'unsplash' ? 'Search Unsplash photos'
+      : mediaProvider === 'klipy' ? 'Search KLIPY'
+      : emojiLibrary ? 'Browse animated emoji'
+      : mediaKind === 'text' ? 'Type exact words to animate'
+        : mediaKind === 'clip' ? 'Search GIPHY Clips'
+          : mediaKind === 'sticker' ? `Search ${mediaProvider === 'giphy' ? 'GIPHY' : 'KLIPY'} stickers`
+            : mediaKind === 'gif' && (mediaProvider === 'giphy' || mediaProvider === 'klipy') ? `Search ${mediaProvider.toUpperCase()} GIFs`
+              : `Search ${mediaProvider.toUpperCase()}`;
+    input.maxLength = mediaKind === 'text' ? 100 : mediaProvider === 'giphy' ? 50 : 100;
+    input.setAttribute('aria-label', input.placeholder);
+    if (emojiLibrary) input.value = '';
   }
 
   async function searchMediaPicker(query, append = false) {
     const target = document.getElementById('mediaSearchResults');
     const trimmedQuery = query.trim();
-    if (!target || !mediaProvider || (!trimmedQuery && mediaProvider !== 'giphy' && mediaProvider !== 'klipy')) return;
+    const queryRequired = mediaProvider === 'unsplash' || (mediaProvider === 'giphy' && mediaKind === 'text');
+    if (!target || !mediaProvider || (!trimmedQuery && queryRequired)) return;
     if (append && (mediaLoadingMore || mediaPageError)) return;
     const selectedKinds = mediaKind === 'all' ? ['gif', 'sticker'] : [mediaKind];
     if (append && !selectedKinds.some(kind => mediaKindHasMore[kind])) return;
@@ -807,29 +941,16 @@
     try {
       const kinds = append ? selectedKinds.filter(kind => mediaKindHasMore[kind]) : selectedKinds;
       const responses = await Promise.all(kinds.map(async kind => {
-        const body = { provider: mediaProvider, query: trimmedQuery, kind, page: mediaKindPages[kind] || 0 };
-        let data;
-        if (mediaProvider === 'duckduckgo') {
-          const { data: sessionData, error: sessionError } = await sb.auth.getSession();
-          if (sessionError) throw sessionError;
-          const accessToken = sessionData?.session?.access_token;
-          if (!accessToken) throw new Error('Your session expired. Sign in again.');
-          const response = await fetch('/api/chat-media-search', {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-          });
-          data = await response.json().catch(() => ({}));
-          if (!response.ok) {
-            const searchError = new Error(data?.error || `Media search failed (HTTP ${response.status}).`);
-            searchError.context = response;
-            throw searchError;
-          }
-        } else {
-          const response = await sb.functions.invoke('chat-media-search', { body });
-          if (response.error) throw response.error;
-          data = response.data;
-        }
+        const body = {
+          provider: mediaProvider,
+          query: trimmedQuery,
+          kind,
+          page: mediaKindPages[kind] || 0,
+          ...(mediaProvider === 'klipy' ? { locale: navigator.languages?.[0] || navigator.language || 'en-US' } : {})
+        };
+        const response = await sb.functions.invoke('chat-media-search', { body });
+        if (response.error) throw response.error;
+        const data = response.data;
         return { kind, hasMore: data?.hasMore === true, items: (data?.results || []).map(item => ({ ...item, mediaKind: kind })) };
       }));
       if (sequence !== mediaSearchSequence || !target.isConnected) return;
@@ -854,18 +975,16 @@
         renderMediaResults(newItems, append);
       }
       if (!mediaSearchItems.length) {
-        target.innerHTML = mediaProvider === 'duckduckgo' && mediaKind === 'gif'
-          ? '<p class=chat-hint>No direct GIF files found. Try another search.</p>'
-          : '<p class=chat-hint>No results. Try another search.</p>';
+        target.innerHTML = '<p class=chat-hint>No results. Try another search.</p>';
       }
-      if (mediaProvider === 'duckduckgo' && mediaKindHasMore[mediaKind]) {
+      if (selectedKinds.some(kind => mediaKindHasMore[kind])) {
         target.insertAdjacentHTML('beforeend', '<button class=media-load-more data-media-load-more>Load more results</button>');
       }
     } catch (error) {
       if (sequence !== mediaSearchSequence || !target.isConnected) return;
       const [message, retryDelay] = await Promise.all([
         mediaSearchError(error),
-        mediaProvider === 'duckduckgo' ? mediaRetryDelay(error) : 0
+        mediaProvider === 'unsplash' ? mediaRetryDelay(error) : 0
       ]);
       if (sequence !== mediaSearchSequence || !target.isConnected) return;
       mediaPageError = true;
@@ -876,23 +995,24 @@
       } else {
         target.innerHTML = errorMarkup;
       }
-      if (mediaProvider === 'duckduckgo') renderMediaRetry(target, append, retryDelay);
+      if (mediaProvider === 'unsplash') renderMediaRetry(target, append, retryDelay);
     } finally {
       if (sequence === mediaSearchSequence) mediaLoadingMore = false;
     }
   }
 
   function selectMediaKind(kind) {
-    if (!['image', 'gif', 'sticker', 'all'].includes(kind)) return;
+    if (!['image', 'gif', 'sticker', 'clip', 'meme', 'emoji', 'text', 'all'].includes(kind)) return;
     mediaKind = kind;
     document.querySelectorAll('[data-media-kind]').forEach(button => {
       const selected = button.dataset.mediaKind === kind;
       button.classList.toggle('selected', selected);
       button.setAttribute('aria-pressed', String(selected));
     });
+    updateMediaSearchInput();
     const input = document.getElementById('mediaSearchInput');
     if (input?.value.trim()) searchMediaPicker(input.value);
-    else if (mediaProvider === 'giphy' || mediaProvider === 'klipy') searchMediaPicker('');
+    else if ((mediaProvider === 'giphy' && kind !== 'text') || mediaProvider === 'klipy') searchMediaPicker('');
     else {
       mediaSearchSequence++;
       mediaPageError = false;
@@ -938,7 +1058,12 @@
     setBusy(button, true);
     const uploaded = [];
     try {
-      const attachments = remoteFiles.map(({ url, name, type }) => ({ url, name, type }));
+      const attachments = remoteFiles.map(item => ({
+        url: item.url,
+        name: item.name,
+        type: item.type,
+        ...(item.provider === 'unsplash' ? { attribution: item.attribution } : {})
+      }));
       attachments.push(...contacts.map(contact => ({ kind: 'contact', contact })));
       for (const file of files) {
         const extension = file.name.includes('.') ? file.name.split('.').pop().replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) : 'bin';
@@ -949,6 +1074,17 @@
         if (error) throw error;
         uploaded.push(path);
         attachments.push({ path, name: file.name.slice(0, 180), type: mimeType, size: file.size });
+      }
+      for (const item of remoteFiles) {
+        if (item.provider !== 'unsplash' || item.downloadTracked) continue;
+        const { data, error: trackingError } = await sb.functions.invoke('chat-media-search', {
+          body: { provider: 'unsplash', action: 'download', kind: 'image', photoId: item.photoId, downloadLocation: item.downloadLocation }
+        });
+        if (trackingError) {
+          throw new Error(`Could not record Unsplash photo use: ${await mediaSearchError(trackingError)}`);
+        }
+        if (data?.tracked !== true) throw new Error('Unsplash did not confirm photo-use tracking. Try sending again.');
+        item.downloadTracked = true;
       }
       const mentions = [...new Set([...body.matchAll(/@([\p{L}\p{N}_.-]+)/gu)].map(match => mentionedUsers.get(match[1].toLowerCase())).filter(id => id && threadMembers.some(m => m.user_id === id)))];
       const { error } = await sb.from('chat_messages').insert({ conversation_id: activeThread, sender_id: U.id, body, mentions, attachments });
@@ -1063,7 +1199,7 @@
   }
 
   document.addEventListener('click', async event => {
-    const el = event.target.closest('[data-chat-compose],[data-open-chat],[data-open-friend],[data-chat-retry],[data-select-friend],[data-remove-friend],[data-create-chat],[data-close-chat-compose],[data-chat-send],[data-chat-record],[data-voice-pause],[data-voice-stop],[data-voice-cancel],[data-chat-media],[data-chat-older],[data-mention],[data-remove-file],[data-remove-remote],[data-remove-contact],[data-close-media],[data-media-action],[data-media-provider],[data-media-back],[data-media-kind],[data-media-suggestion],[data-media-result],[data-media-contact],[data-media-load-more],[data-media-retry],[data-people-tab],[data-people-add],[data-people-accept],[data-people-decline],[data-people-cancel],[data-people-remove],[data-people-block],[data-people-unblock],[data-people-retry]');
+    const el = event.target.closest('[data-chat-compose],[data-open-chat],[data-open-friend],[data-chat-retry],[data-select-friend],[data-remove-friend],[data-create-chat],[data-close-chat-compose],[data-chat-send],[data-chat-record],[data-voice-pause],[data-voice-stop],[data-voice-cancel],[data-chat-media],[data-chat-older],[data-mention],[data-remove-file],[data-remove-remote],[data-remove-contact],[data-close-media],[data-media-action],[data-media-provider],[data-media-back],[data-media-kind],[data-media-result],[data-media-contact],[data-media-load-more],[data-media-retry],[data-people-tab],[data-people-add],[data-people-accept],[data-people-decline],[data-people-cancel],[data-people-remove],[data-people-block],[data-people-unblock],[data-people-retry]');
     if (!el) return;
     const d = el.dataset;
     if (d.peopleTab) {
@@ -1144,13 +1280,9 @@
       loadMediaContacts();
     }
     if (d.mediaKind) selectMediaKind(d.mediaKind);
-    if (d.mediaSuggestion) {
-      const input = document.getElementById('mediaSearchInput');
-      if (input) { input.value = d.mediaSuggestion; searchMediaPicker(d.mediaSuggestion); }
-    }
     if (d.mediaResult !== undefined) {
       const item = mediaSearchItems[Number(d.mediaResult)];
-      if (item) addRemoteMedia(item.url, item.type, item.title);
+      if (item) addRemoteMedia(item.url, item.type, item.title, item);
     }
     if (d.mediaContact) addContact(person(d.mediaContact));
     if (d.chatOlder !== undefined) loadOlder();
@@ -1173,10 +1305,11 @@
     if (input.id === 'chatInput') resizeChatInput(input);
     if (input.id === 'mediaContactSearch') loadMediaContacts(input.value);
     if (input.id === 'mediaSearchInput') {
+      if (mediaProvider === 'giphy' && mediaKind === 'emoji') return;
       clearTimeout(mediaSearchTimer);
       if (input.value.trim().length >= 1) {
         mediaSearchTimer = setTimeout(() => searchMediaPicker(input.value), 350);
-      } else if (mediaProvider === 'giphy' || mediaProvider === 'klipy') {
+      } else if ((mediaProvider === 'giphy' && mediaKind !== 'text') || mediaProvider === 'klipy') {
         mediaSearchTimer = setTimeout(() => searchMediaPicker(''), 180);
       } else {
         mediaSearchSequence++;
@@ -1193,7 +1326,7 @@
 
   document.addEventListener('scroll', event => {
     const target = event.target;
-    if (target?.id !== 'mediaSearchResults' || mediaPageError || !['giphy', 'klipy'].includes(mediaProvider)) return;
+    if (target?.id !== 'mediaSearchScroll' || mediaPageError || !['unsplash', 'giphy', 'klipy'].includes(mediaProvider)) return;
     if (target.scrollHeight - target.scrollTop - target.clientHeight < 180) searchMediaPicker(mediaQuery, true);
   }, true);
 
