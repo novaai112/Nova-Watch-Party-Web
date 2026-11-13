@@ -26,6 +26,8 @@ module.exports = (req, res) => {
   const publicConfig = {
     SUPABASE_URL: configured ? supabaseUrl : '',
     SUPABASE_ANON_KEY: configured ? supabaseAnonKey : '',
+    GOOGLE_CLIENT_ID: String(process.env.GOOGLE_CLIENT_ID || '').trim(),
+    GOOGLE_PICKER_API_KEY: String(process.env.GOOGLE_PICKER_API_KEY || '').trim(),
     CONFIG_ERROR: configured
       ? ''
       : 'Set valid SUPABASE_URL and SUPABASE_ANON_KEY environment variables, then redeploy.'

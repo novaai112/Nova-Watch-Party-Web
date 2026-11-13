@@ -390,12 +390,30 @@ async function mountMedia() {
       if (info.ref) proxy.searchParams.set('ref', info.ref);
       attachSrc(v, proxy.href, info.hls || m.streamType === 'hls');
     } else attachSrc(v, m.url);
+    /* X / Drive / plain links: if the browser refuses the direct address (hot-link or referer rules),
+       retry once through our own stream proxy that sends the source site's referer */
+    const viaProxy = (ref) => { const px = new URL('/api/browse', location.href); px.searchParams.set('stream', '1'); px.searchParams.set('url', m.url); if (ref) px.searchParams.set('ref', ref); return px.href; };
+    let retried = m.provider === 'web';
+    v._retry = () => {
+      if (retried) return false;
+      retried = true;
+      const t = v.currentTime || 0;
+      v.src = viaProxy(m.provider === 'x' ? 'https://x.com/' : m.provider === 'drive' ? 'https://drive.google.com/' : '');
+      v.load();
+      v.addEventListener('loadedmetadata', () => { try { if (t > 0) v.currentTime = t; } catch (e) {} }, { once: true });
+      return true;
+    };
     P.kind = 'video'; P.video = v;
     ['play', 'pause', 'seeked'].forEach(ev => v.addEventListener(ev, () => { if (isAdmin() && Date.now() > P.mute) publish(!v.paused, v.currentTime); updateTimeUI(); }));
     v.addEventListener('ended', () => { if (isAdmin()) ended(); });
     v.addEventListener('loadedmetadata', () => { P.ready = true; pl.vol(); renderControls(); applyState(true); });
     v.addEventListener('playing', hideTap);
-    v.addEventListener('error', () => toast('This video cannot be played', 'err'));
+    v.addEventListener('error', () => {
+      if (key !== mountKey) return;
+      if (v._retry && v._retry()) return;
+      const c = v.error && v.error.code;
+      toast('This video cannot be played' + (c ? ' (error ' + c + (c === 4 ? ': file not reachable or format unsupported' : c === 2 ? ': network' : '') + ')' : ''), 'err');
+    });
     w.insertAdjacentElement('afterbegin', v);
     if (!adm) w.insertAdjacentHTML('beforeend', '<div class="shield"></div>');
     setTimeout(checkBlocked, 1800);

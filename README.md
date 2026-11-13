@@ -22,6 +22,7 @@ Static website + Supabase, with Vercel serverless API routes. No build step; dep
 | `chat-schema.sql` | Repeatable database setup for private realtime chats and chat media |
 | `local/local-search-server.js` | Token-protected laptop bridge for DuckDuckGo web searches |
 | `api/x.js` | X (Twitter) post video detector: `/api/x?url=<post link>` returns whether the post has a video and its MP4/HLS address |
+| `api/drive.js` | Google Drive checker: `/api/drive?url=` says if a file link is a playable video, `/api/drive?folder=` lists a shared folder |
 | `supabase/functions/chat-media-search/` | Authenticated Unsplash photo search plus GIPHY and KLIPY media search |
 
 ## 1. Database
@@ -148,3 +149,9 @@ Platform picker -> **X** has two options:
 2. **Continue to Website** — X inside Nova: Sign in / Sign up (opens x.com's own secure window — X does not allow its login to be embedded or proxied), open any profile's posts with X's official embedded timeline, tap a post and the same popup appears if it has a video. A paste box is always there as a fallback.
 Any X link pasted in the YouTube box, Web box or in-app browser is routed through the same detector.
 No new environment variables and no database change. `vercel.json` already covers `api/*.js`.
+
+## Google Drive videos
+Platform picker -> **Drive** has two options:
+1. **Paste Drive Link** — paste a video link (checked automatically) or a shared-folder link (browse sub-folders, tap a video). Popup: *Add this Drive video to the room?* Yes adds and plays it.
+2. **Continue to Drive** — Google sign-in + Google's own file picker inside Nova (Drive's website itself cannot be embedded). Pick a video; if it is private Nova asks before setting it to "Anyone with the link" so the whole room can watch. Needs `GOOGLE_CLIENT_ID` and `GOOGLE_PICKER_API_KEY` (see `.env.example`; enable Google Picker API + Drive API, add your site as an authorised JavaScript origin). Without them the panel still offers Open Drive and the paste box.
+Files must be shared "Anyone with the link". MP4/WebM/MOV play in sync; MKV/AVI or download-disabled files fall back to Drive's own player (not time-synced). Folder listing and video lengths use `DRIVE_API_KEY` (Drive API enabled); single-file detection works without any key.

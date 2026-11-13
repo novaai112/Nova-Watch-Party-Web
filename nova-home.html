@@ -464,7 +464,6 @@ S.web.b=function(){
 };
 S.web.r='';
 function paste(ph,fn,title){return function(){body.innerHTML='<div class="gh"><div class="box"><input id="pi" placeholder="'+ph+'" autocomplete="off" enterkeyhint="go"></div></div>';var i=document.getElementById('pi');i.oninput=function(){i.style.color='#222'};i.onkeydown=function(ev){if(ev.key!=='Enter')return;var u=fn(i.value.trim());if(u)frame(u,title);else i.style.color='#c5221f'}}}
-S.drive.b=paste('Paste a shared Google Drive link',function(v){var m=/\/folders\/([\w-]+)/.exec(v);if(m)return 'https://drive.google.com/embeddedfolderview?id='+m[1]+'#list';m=/\/file\/d\/([\w-]+)/.exec(v)||/[?&]id=([\w-]+)/.exec(v);return m?'https://drive.google.com/file/d/'+m[1]+'/preview':null},'Drive');
 /* ================= X (TWITTER): paste a post link  /  continue to the website =================
    Both paths end in ONE popup: "Add this X video to the room?"  Yes -> only the video joins the room.   */
 (function(){
@@ -474,11 +473,11 @@ var xcss=document.createElement('style');xcss.textContent=
 '.xp{max-width:560px;margin:0 auto;padding:18px 16px 40px;color:#fff}.xin{display:flex;gap:8px}.xin input{flex:1;min-width:0;height:54px;border:1px solid #ffffff55;border-radius:14px;background:#000a;color:#fff;font-size:17px;padding:0 16px;outline:0}.xin input:focus{border-color:#fff}.xin button{height:54px;border:0;border-radius:14px;background:#fff;color:#000;font-weight:700;font-size:16px;padding:0 20px;cursor:pointer}'+
 '.xs{margin:16px 2px;min-height:24px;font-size:15.5px;line-height:1.45;color:#fff}.xs.err{color:#ffb4ab}.xs i{display:inline-block;width:16px;height:16px;border:2px solid #fff6;border-top-color:#fff;border-radius:50%;margin-right:8px;vertical-align:-3px;animation:xsp .8s linear infinite}@keyframes xsp{to{transform:rotate(360deg)}}'+
 '.xback{background:none;border:0;color:#fff;opacity:.85;font-size:15px;cursor:pointer;padding:8px 2px;margin-top:6px}'+
-'#xweb{position:fixed;inset:0;z-index:70;display:flex;flex-direction:column;background:#000;color:#fff;font-family:Roboto,system-ui,sans-serif}#xweb[hidden]{display:none}'+
-'#xweb .xh{display:flex;align-items:center;gap:10px;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;border-bottom:1px solid #ffffff22}#xweb .xh .ib{color:#fff}#xweb .xh b{flex:1;font-size:20px}'+
-'#xweb .xh button.xl{border:1px solid #fff8;background:transparent;color:#fff;border-radius:999px;padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer}#xweb .xh button.xl.f{background:#fff;color:#000}'+
-'#xweb .xn{padding:8px 14px;font-size:12.5px;color:#ffffffa8;line-height:1.4}#xweb .xr{display:flex;gap:8px;padding:6px 12px}#xweb .xr input{flex:1;min-width:0;height:44px;border:1px solid #ffffff44;border-radius:12px;background:#111;color:#fff;font-size:16px;padding:0 14px;outline:0}#xweb .xr button{height:44px;border:0;border-radius:12px;background:#1d9bf0;color:#fff;font-weight:700;padding:0 16px;cursor:pointer}'+
-'#xweb .xs{margin:4px 14px;min-height:0}#xweb .xt{flex:1;overflow:auto;padding:6px 10px calc(20px + env(safe-area-inset-bottom))}#xweb .xt .twitter-timeline,#xweb .xt iframe{max-width:100%!important}'+
+'.xwb{position:fixed;inset:0;z-index:70;display:flex;flex-direction:column;background:#000;color:#fff;font-family:Roboto,system-ui,sans-serif}#xweb[hidden]{display:none}'+
+'.xwb .xh{display:flex;align-items:center;gap:10px;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;border-bottom:1px solid #ffffff22}#xweb .xh .ib{color:#fff}#xweb .xh b{flex:1;font-size:20px}'+
+'.xwb .xh button.xl{border:1px solid #fff8;background:transparent;color:#fff;border-radius:999px;padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer}#xweb .xh button.xl.f{background:#fff;color:#000}'+
+'.xwb .xn{padding:8px 14px;font-size:12.5px;color:#ffffffa8;line-height:1.4}#xweb .xr{display:flex;gap:8px;padding:6px 12px}#xweb .xr input{flex:1;min-width:0;height:44px;border:1px solid #ffffff44;border-radius:12px;background:#111;color:#fff;font-size:16px;padding:0 14px;outline:0}#xweb .xr button{height:44px;border:0;border-radius:12px;background:#1d9bf0;color:#fff;font-weight:700;padding:0 16px;cursor:pointer}'+
+'.xwb .xs{margin:4px 14px;min-height:0}#xweb .xt{flex:1;overflow:auto;padding:6px 10px calc(20px + env(safe-area-inset-bottom))}#xweb .xt .twitter-timeline,#xweb .xt iframe{max-width:100%!important}'+
 '#xpop{position:fixed;inset:0;z-index:95;display:flex;align-items:center;justify-content:center;background:#000b;padding:18px}#xpop[hidden]{display:none}'+
 '#xpop .xcard{width:100%;max-width:420px;background:#17181b;border:1px solid #ffffff26;border-radius:20px;overflow:hidden;color:#fff;box-shadow:0 20px 60px #000a}'+
 '#xpop .xth{position:relative;aspect-ratio:16/9;background:#000 center/cover no-repeat}#xpop .xth em{position:absolute;right:8px;bottom:8px;background:#000c;border-radius:5px;padding:2px 7px;font-size:12px;font-style:normal}#xpop .xth u{position:absolute;inset:0;margin:auto;width:58px;height:58px;border-radius:50%;background:#000a;display:grid;place-items:center;text-decoration:none}#xpop .xth u:after{content:"";border-left:18px solid #fff;border-top:11px solid transparent;border-bottom:11px solid transparent;margin-left:5px}'+
@@ -505,19 +504,19 @@ function xMedia(j){
   if(j.thumbnail&&/^https:\/\//.test(j.thumbnail)&&j.thumbnail.length<=500)m.thumb=j.thumbnail;
   return m
 }
-function showPop(j){
+function showPop(j,opt){opt=opt||{};
   var busy=false;try{busy=!!(window.NovaRoom&&NovaRoom.ctx&&NovaRoom.ctx().busy)}catch(x){}
   pop.innerHTML='<div class="xcard"><div class="xth" style="'+(j.thumbnail?'background-image:url('+e(j.thumbnail)+')':'')+'"><u></u>'+(j.duration?'<em>'+e(dur(j.duration))+'</em>':(j.gif?'<em>GIF</em>':''))+'</div>'+
-   '<div class="xbd"><h3>Add this X video to the room?</h3><p><b>'+e(j.author||'X post')+'</b>'+(j.text?' — '+e(j.text):'')+'</p></div>'+
-   '<div class="xac"><button type="button" class="n">No</button><button type="button" class="y">'+(busy?'Yes, add to queue':'Yes, add &amp; play')+'</button></div></div>';
+   '<div class="xbd"><h3>'+(opt.head||'Add this X video to the room?')+'</h3><p><b>'+e(opt.by!==undefined?opt.by:(j.author||'X post'))+'</b>'+((opt.sub!==undefined?opt.sub:j.text)?' — '+e(opt.sub!==undefined?opt.sub:j.text):'')+'</p>'+(opt.note?'<p class="xnote">'+e(opt.note)+'</p>':'')+'</div>'+
+   '<div class="xac"><button type="button" class="n">No</button><button type="button" class="y">'+(opt.yes||(busy?'Yes, add to queue':'Yes, add &amp; play'))+'</button></div></div>';
   pop.hidden=false;
   pop.querySelector('.n').onclick=closePop;
   var yes=pop.querySelector('.y');
   yes.onclick=function(){
     if(!(window.NovaRoom&&NovaRoom.ready)){toast2('Rooms are not ready yet. Please try again.','err');return}
     yes.disabled=true;yes.textContent='Adding…';
-    var m=xMedia(j);
-    NovaRoom.handle(m,{now:!busy}).then(function(ok){closePop();if(!ok)toast2('Could not add this video to the room','err')}).catch(function(){closePop();toast2('Could not add this video to the room','err')})
+    var mp=opt.prepare?opt.prepare():Promise.resolve(opt.media||xMedia(j));
+    mp.then(function(m){return NovaRoom.handle(m,{now:!busy})}).then(function(ok){closePop();if(!ok)toast2('Could not add this video to the room','err')}).catch(function(){closePop();toast2('Could not add this video to the room. Check that it is shared as “Anyone with the link”.','err')})
   };
   yes.focus()
 }
@@ -571,7 +570,7 @@ function loadWidgets(){return new Promise(function(res,rej){
   s.onerror=function(){rej(new Error('x'))};document.head.appendChild(s)})}
 function xWeb(){
   if(!xwEl){
-    xwEl=document.createElement('div');xwEl.id='xweb';xwEl.hidden=true;
+    xwEl=document.createElement('div');xwEl.id='xweb';xwEl.className='xwb';xwEl.hidden=true;
     xwEl.innerHTML='<div class="xh"><button type="button" class="ib xb" aria-label="Back">'+ARROW+'</button><b>X</b><button type="button" class="xl" data-s="in">Sign in</button><button type="button" class="xl f" data-s="up">Sign up</button></div>'+
      '<div class="xn">X only allows sign-in on x.com, so Sign in / Sign up open X’s own secure window. Tap any post here — if it has a video, Nova offers to add it to the room.</div>'+
      '<div class="xr"><input id="xwu" placeholder="Open an X profile, e.g. NASA or @NASA" autocomplete="off" autocapitalize="off" spellcheck="false"><button type="button" id="xwg">Open</button></div>'+
@@ -606,9 +605,151 @@ function xWeb(){
   xwEl.hidden=false
 }
 document.addEventListener('keydown',function(ev){if(ev.key==='Escape'&&xwEl&&!xwEl.hidden&&pop.hidden){ev.stopImmediatePropagation();xwEl.hidden=true}},true);
+/* ================= GOOGLE DRIVE: paste a link  /  continue to Drive =================
+   Same popup as X. Files must be shared "Anyone with the link" so every room member can watch.      */
+function isDrive(v){return /^(?:https?:\/\/)?(?:drive|docs)\.google\.com\/(?:[^\s]*[\/?&])?(?:file\/d\/|folders\/|id=)/i.test(String(v||'').trim())}
+function dSize(n){n=+n||0;if(!n)return'';return n>=1073741824?(n/1073741824).toFixed(1)+' GB':Math.max(1,Math.round(n/1048576))+' MB'}
+function dMedia(j){
+  var m=j.playMode==='direct'?{kind:'video',url:j.streamUrl,provider:'drive'}:{kind:'embed',url:j.embedUrl,provider:'drive'};
+  m.title=(j.name||'Drive video').replace(/\.[a-z0-9]{2,4}$/i,'').slice(0,150);
+  if(j.thumbnail&&j.thumbnail.length<=500)m.thumb=j.thumbnail;
+  return m
+}
+function dPop(j,extra){
+  showPop(Object.assign({},j,{thumbnail:j.thumbnail,duration:j.duration}),Object.assign({head:'Add this Drive video to the room?',by:(j.name||'Drive video'),sub:[dSize(j.size),j.playMode==='embed'?'plays in Drive’s own player':''].filter(Boolean).join(' · '),media:dMedia(j),note:j.playMode==='embed'?j.reason:''},extra||{}))
+}
+var dgen=0;
+function driveImport(link,out,onFolder){
+  out=out||function(t,k){msg(t,k==='err'?'err':k)};
+  var g=++dgen;out('Checking this Drive link for a video…','wait');
+  return fetch('/api/drive?url='+encodeURIComponent(link)).then(function(r){return r.json().catch(function(){return{ok:false,error:'Drive did not answer. Try again.'}})}).then(function(j){
+    if(g!==dgen)return;
+    if(!j.ok){out(j.error||'Could not check this link.','err');return}
+    if(j.folder){if(onFolder){out('','');onFolder(j.id)}else out('That is a folder. Open it from “Continue to Drive” or paste a link to one video.','err');return}
+    if(!j.hasVideo){out(j.reason||'This file is not a video.','err');return}
+    out('Video found.','');dPop(j)
+  }).catch(function(){if(g===dgen)out('Could not reach the server. Check your connection and try again.','err')})
+}
+window.NovaDrive={isLink:isDrive,import:driveImport};
+
+/* shared folder browser: sub-folders + videos, tap a video -> popup */
+function driveFolder(id,box,out,stack){
+  stack=stack||[];
+  function load(fid,page,keep){
+    if(!keep)box.innerHTML='';
+    out('Loading folder…','wait');
+    fetch('/api/drive?folder='+encodeURIComponent(fid)+(page?'&page='+encodeURIComponent(page):'')).then(function(r){return r.json()}).then(function(j){
+      if(!j.ok){out(j.error||'Could not open this folder.','err');return}
+      var old=box.querySelector('.dmore');if(old)old.remove();
+      if(!keep){box.innerHTML='';if(stack.length)box.insertAdjacentHTML('beforeend','<button type="button" class="dr up"><span class="dn">‹ Back</span></button>')}
+      if(!j.items.length&&!keep){out('No videos in this folder.','err');return}
+      out(j.items.length?'Tap a video to add it to the room.':'','');
+      j.items.forEach(function(it){
+        box.insertAdjacentHTML('beforeend','<button type="button" class="dr" data-id="'+e(it.id)+'" data-f="'+(it.folder?1:0)+'"><span class="dt" style="'+(it.thumbnail?'background-image:url('+e(it.thumbnail)+')':'')+'">'+(it.folder?'<b>📁</b>':'')+'</span><span class="dn">'+e(it.name)+(it.duration?'<small>'+e(dur(it.duration))+'</small>':'')+'</span></button>')
+      });
+      if(j.next)box.insertAdjacentHTML('beforeend','<button type="button" class="dr dmore" data-next="'+e(j.next)+'"><span class="dn">Load more…</span></button>');
+      box._cur=fid
+    }).catch(function(){out('Could not open this folder.','err')})
+  }
+  box.onclick=function(ev){
+    var b=ev.target.closest('.dr');if(!b)return;
+    if(b.classList.contains('up')){var prev=stack.pop();load(prev);return}
+    if(b.dataset.next){load(box._cur,b.dataset.next,true);return}
+    if(b.dataset.f==='1'){stack.push(box._cur);load(b.dataset.id);return}
+    driveImport('https://drive.google.com/file/d/'+b.dataset.id+'/view',out)
+  };
+  load(id)
+}
+
+/* screen 1: two options */
+function dHome(){
+  body.innerHTML='<div class="xo"><h2>Add from Drive</h2><p>Choose how to bring a Google Drive video into your room.</p>'+
+   '<button type="button" class="xc" data-d="paste"><b>Paste Drive Link</b><span>Paste a link to one video (or a shared folder). Nova checks it and asks before adding. Share it as “Anyone with the link”.</span></button>'+
+   '<button type="button" class="xc" data-d="web"><b>Continue to Drive</b><span>Open Google Drive inside Nova, sign in with Google, pick a video and add it.</span></button></div>';
+  body.querySelector('[data-d=paste]').onclick=dPaste;
+  body.querySelector('[data-d=web]').onclick=dWeb
+}
+function dPaste(){
+  body.innerHTML='<div class="xp"><div class="xin"><input id="dpi" type="url" inputmode="url" placeholder="Paste a Google Drive link" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go"><button type="button" id="dpb">Check</button></div><div class="xs" id="dps"></div><div class="dl" id="dpl"></div><button type="button" class="xback">‹ Back to options</button></div>';
+  var i=document.getElementById('dpi'),s=document.getElementById('dps'),L=document.getElementById('dpl'),last='';
+  function out(t,k){say(s,t,k)}
+  function go(v){v=(v||i.value).trim();if(!v)return;if(!isDrive(v)){out('That is not a Google Drive link. It should look like drive.google.com/file/d/…','err');return}last=v;L.innerHTML='';driveImport(v,out,function(fid){driveFolder(fid,L,out)})}
+  i.onkeydown=function(ev){if(ev.key==='Enter')go()};
+  i.addEventListener('paste',function(){setTimeout(function(){if(i.value.trim()&&i.value.trim()!==last)go()},30)});
+  document.getElementById('dpb').onclick=function(){
+    if(i.value.trim())return go();
+    if(navigator.clipboard&&navigator.clipboard.readText)navigator.clipboard.readText().then(function(t){i.value=(t||'').trim();go()}).catch(function(){i.focus();out('Paste the link into the box.','err')});else i.focus()
+  };
+  body.querySelector('.xback').onclick=dHome;
+  setTimeout(function(){i.focus()},50)
+}
+/* option 2: Drive inside Nova (Google sign-in + Google's own file picker) */
+var dwEl=null,gTok='',gExp=0,gTC=null,gWait=null;
+function loadScript(src){return new Promise(function(res,rej){var s=document.createElement('script');s.src=src;s.async=true;s.onload=res;s.onerror=function(){rej(new Error('load'))};document.head.appendChild(s)})}
+var gsiP=null,pkP=null;
+function loadGsi(){return gsiP||(gsiP=loadScript('https://accounts.google.com/gsi/client'))}
+function loadPicker(){return pkP||(pkP=loadScript('https://apis.google.com/js/api.js').then(function(){return new Promise(function(res){gapi.load('picker',res)})}))}
+function gCfg(){var c=window.APP_CONFIG||{};return{id:c.GOOGLE_CLIENT_ID||'',key:c.GOOGLE_PICKER_API_KEY||''}}
+function pickCb(out){return function(d){
+  if(!d||d.action!=='picked'||!d.docs||!d.docs[0])return;
+  var doc=d.docs[0];
+  out('Checking “'+(doc.name||'video')+'”…','wait');
+  fetch('/api/drive?id='+encodeURIComponent(doc.id)).then(function(r){return r.json()}).then(function(j){
+    if(j.ok&&j.hasVideo){out('Video found.','');dPop(j);return}
+    if(j.ok&&j.needsShare){
+      out('','');
+      var tmp={name:doc.name,thumbnail:'https://drive.google.com/thumbnail?id='+encodeURIComponent(doc.id)+'&sz=w640',playMode:'direct'};
+      showPop(tmp,{head:'This video is private',by:doc.name||'Drive video',sub:'To watch together, everyone in the room needs access.',note:'Yes will set it to “Anyone with the link can view” and add it to the room.',yes:'Yes, share &amp; add',
+        prepare:function(){return fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(doc.id)+'/permissions?supportsAllDrives=true',{method:'POST',headers:{Authorization:'Bearer '+gTok,'Content-Type':'application/json'},body:JSON.stringify({role:'reader',type:'anyone',allowFileDiscovery:false})}).then(function(r){if(!r.ok)throw new Error('perm')}).then(function(){return new Promise(function(r){setTimeout(r,1200)})}).then(function(){return fetch('/api/drive?id='+encodeURIComponent(doc.id)).then(function(r){return r.json()})}).then(function(j2){if(!(j2.ok&&j2.hasVideo))throw new Error('nv');return dMedia(j2)})}});
+      return
+    }
+    out(j.reason||j.error||'This file is not a video.','err')
+  }).catch(function(){out('Could not check this file.','err')})
+}}
+function dWeb(){
+  if(!dwEl){
+    var cfg=gCfg(),ok=!!(cfg.id&&cfg.key);
+    dwEl=document.createElement('div');dwEl.id='dweb';dwEl.className='xwb';dwEl.hidden=true;
+    dwEl.innerHTML='<div class="xh"><button type="button" class="ib xb" aria-label="Back">'+ARROW+'</button><b>Google Drive</b><button type="button" class="xl" data-s="site">Open Drive</button></div>'+
+     '<div class="xn">'+(ok?'Sign in with Google, choose a video from your Drive, and Nova adds it to the room. If it is private, Nova asks before making it “Anyone with the link”.':'Google sign-in is not set up on this site yet (the owner adds GOOGLE_CLIENT_ID and GOOGLE_PICKER_API_KEY). You can still paste a video or shared-folder link below.')+'</div>'+
+     (ok?'<div class="xr"><button type="button" id="dwp" style="flex:1;background:#1a73e8">Choose from my Google Drive</button></div>':'')+
+     '<div class="xr"><input id="dwl" type="url" inputmode="url" placeholder="Paste a Drive video or folder link" autocomplete="off"><button type="button" id="dwc" style="background:#1a73e8">Check</button></div>'+
+     '<div class="xs" id="dws"></div><div class="xt dl" id="dwt"></div>';
+    document.body.appendChild(dwEl);
+    var st=dwEl.querySelector('#dws'),L=dwEl.querySelector('#dwt');function out(t,k){say(st,t,k)}
+    dwEl.querySelector('.xb').onclick=function(){dwEl.hidden=true};
+    dwEl.querySelector('[data-s=site]').onclick=function(){window.open('https://drive.google.com/','nova_drive','popup=yes,width=1000,height=760')||window.open('https://drive.google.com/','_blank','noopener')};
+    var lk=dwEl.querySelector('#dwl');
+    function chk(){var v=lk.value.trim();if(!v)return;if(!isDrive(v)){out('That is not a Google Drive link. It should look like drive.google.com/file/d/…','err');return}L.innerHTML='';driveImport(v,out,function(fid){driveFolder(fid,L,out)})}
+    lk.onkeydown=function(ev){if(ev.key==='Enter')chk()};lk.addEventListener('paste',function(){setTimeout(chk,30)});
+    dwEl.querySelector('#dwc').onclick=function(){
+      if(lk.value.trim())return chk();
+      if(navigator.clipboard&&navigator.clipboard.readText)navigator.clipboard.readText().then(function(t){lk.value=(t||'').trim();chk()}).catch(function(){lk.focus()});else lk.focus()
+    };
+    var pb=dwEl.querySelector('#dwp');
+    if(pb){
+      Promise.all([loadGsi(),loadPicker()]).catch(function(){});
+      pb.onclick=function(){
+        if(!(window.google&&google.accounts&&google.accounts.oauth2&&google.picker)){out('Google is still loading… tap again in a moment. (An ad/tracking blocker can stop it.)','err');Promise.all([loadGsi(),loadPicker()]).catch(function(){});return}
+        function show(tok){
+          var v=new google.picker.DocsView(google.picker.ViewId.DOCS_VIDEOS).setMode(google.picker.DocsViewMode.LIST);
+          new google.picker.PickerBuilder().addView(v).addView(new google.picker.DocsView().setIncludeFolders(true).setMimeTypes('video/mp4,video/webm,video/quicktime,video/x-matroska,video/x-msvideo')).setAppId(cfg.id.split('-')[0]).setOAuthToken(tok).setDeveloperKey(cfg.key).setCallback(pickCb(out)).build().setVisible(true)
+        }
+        if(gTok&&Date.now()<gExp)return show(gTok);
+        if(!gTC)gTC=google.accounts.oauth2.initTokenClient({client_id:cfg.id,scope:'https://www.googleapis.com/auth/drive.file',callback:function(r){
+          if(r&&r.access_token){gTok=r.access_token;gExp=Date.now()+Math.max(60,(+r.expires_in||3600)-60)*1000;out('','');show(gTok)}
+          else out('Google sign-in was cancelled or blocked. Allow the pop-up and try again.','err')},error_callback:function(){out('Google sign-in was cancelled or blocked. Allow the pop-up and try again.','err')}});
+        gTC.requestAccessToken({prompt:gTok?'':'select_account'})
+      }
+    }
+  }
+  dwEl.hidden=false
+}
+document.addEventListener('keydown',function(ev){if(ev.key==='Escape'&&dwEl&&!dwEl.hidden&&pop.hidden){ev.stopImmediatePropagation();dwEl.hidden=true}},true);
+S.drive.b=dHome;
 S.x.b=xHome;
 /* any X link pasted elsewhere (YouTube box, Web, in-app browser) goes through the same detector */
-var _wi=webImport;webImport=function(u){if(isX(u))return xImport(u);return _wi(u)};
+var _wi=webImport;webImport=function(u){if(isX(u))return xImport(u);if(isDrive(u))return driveImport(u);return _wi(u)};
 })();
 S.twitch.b=paste('Twitch channel name or link',location.hostname?'Plays the channel with Twitch’s official player.':'Twitch only plays on a site served over https. Upload this page to a host first.',function(v){var c=v.replace(/^.*twitch\.tv\//,'').split(/[/?]/)[0];return c?'https://player.twitch.tv/?channel='+encodeURIComponent(c)+'&parent='+(location.hostname||'localhost'):null},'Twitch');
 document.querySelectorAll('#grid .plat').forEach(function(b){if(['netflix','prime video','crunchyroll','photos'].indexOf(b.dataset.n)>-1)b.insertAdjacentHTML('beforeend','<em class="ab">App needed</em>')});
@@ -642,7 +783,7 @@ scr.addEventListener('input',function(ev){ev.target.classList&&ev.target.classLi
 if(/^#p-(\w+)/.test(location.hash)){var m0=/^#p-(\w+)/.exec(location.hash);if(S[m0[1]])open(m0[1],false)}
 })();
 </script>
-<script src="room.js?v=3"></script>
+<script src="room.js?v=4"></script>
 <script src="mobile-navigation.js?v=2"></script>
 </body>
 </html>
