@@ -80,9 +80,9 @@ const go = async (page, port, hash = '#info') => { await page.goto(`http://local
     await t('profile now shows the flag right after @username and "Ludhiana, Punjab (India)" with a map icon', async () => {
       await page.waitForSelector('.idt .geo-line', { timeout: 6000 });
       assert.strictEqual((await page.textContent('.idt .geo-text')).trim(), 'Ludhiana, Punjab (India)');
-      assert(await page.isVisible('.idt p .geo-flag')); assert(await page.isVisible('.idt .geo-map'));
+      assert.strictEqual(await page.locator('.idt p .geo-flag').count(), 0, 'no flag next to @username'); assert(await page.isVisible('.idt .geo-map'));
       assert(await page.locator('.idstrip .avtap .geo-badge').first().isVisible(), 'flag badge on the profile photo');
-      assert.strictEqual(await page.getAttribute('.idt p .geo-flag', 'alt'), 'India');
+      assert.strictEqual(await page.locator('.idstrip .avtap .geo-badge img').first().getAttribute('alt'), 'India');
       await page.screenshot({ path: path.join(OUT, '02-profile-with-location-mobile.png') }); });
     await t('the map icon opens a popup with the map at the saved point; Esc closes it', async () => {
       await page.click('.idt .geo-map'); await page.waitForSelector('.geo-ov iframe');
@@ -103,8 +103,8 @@ const go = async (page, port, hash = '#info') => { await page.goto(`http://local
     await t('toggle ON: city/state text and map icon are gone', async () => {
       assert.strictEqual(await page.locator('.idt .geo-line').count(), 0); assert.strictEqual(await page.locator('.geo-map').count(), 0);
       assert(!/Ludhiana|Punjab/.test(await page.textContent('.idstrip'))); });
-    await t('toggle ON: the country flag is still shown (next to @username and on the photo)', async () => {
-      assert(await page.locator('.idt p .geo-flag').first().isVisible()); assert(await page.locator('.idstrip .avtap .geo-badge').first().isVisible()); });
+    await t('toggle ON: the country flag is still shown on the photo (none next to @username)', async () => {
+      assert.strictEqual(await page.locator('.idt p .geo-flag').count(), 0); assert(await page.locator('.idstrip .avtap .geo-badge').first().isVisible()); });
     await t('toggle ON: Location card says it is hidden and keeps only the country', async () => {
       const c = await page.textContent('.fgrid'); assert(/India/.test(c) && /hidden/i.test(c) && !/Ludhiana/.test(c)); });
     await page.screenshot({ path: path.join(OUT, '04-profile-hidden-location-mobile.png') });
@@ -115,14 +115,14 @@ const go = async (page, port, hash = '#info') => { await page.goto(`http://local
     const shown = await newPage(browser, port, { rpc: { public_profile: Object.assign({}, base, { city: 'Sangrur', region: 'Punjab', lat: 30.25, lng: 75.84 }) }, grant: true, profile: { country_code: 'IN', location_updated_at: new Date().toISOString() } }); await go(shown.page, port, '#user/u2');
     await t('visitor sees flag + "Sangrur, Punjab (India)" + map icon when the owner shares location', async () => {
       await shown.page.waitForSelector('.vhb .geo-line', { timeout: 6000 }); assert.strictEqual((await shown.page.textContent('.vhb .geo-text')).trim(), 'Sangrur, Punjab (India)');
-      assert(await shown.page.isVisible('.vhb .mu .geo-flag')); assert(await shown.page.isVisible('.vhb .geo-map')); assert(await shown.page.isVisible('.vhb .geo-badge'));
+      assert.strictEqual(await shown.page.locator('.vhb .mu .geo-flag').count(), 0); assert(await shown.page.isVisible('.vhb .geo-map')); assert(await shown.page.isVisible('.vhb .geo-badge'));
       await shown.page.screenshot({ path: path.join(OUT, '05-visitor-shared-mobile.png') }); });
     await shown.ctx.close();
     const hid = await newPage(browser, port, { rpc: { public_profile: Object.assign({}, base, { city: null, region: null, lat: null, lng: null }) }, grant: true, profile: { country_code: 'IN', location_updated_at: new Date().toISOString() } }); await go(hid.page, port, '#user/u2');
     await t('visitor of a hidden user sees ONLY the flag: no city text, no map icon', async () => {
       await hid.page.waitForSelector('.vhb'); await hid.page.waitForTimeout(300);
       assert.strictEqual(await hid.page.locator('.vhb .geo-line').count(), 0); assert.strictEqual(await hid.page.locator('.geo-map').count(), 0);
-      assert(await hid.page.isVisible('.vhb .mu .geo-flag')); assert(await hid.page.isVisible('.vhb .geo-badge'));
+      assert.strictEqual(await hid.page.locator('.vhb .mu .geo-flag').count(), 0); assert(await hid.page.isVisible('.vhb .geo-badge'));
       await hid.page.screenshot({ path: path.join(OUT, '06-visitor-hidden-mobile.png') }); });
     await hid.ctx.close(); }
 
