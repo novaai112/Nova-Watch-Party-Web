@@ -308,6 +308,15 @@ function loadYT() {
   });
   return ytWait;
 }
+/* web videos carry their stream type + source page in the URL fragment: url#nova={"t":"hls","r":"https://page"} */
+function webStreamInfo(m) {
+  const raw = String(m.url || '');
+  const i = raw.indexOf('#nova=');
+  let meta = {};
+  if (i >= 0) { try { meta = JSON.parse(decodeURIComponent(raw.slice(i + 6))) || {}; } catch (e) {} }
+  const url = i >= 0 ? raw.slice(0, i) : raw;
+  return { url, ref: typeof meta.r === 'string' ? meta.r : '', hls: meta.t === 'hls' || /\.m3u8(?:$|[?#])/i.test(url) };
+}
 let hlsWait = null;
 function loadHls() {
   if (window.Hls) return Promise.resolve();
@@ -320,8 +329,14 @@ function attachSrc(v, url, forceHls) {
   if ((!forceHls && !/\.m3u8(?:$|[?#])/i.test(url)) || v.canPlayType('application/vnd.apple.mpegurl')) { v.src = url; return; }
   loadHls().then(() => {
     if (window.Hls && Hls.isSupported()) {
-      const h = new Hls({ enableWorker: true }); v._hls = h; h.loadSource(url); h.attachMedia(v);
-      h.on(Hls.Events.ERROR, (ev, d) => { if (d && d.fatal) toast('This stream cannot be played', 'err'); });
+      const h = new Hls({ enableWorker: true, maxBufferLength: 30, manifestLoadingMaxRetry: 3, levelLoadingMaxRetry: 3, fragLoadingMaxRetry: 4 }); v._hls = h; h.loadSource(url); h.attachMedia(v);
+      let netRetries = 0;
+      h.on(Hls.Events.ERROR, (ev, d) => {
+        if (!d || !d.fatal) return;
+        if (d.type === Hls.ErrorTypes.NETWORK_ERROR && netRetries++ < 3) h.startLoad();
+        else if (d.type === Hls.ErrorTypes.MEDIA_ERROR && netRetries++ < 3) h.recoverMediaError();
+        else toast('This stream cannot be played', 'err');
+      });
     } else v.src = url;
   }).catch(() => toast('Could not load the stream player', 'err'));
 }
@@ -368,10 +383,12 @@ async function mountMedia() {
     const v = document.createElement('video');
     v.playsInline = true; v.preload = 'auto'; v.controls = adm;
     if (m.provider === 'web') {
+      const info = webStreamInfo(m);
       const proxy = new URL('/api/browse', location.href);
       proxy.searchParams.set('stream', '1');
-      proxy.searchParams.set('url', m.url);
-      attachSrc(v, proxy.href, m.streamType === 'hls' || /\.m3u8(?:$|[?#])/i.test(m.url));
+      proxy.searchParams.set('url', info.url);
+      if (info.ref) proxy.searchParams.set('ref', info.ref);
+      attachSrc(v, proxy.href, info.hls || m.streamType === 'hls');
     } else attachSrc(v, m.url);
     P.kind = 'video'; P.video = v;
     ['play', 'pause', 'seeked'].forEach(ev => v.addEventListener(ev, () => { if (isAdmin() && Date.now() > P.mute) publish(!v.paused, v.currentTime); updateTimeUI(); }));

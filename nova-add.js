@@ -5,6 +5,9 @@
     history: [],
     historyIndex: -1,
     pendingMedia: null,
+    candidates: [],
+    autoPrompted: false,
+    promptTimer: null,
     loading: false
   };
   const WEB_SESSION_KEY = 'nova-web-navigation-v1';
@@ -305,10 +308,9 @@
       #novaWebConfirmModal {
         position: fixed;
         inset: 0;
-        background: rgba(0, 0, 0, 0.96);
+        background: rgba(0, 0, 0, 0.55);
         z-index: 100005;
         display: none;
-        flex-direction: column;
         align-items: center;
         justify-content: center;
         padding: 24px;
@@ -317,13 +319,70 @@
       #novaWebConfirmModal.active {
         display: flex;
       }
+      .nova-web-confirm-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: min(92vw, 400px);
+        padding: 24px 20px 20px;
+        border-radius: 18px;
+        background: #17171a;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.7);
+      }
+      #novaWebConfirmHead {
+        color: #8ab4ff;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+      }
       #novaWebConfirmTitle {
         color: #ffffff;
         font-size: 16px;
-        font-weight: 500;
-        max-width: 480px;
-        line-height: 1.45;
-        margin-bottom: 22px;
+        font-weight: 600;
+        max-width: 100%;
+        line-height: 1.4;
+        margin-bottom: 6px;
+        overflow-wrap: anywhere;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      #novaWebConfirmSub {
+        color: #a8acb3;
+        font-size: 13px;
+        line-height: 1.4;
+        margin-bottom: 20px;
+      }
+      #novaWebAddFab {
+        position: fixed;
+        right: 22px;
+        bottom: 82px;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        border: none;
+        padding: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #3b82f6, #7c3aed);
+        color: #fff;
+        cursor: pointer;
+        z-index: 100003;
+        box-shadow: 0 6px 22px rgba(59, 130, 246, 0.55);
+        animation: novaFabPulse 1.8s ease-out 3;
+      }
+      #novaWebOverlay.browsing #novaWebAddFab.show {
+        display: flex;
+      }
+      #novaWebAddFab:active { transform: scale(0.94); }
+      @keyframes novaFabPulse {
+        0% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.7), 0 6px 22px rgba(59, 130, 246, 0.55); }
+        100% { box-shadow: 0 0 0 22px rgba(124, 58, 237, 0), 0 6px 22px rgba(59, 130, 246, 0.55); }
       }
       .nova-web-confirm-actions {
         display: flex;
@@ -334,15 +393,16 @@
         color: #ffb4ab;
         font-size: 13px;
         line-height: 1.4;
-        max-width: 440px;
-        margin: -12px 0 18px;
+        max-width: 100%;
+        margin: -10px 0 14px;
       }
+      #novaWebConfirmError:empty { display: none; }
       .nova-web-confirm-btn {
-        min-width: 106px;
-        height: 38px;
-        border-radius: 8px;
-        background: #1c1c1e;
-        border: 1px solid #2c2c2e;
+        min-width: 112px;
+        height: 42px;
+        border-radius: 10px;
+        background: #26262a;
+        border: 1px solid #34343a;
         color: #ffffff;
         font-size: 14px;
         font-weight: 500;
@@ -350,10 +410,17 @@
         transition: background 0.15s ease;
       }
       .nova-web-confirm-btn:hover {
-        background: #2c2c2e;
+        background: #2f2f34;
       }
+      #novaWebConfirmYes {
+        background: linear-gradient(135deg, #3b82f6, #7c3aed);
+        border-color: transparent;
+        font-weight: 700;
+      }
+      #novaWebConfirmYes:disabled { opacity: 0.6; }
       @media (max-width: 600px) {
         #novaWebBackBtn { right: 16px; bottom: 16px; width: 42px; height: 42px; }
+        #novaWebAddFab { right: 16px; bottom: 70px; }
         #novaWebConfirmTitle { font-size: 15px; max-width: 90vw; }
         .nova-web-start-content { padding-top: 42px; }
         .nova-web-header { min-height: 40px; }
@@ -424,12 +491,20 @@
         </svg>
       </button>
 
-      <div id="novaWebConfirmModal">
-        <div id="novaWebConfirmTitle">Play - Video?</div>
-        <div id="novaWebConfirmError" role="status" aria-live="polite"></div>
-        <div class="nova-web-confirm-actions">
-          <button id="novaWebConfirmNo" class="nova-web-confirm-btn" type="button">No</button>
-          <button id="novaWebConfirmYes" class="nova-web-confirm-btn" type="button">Yes</button>
+      <button id="novaWebAddFab" type="button" title="Add this video to the room" aria-label="Add this video to the room">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+
+      <div id="novaWebConfirmModal" role="dialog" aria-modal="true" aria-labelledby="novaWebConfirmTitle">
+        <div class="nova-web-confirm-card">
+          <div id="novaWebConfirmHead">Video detected</div>
+          <div id="novaWebConfirmTitle">Web Video</div>
+          <div id="novaWebConfirmSub">Add it to the room and play it for everyone?</div>
+          <div id="novaWebConfirmError" role="status" aria-live="polite"></div>
+          <div class="nova-web-confirm-actions">
+            <button id="novaWebConfirmNo" class="nova-web-confirm-btn" type="button">No</button>
+            <button id="novaWebConfirmYes" class="nova-web-confirm-btn" type="button">Yes, add</button>
+          </div>
         </div>
       </div>
     `;
@@ -444,6 +519,12 @@
     const noBtn = document.getElementById('novaWebConfirmNo');
     const yesBtn = document.getElementById('novaWebConfirmYes');
     const iframe = document.getElementById('novaWebIframe');
+    const addFab = document.getElementById('novaWebAddFab');
+
+    addFab.addEventListener('click', () => {
+      const best = bestCandidate();
+      if (best) promptPlayWebVideo(best);
+    });
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -499,10 +580,25 @@
       setLoadingState(false);
     });
 
+    function isFromBrowser(source) {
+      let win = source;
+      for (let i = 0; win && i < 8; i++) {
+        if (win === iframe.contentWindow) return true;
+        if (win === win.parent) break;
+        win = win.parent;
+      }
+      return false;
+    }
+
     window.addEventListener('message', (event) => {
-      if (event.source !== iframe.contentWindow) return;
+      if (!isFromBrowser(event.source)) return;
       const data = event.data;
       if (!data || typeof data !== 'object') return;
+
+      if (data.type === 'NOVA_WEB_PAGE_START') {
+        resetVideoDetection();
+        return;
+      }
 
       if (data.type === 'NOVA_WEB_NAVIGATE' && data.url) {
         try {
@@ -512,32 +608,98 @@
         }
         const browseSrc = `/api/browse?url=${encodeURIComponent(data.url)}`;
         pushWebHistory(browseSrc);
-      }
-
-      if (data.type === 'NOVA_WEB_VIDEO_DETECTED') {
-        showStatusCard('Video found. Tap Play on the page to add it to your room.');
+        return;
       }
 
       if (data.type === 'NOVA_WEB_VIDEO_UNSUPPORTED') {
-        showStatusCard('This video format cannot be synced. Use a direct MP4, WebM, Ogg, or HLS stream, or an official player embed.');
+        const message = 'This video format cannot be synced. Use a direct MP4, WebM, Ogg, or HLS stream, or an official player embed.';
+        if (window.Nova && typeof Nova.toast === 'function') Nova.toast(message, 'err');
+        else showStatusCard(message);
+        return;
       }
 
-      if (data.type === 'NOVA_WEB_VIDEO_PROMPT' && data.streamUrl) {
+      if (data.type === 'NOVA_WEB_VIDEO_DETECTED' || data.type === 'NOVA_WEB_VIDEO_PROMPT') {
+        if (!data.streamUrl) return;
         try {
           if (new URL(data.streamUrl).protocol !== 'https:') return;
         } catch (error) {
           return;
         }
-        promptPlayWebVideo({
+        const candidate = {
           title: data.title || 'Web Video',
           streamUrl: data.streamUrl,
           proxiedStreamUrl: data.proxiedStreamUrl || `/api/browse?stream=1&url=${encodeURIComponent(data.streamUrl)}`,
           streamType: data.streamType || 'auto',
           thumbnail: data.thumbnail || '',
-          pageUrl: data.pageUrl || ''
-        });
+          pageUrl: data.pageUrl || '',
+          source: data.source || 'element'
+        };
+        addVideoCandidate(candidate);
+        if (data.type === 'NOVA_WEB_VIDEO_PROMPT') {
+          clearTimeout(webState.promptTimer);
+          webState.autoPrompted = true;
+          promptPlayWebVideo(candidate);
+        } else {
+          scheduleAutoPrompt();
+        }
       }
     });
+  }
+
+  function candidateScore(c) {
+    let score = ({ element: 6, network: 4, page: 2 })[c.source] || 1;
+    score += c.streamType === 'hls' ? 3 : c.streamType === 'mp4' ? 2 : 1;
+    let path = '';
+    try { path = new URL(c.streamUrl).pathname; } catch (e) {}
+    if (/master|index|playlist/i.test(path)) score += 1;
+    if (/chunk|seg|frag|audio|subtitle|thumb|preview|trailer/i.test(path)) score -= 3;
+    return score;
+  }
+
+  function bestCandidate() {
+    let best = null;
+    let bestScore = -Infinity;
+    webState.candidates.forEach((c) => {
+      const score = candidateScore(c);
+      if (score > bestScore) { best = c; bestScore = score; }
+    });
+    return best;
+  }
+
+  function updateAddFab() {
+    const fab = document.getElementById('novaWebAddFab');
+    if (fab) fab.classList.toggle('show', webState.candidates.length > 0);
+  }
+
+  function resetVideoDetection() {
+    clearTimeout(webState.promptTimer);
+    webState.candidates = [];
+    webState.autoPrompted = false;
+    hidePlayConfirmModal();
+    updateAddFab();
+  }
+
+  function addVideoCandidate(candidate) {
+    const existing = webState.candidates.find((c) => c.streamUrl === candidate.streamUrl);
+    if (existing) {
+      Object.assign(existing, candidate, { source: candidateScore(candidate) > candidateScore(existing) ? candidate.source : existing.source });
+    } else {
+      webState.candidates.push(candidate);
+      if (webState.candidates.length > 20) webState.candidates.shift();
+    }
+    updateAddFab();
+  }
+
+  function scheduleAutoPrompt() {
+    if (webState.autoPrompted) return;
+    clearTimeout(webState.promptTimer);
+    webState.promptTimer = setTimeout(() => {
+      if (!webState.isOpen || webState.mode !== 'browsing' || webState.autoPrompted) return;
+      const best = bestCandidate();
+      if (!best) return;
+      webState.autoPrompted = true;
+      promptPlayWebVideo(best);
+    }, 1200);
   }
 
   function updateHistoryButton() {
@@ -669,6 +831,7 @@
     overlay.classList.remove('browsing');
     setLoadingState(false);
     updateHistoryButton();
+    resetVideoDetection();
     iframe.src = 'about:blank';
   }
 
@@ -679,7 +842,7 @@
     const errorEl = document.getElementById('novaWebConfirmError');
     if (!modal || !titleEl) return;
 
-    titleEl.textContent = `Play - ${media.title || 'Web Video'}?`;
+    titleEl.textContent = media.title || 'Web Video';
     if (errorEl) errorEl.textContent = '';
     modal.classList.add('active');
   }
@@ -751,7 +914,7 @@
     webState.historyIndex = -1;
     clearSavedWebNavigation();
     overlay.classList.remove('active', 'browsing', 'loading');
-    hidePlayConfirmModal();
+    resetVideoDetection();
     if (iframe) iframe.src = 'about:blank';
   }
 
@@ -790,18 +953,26 @@
         throw new Error('DASH streams are not supported for synchronized playback yet.');
       }
 
+      streamUrl.hash = '';
+      let roomUrl = streamUrl.href;
+      const meta = { t: media.streamType === 'hls' || /\.m3u8(?:$|\?)/i.test(streamUrl.pathname) ? 'hls' : (media.streamType || 'auto') };
+      if (/^https?:\/\//i.test(media.pageUrl || '') && String(media.pageUrl).length <= 400) meta.r = media.pageUrl;
+      const withMeta = roomUrl + '#nova=' + encodeURIComponent(JSON.stringify(meta));
+      if (withMeta.length <= 1000) roomUrl = withMeta;
+      else if (roomUrl.length > 1000) throw new Error('This video link is too long to share in a room.');
+
       roomMedia = {
         kind: 'video',
         title: media.title || 'Web Video',
         provider: 'web',
-        url: streamUrl.href,
+        url: roomUrl,
         thumb: media.thumbnail || '',
         streamType: media.streamType || 'auto'
       };
     }
 
     const state = typeof room.ctx === 'function' ? room.ctx() : null;
-    const added = await room.handle(roomMedia, { now: !(state && state.busy) });
+    const added = await room.handle(roomMedia, { now: true });
     if (!added) throw new Error('Could not add this video. Sign in and check the room setup, then try again.');
   }
 
