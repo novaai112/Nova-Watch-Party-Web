@@ -603,7 +603,12 @@ document.addEventListener('change',async e=>{const x=e.target;
  if(x.id==='avf'){const f=x.files[0];x.value='';if(!f)return;const w=AVT;w&&w.classList.add('busy');
   try{await uploadAvatar(f);paintAv();Nova.toast('Profile photo updated')}catch(er){Nova.toast(er.message||'Upload failed','err')}w&&w.classList.remove('busy');return}
  const k=x.dataset?.k;if(!k)return;
- if(k=='hideMature'&&!x.checked){x.checked=true;if(await ask('Enable 🔞 Mature Content','Explicit 18+ content may be shown. Only turn this on if you are 18 or older.',t('yes'),false)){await Nova.set('hideMature',false);route()}return}
+ if(k=='hideMature'&&!x.checked){x.checked=true;
+  /* already verified once (stored in the database) -> switch freely, never verify again */
+  if(Nova.maturityVerified){await Nova.set('hideMature',false);route();return}
+  /* first time: the toggle stays ON (content hidden) until the live 18+ check succeeds */
+  if(await ask('Verify you are 18+','To show mature content we first need a quick live face check (about 30 seconds, one time only). Until it succeeds, mature content stays hidden.','Start verification',false))location.href='age-verify.html?next='+encodeURIComponent('profile.html#settings');
+  return}
  await Nova.set(k,x.checked)});
 window.addEventListener('hashchange',()=>{route();scrollTo(0,0)});
 DESK.addEventListener?DESK.addEventListener('change',()=>route()):DESK.addListener(()=>route());

@@ -175,3 +175,19 @@ Twitch plays in Twitch's official player (`parent` is set to your site's host na
 
 ## 8. Watch-room attachments
 The room message bar has the same paperclip menu as the friends chat: Document, Photos & videos, Camera, Audio, Unsplash, GIPHY, KLIPY (voice notes are not duplicated: the room already has its mic). Run **`room-media-schema.sql`** once in the Supabase SQL Editor (after `rooms-schema.sql`): it adds `room_messages.attachments`, allows attachment-only messages, and creates the private `room-media` bucket (members of the room can read, you can only upload to your own folder). Until it is run, text chat keeps working and attaching a file shows a hint. The Contact option was removed from the friends chat, and its GIPHY entry is now just "GIPHY".
+
+
+## 18+ age assurance (Hide Mature Content)
+Turning **Hide Mature Content** off for the first time opens `age-verify.html`: camera consent → 4 random liveness moves (blink, wink, head turn, smile …, each shown as an orange/green/red ring) → server decision. Only after success is `profiles.maturity_verified` set (by the server, never the browser) and the toggle turned off. Verified users switch it on/off freely with no new check. A database trigger keeps Hide Mature ON for unverified accounts, and `public_profile()` only returns NSFW videos to verified users.
+
+**Setup**
+1. Re-run `schema.sql` (Part 6 adds `maturity_verified`, the gate trigger and the one-time `age_sessions` table).
+2. Vercel env vars: `SUPABASE_SERVICE_ROLE_KEY` (server only, never expose), plus an age provider:
+   - Production: `AGE_PROVIDER=http`, `AGE_PROVIDER_URL`, `AGE_PROVIDER_SECRET`. The provider receives one JPEG frame and must reply `{ref, ts, result: 'adult'|'minor'|'uncertain', signature}` with `signature = HMAC-SHA256(secret, ref.result.ts)` (hex). Wrap a certified vendor (ISO/IEC 30107-3 tested PAD + age estimation) in a small adapter that speaks this.
+   - Local testing only: `AGE_PROVIDER=dev` approves anyone who passes the liveness moves; it is refused when `VERCEL_ENV=production`.
+   - No provider configured = verification fails closed ("service unavailable").
+3. Camera needs https (or localhost). The face model loads from jsDelivr/Google storage (MediaPipe Face Landmarker) — self-host it if you need a strict CSP.
+
+**Honest limits:** the browser checks (movement, quality, frozen/virtual-camera hints) raise the bar but cannot prove the stream is not injected or deep-faked, and the page does not claim ISO/IEC 30107-3 compliance. That assurance must come from the provider. Head-pose/blink thresholds are in `liveness-engine.js` (`CFG`); open `age-verify.html?debug=1` to see live values when tuning on real devices.
+
+**Tests:** `node tests/liveness-engine.test.js`, `node tests/age-api.test.js`, and `node tests/e2e-age-verify.js` (Playwright, stubbed face model).

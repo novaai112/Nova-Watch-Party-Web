@@ -94,13 +94,18 @@
     },
     t(k) { return T.en[k] || k; },
     async set(k, v) {
+      if (k === 'hideMature' && v === false && !Nova.maturityVerified && !Nova._allowUnhide) return;   // server also enforces this
       Nova.S[k] = v; localStorage.setItem('nova_settings', JSON.stringify(Nova.S));
       const { data } = await Nova.sb.auth.getSession();
       if (data.session) await Nova.sb.from('profiles').update({ settings: Nova.S }).eq('id', data.session.user.id);
     },
     async sync(userId) {            // pull server settings on login
-      const { data } = await Nova.sb.from('profiles').select('settings').eq('id', userId).single();
-      if (data && data.settings) { Nova.S = { ...DEF, ...data.settings }; localStorage.setItem('nova_settings', JSON.stringify(Nova.S)); }
+      let { data, error } = await Nova.sb.from('profiles').select('settings, maturity_verified').eq('id', userId).single();
+      if (error) ({ data } = await Nova.sb.from('profiles').select('settings').eq('id', userId).single());   // column not created yet
+      Nova.maturityVerified = !!(data && data.maturity_verified);
+      if (data && data.settings) { Nova.S = { ...DEF, ...data.settings }; }
+      if (!Nova.maturityVerified) Nova.S.hideMature = true;          // unverified accounts never show mature content
+      localStorage.setItem('nova_settings', JSON.stringify(Nova.S));
     },
     haptic() { if (Nova.S.haptic && navigator.vibrate) navigator.vibrate(15); },
     // Use for every incoming chat message: returns English text if auto-translate is ON and message isn't English.

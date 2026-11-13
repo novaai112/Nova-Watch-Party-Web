@@ -111,7 +111,7 @@ ${REQ.length ? `<div class=pbody style="border-top:1px solid var(--line)">${REQ.
       : `<div class=empty style="border-top:1px solid var(--line)">${ic('bell', 30)}<p>${t('nonotif')}</p></div>`}`));
 
   V.activity = () => {
-    const d = PD, can = !Nova.S.hideMature, v = d.videos || { top: [], history: [], liked: [] };
+    const d = PD, can = !Nova.S.hideMature && !!Nova.maturityVerified, v = d.videos || { top: [], history: [], liked: [] };
     const sh = (k, title, body, extra = '') => `<div class=subh><h3>${title}</h3><span class=actg>${extra}${eye(k)}</span></div>${body}`;
     return shell('activity', mbar(t('activity')) + panel(t('activity'), 'What you watch on Nova',
       `<div class=actg><label class=nsfw style="${can ? '' : 'opacity:.5'}" title="${can ? '' : 'Turn off Hide Mature Content in Settings first'}">Include 🔞 NSFW <input type=checkbox class=sw data-nsfw ${NSFW && can ? 'checked' : ''} ${can ? '' : 'disabled'}></label></div>`,

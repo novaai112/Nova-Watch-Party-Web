@@ -317,7 +317,7 @@ begin
   select * into p from public.profiles where id = p_uid;
   if not found then return null; end if;
   own := (auth.uid() = p_uid and not p_preview);
-  incl := p_nsfw and not coalesce((select (settings ->> 'hideMature')::boolean from public.profiles where id = auth.uid()), true);
+  incl := p_nsfw and coalesce((select (not coalesce((settings ->> 'hideMature')::boolean, true)) and maturity_verified from public.profiles where id = auth.uid()), false);
   s := jsonb_build_object(
     'bio', public._vis(p.visibility,'bio',own), 'gallery', public._vis(p.visibility,'gallery',own),
     'stats', public._vis(p.visibility,'stats',own), 'friends', public._vis(p.visibility,'friends',own),
@@ -481,3 +481,60 @@ insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 values ('gallery', 'gallery', true, 5242880, array['image/jpeg','image/png','image/webp'])
 on conflict (id) do update set public = true, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
 -- DONE (part 5)
+
+-- =====================================================================
+--  PART 6: 18+ AGE ASSURANCE (face liveness + age check)  — safe to re-run
+--  * profiles.maturity_verified is written ONLY by the server (api/age-verify.js, service role).
+--    The browser role has no UPDATE grant on these columns, so it can never self-verify.
+--  * A trigger keeps "Hide Mature Content" ON for every account that is not verified,
+--    even if someone edits their own settings JSON through the API.
+--  * age_sessions holds one-time verification sessions (nonce hash, random challenge order,
+--    progress). No images, landmarks or biometric templates are ever stored.
+-- =====================================================================
+alter table public.profiles
+  add column if not exists maturity_verified    boolean not null default false,
+  add column if not exists maturity_verified_at timestamptz,
+  add column if not exists maturity_method      text;
+
+-- (re)state the browser's column grants WITHOUT the maturity_* columns
+revoke update on public.profiles from authenticated;
+grant update (full_name, avatar_url, username, bio, country, location_lat, location_lng, settings, visibility, socials)
+  on public.profiles to authenticated;
+
+create or replace function public.enforce_mature_gate()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  -- a signed-in end user (auth.uid() is set) can never flip the verified flag;
+  -- only the server (service role) or a dashboard/SQL session can
+  if tg_op = 'UPDATE' and auth.uid() is not null then
+    new.maturity_verified    := old.maturity_verified;
+    new.maturity_verified_at := old.maturity_verified_at;
+    new.maturity_method      := old.maturity_method;
+  end if;
+  -- unverified accounts always keep mature content hidden
+  if not new.maturity_verified and new.settings is not null
+     and coalesce((new.settings ->> 'hideMature')::boolean, true) = false then
+    new.settings := jsonb_set(new.settings, '{hideMature}', 'true'::jsonb);
+  end if;
+  return new;
+end; $$;
+drop trigger if exists profiles_enforce_mature_gate on public.profiles;
+create trigger profiles_enforce_mature_gate before insert or update on public.profiles
+  for each row execute function public.enforce_mature_gate();
+
+create table if not exists public.age_sessions (
+  nonce_hash     text primary key,                               -- sha256 of the one-time nonce
+  user_id        uuid not null references auth.users (id) on delete cascade,
+  challenges     text[] not null,                                -- server-chosen random order
+  step           int  not null default 0,                        -- next step the server expects
+  total          int  not null,
+  status         text not null default 'open' check (status in ('open','finalizing','passed','failed')),
+  evidence       jsonb not null default '[]'::jsonb,
+  step_issued_at timestamptz not null default now(),
+  created_at     timestamptz not null default now(),
+  expires_at     timestamptz not null
+);
+create index if not exists age_sessions_user_idx on public.age_sessions (user_id, created_at desc);
+alter table public.age_sessions enable row level security;      -- no policies: service role only
+revoke all on public.age_sessions from anon, authenticated;
+-- DONE (part 6)
