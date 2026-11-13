@@ -8,6 +8,9 @@
  *   2. fxtwitter public API     api.fxtwitter.com
  *   3. vxtwitter public API     api.vxtwitter.com
  *
+ *  /api/x?user=<handle>  lists the newest VIDEO posts of a public profile (own list, no X embed needed):
+ *     { ok, user, items:[{id,author,text,thumbnail,duration,gif,streamUrl,streamType,variants,postUrl}] }
+ *
  *  Response: { ok, hasVideo, id, author, text, thumbnail, title, duration,
  *              streamUrl, streamType, variants:[{url,type,bitrate,height}], source }
  *  Posts that are private, deleted, age-restricted or have no video give
@@ -151,6 +154,97 @@ function fromVx(d, id) {
   return { hasVideo: false, id, source: 'vxtwitter', author: d.user_name || '', text: String(d.text || '').trim(), thumbnail: '' };
 }
 
+
+function getText(target, timeout = 9000, headers = {}) {
+  return new Promise((resolve, reject) => {
+    let u;
+    try { u = new URL(target); } catch (e) { return reject(e); }
+    const req = https.request({
+      hostname: u.hostname, path: u.pathname + u.search, method: 'GET', timeout,
+      headers: Object.assign({ 'User-Agent': UA, 'Accept': 'text/html,application/json,*/*', 'Accept-Language': 'en-US,en;q=0.9' }, headers)
+    }, (r) => {
+      if ([301, 302, 303, 307, 308].includes(r.statusCode) && r.headers.location) { r.resume(); return resolve(getText(new URL(r.headers.location, target).toString(), timeout, headers)); }
+      const chunks = []; let n = 0;
+      r.on('data', (c) => { n += c.length; if (n < 6 * 1024 * 1024) chunks.push(c); });
+      r.on('end', () => { if (r.statusCode < 200 || r.statusCode >= 300) return reject(new Error('HTTP ' + r.statusCode)); resolve(Buffer.concat(chunks).toString('utf8')); });
+    });
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+function parseHandle(input) {
+  let raw = String(input || '').trim().replace(/^@/, '');
+  const m = /^(?:https?:\/\/)?(?:www\.|mobile\.|m\.)?(?:x|twitter)\.com\/(\w{1,15})(?:[/?#]|$)/i.exec(raw);
+  if (m) raw = m[1];
+  return /^\w{1,15}$/.test(raw) ? raw : null;
+}
+
+/* collect every tweet object found anywhere inside X's profile-timeline JSON */
+function collectTweets(node, out, seen, depth) {
+  if (!node || typeof node !== 'object' || depth > 14) return;
+  if (Array.isArray(node)) { node.forEach((n) => collectTweets(n, out, seen, depth + 1)); return; }
+  if ((node.id_str || node.rest_id) && (node.full_text || node.text) && (node.extended_entities || node.mediaDetails || node.entities)) {
+    const id = String(node.id_str || node.rest_id);
+    if (!seen.has(id)) { seen.add(id); out.push(node); }
+  }
+  Object.keys(node).forEach((k) => { if (k !== 'user') collectTweets(node[k], out, seen, depth + 1); });
+}
+
+function adaptTimelineTweet(t) {
+  const p = Object.assign({}, t);
+  p.id_str = String(t.id_str || t.rest_id);
+  p.text = t.full_text || t.text || '';
+  p.mediaDetails = t.mediaDetails || (t.extended_entities && t.extended_entities.media) || (t.entities && t.entities.media) || [];
+  return p;
+}
+
+async function listFromSyndication(handle) {
+  const html = await getText('https://syndication.twitter.com/srv/timeline-profile/screen-name/' + encodeURIComponent(handle) + '?showReplies=false&dnt=true&lang=en', 10000, { Referer: 'https://platform.twitter.com/', Origin: 'https://platform.twitter.com' });
+  const m = /<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i.exec(html);
+  if (!m) throw new Error('no data');
+  const data = JSON.parse(m[1]);
+  const tweets = []; collectTweets(data, tweets, new Set(), 0);
+  const items = [];
+  tweets.forEach((t) => {
+    const p = adaptTimelineTweet(t);
+    const r = fromSyndication(p, p.id_str);
+    if (r && r.hasVideo) items.push(shapeItem(r, p.id_str, (t.user && t.user.screen_name) || handle, t.created_at));
+  });
+  return items;
+}
+
+async function listFromFx(handle) {
+  const r = await getJson('https://api.fxtwitter.com/2/profile/' + encodeURIComponent(handle) + '/statuses?count=40');
+  const arr = (r.data && (r.data.results || r.data.statuses)) || [];
+  const items = [];
+  arr.forEach((st) => {
+    const o = fromFx({ tweet: st }, String(st.id));
+    if (o && o.hasVideo) items.push(shapeItem(o, String(st.id), (st.author && st.author.screen_name) || handle, st.created_at));
+  });
+  return items;
+}
+
+function shapeItem(r, id, user, date) {
+  const best = r.best;
+  return {
+    id, author: r.author, text: r.text, thumbnail: r.thumbnail, duration: r.duration || 0, gif: !!r.gif,
+    title: (r.text ? r.text.replace(/\s+/g, ' ').slice(0, 90) : '') || ('Video by ' + (r.author || 'X')),
+    streamUrl: best.url, streamType: best.type, variants: r.variants, date: date || '',
+    postUrl: 'https://x.com/' + (user || 'i') + '/status/' + id
+  };
+}
+
+async function listProfile(handle) {
+  const errors = [];
+  for (const fn of [listFromSyndication, listFromFx]) {
+    try { const items = await fn(handle); if (items.length) return { items }; errors.push('no videos'); }
+    catch (e) { errors.push(e.message || 'failed'); }
+  }
+  return { items: [], errors };
+}
+
 async function resolvePost(post) {
   const errors = [];
   let noVideoResult = null;
@@ -177,6 +271,13 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') { res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type'); res.statusCode = 200; return res.end(); }
   try {
     const q = new URL(req.url, 'http://localhost').searchParams;
+    if (q.get('user')) {
+      const h = parseHandle(q.get('user'));
+      if (!h) return json(res, 400, { ok: false, error: 'Type an X username, like NASA.' });
+      const l = await listProfile(h);
+      if (!l.items.length) return json(res, 200, { ok: true, user: h, items: [], reason: 'No recent video posts could be loaded for @' + h + '. The account may be private, have no recent videos, or X is limiting requests. Copy a post link on X and paste it instead.' });
+      return json(res, 200, { ok: true, user: h, items: l.items.slice(0, 30) });
+    }
     const post = parsePost(q.get('url') || q.get('id'));
     if (!post) return json(res, 400, { ok: false, error: 'That is not an X post link. It should look like x.com/name/status/123…' });
     const r = await resolvePost(post);
@@ -199,3 +300,6 @@ module.exports._parsePost = parsePost;
 module.exports._syndicationToken = syndicationToken;
 module.exports._fromSyndication = fromSyndication;
 module.exports._fromFx = fromFx;
+module.exports._parseHandle = parseHandle;
+module.exports._collectTweets = collectTweets;
+module.exports._listFromSyndication = listFromSyndication;

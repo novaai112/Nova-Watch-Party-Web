@@ -23,6 +23,7 @@ Static website + Supabase, with Vercel serverless API routes. No build step; dep
 | `local/local-search-server.js` | Token-protected laptop bridge for DuckDuckGo web searches |
 | `api/x.js` | X (Twitter) post video detector: `/api/x?url=<post link>` returns whether the post has a video and its MP4/HLS address |
 | `api/drive.js` | Google Drive checker: `/api/drive?url=` says if a file link is a playable video, `/api/drive?folder=` lists a shared folder |
+| `api/twitch.js` | Twitch checker: `/api/twitch?url=` detects a channel / past video / clip, `?top=1` lists live channels, `?channel=` lists a channel's live status, videos and clips (no key needed) |
 | `supabase/functions/chat-media-search/` | Authenticated Unsplash photo search plus GIPHY and KLIPY media search |
 
 ## 1. Database
@@ -155,3 +156,18 @@ Platform picker -> **Drive** has two options:
 1. **Paste Drive Link** — paste a video link (checked automatically) or a shared-folder link (browse sub-folders, tap a video). Popup: *Add this Drive video to the room?* Yes adds and plays it.
 2. **Continue to Drive** — Google sign-in + Google's own file picker inside Nova (Drive's website itself cannot be embedded). Pick a video; if it is private Nova asks before setting it to "Anyone with the link" so the whole room can watch. Needs `GOOGLE_CLIENT_ID` and `GOOGLE_PICKER_API_KEY` (see `.env.example`; enable Google Picker API + Drive API, add your site as an authorised JavaScript origin). Without them the panel still offers Open Drive and the paste box.
 Files must be shared "Anyone with the link". MP4/WebM/MOV play in sync; MKV/AVI or download-disabled files fall back to Drive's own player (not time-synced). Folder listing and video lengths use `DRIVE_API_KEY` (Drive API enabled); single-file detection works without any key.
+
+
+## 6. Google Drive sign-in: "Error 403: access_denied" (fix)
+"Continue to Drive → Choose from my Google Drive" uses Google sign-in. If Google shows *Access blocked: … has not completed the Google verification process*, your OAuth app is still in **Testing** mode, where only listed test users may sign in.
+1. Google Cloud Console → **APIs & Services → OAuth consent screen** (Google Auth platform → Audience).
+2. Press **Publish app** → status **In production**. Nova only requests `https://www.googleapis.com/auth/drive.file` (non-sensitive), so no Google review is required.
+3. Under **Credentials → your OAuth client → Authorized JavaScript origins**, add `https://nova-watch-party.vercel.app`.
+4. Set `GOOGLE_CLIENT_ID` and `GOOGLE_PICKER_API_KEY` in Vercel, enable the **Google Picker API** and **Google Drive API**, redeploy.
+(Quick alternative: keep Testing mode and add each person under *Test users*.) Pasting a Drive link always works without any sign-in.
+
+## 7. X and Twitch in rooms
+Both have the same two options, ending in one "Add to room?" popup:
+- **Paste link** - detects the video and asks before adding.
+- **Continue to Website** - X: type a profile and tap one of its video posts (Nova's own list via `/api/x?user=`, since X's embedded timeline no longer loads reliably). Twitch: live channels, or open a channel for its past broadcasts and clips.
+Twitch plays in Twitch's official player (`parent` is set to your site's host name automatically); it is shared but cannot be time-synced.
