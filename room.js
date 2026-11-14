@@ -25,6 +25,7 @@ const PATH = {
   phone: '<path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6A19.8 19.8 0 012.1 4.2 2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 1.9.7 2.8a2 2 0 01-.5 2.1L8.1 9.9a16 16 0 006 6l1.3-1.3a2 2 0 012.1-.4c.9.3 1.8.6 2.8.7a2 2 0 011.7 2z"/>',
   share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/>',
   x: '<path d="M18 6L6 18M6 6l12 12"/>',
+  dock: '<rect x="3" y="3" width="18" height="18" rx="4.5"/><path d="M10 3v18M7.4 9.2 5.4 12l2 2.8"/>',
   searchplay: '<circle cx="10.5" cy="10.5" r="7.5"/><path d="M21 21l-5.2-5.2"/><polygon points="9 7.5 13.5 10.5 9 13.5 9 7.5"/>',
   heart: '<path d="M12 21s-8-5.2-8-11a4.5 4.5 0 018-2.8A4.5 4.5 0 0120 10c0 5.8-8 11-8 11z"/>',
   clap: '<rect x="3" y="9" width="18" height="12" rx="2.5"/><path d="M3 9l2.2-4.5h14.6L21 9M8.6 4.5 6.4 9M13.8 4.5 11.6 9M19 4.5 16.8 9"/><polygon points="10.5 13 15.2 15.5 10.5 18"/>',
@@ -219,6 +220,7 @@ function cleanup(keepShell) {
   if (!keepShell) {
     const rm = $('#rm'); if (rm) rm.remove();
     document.body.classList.remove('inroom');
+    if (window.NovaDock) NovaDock.close(true);
     loadHome();
   }
 }
@@ -768,6 +770,7 @@ function buildShell() {
   const el = document.createElement('div'); el.id = 'rm';
   el.innerHTML = `
   <header class="rh">
+    <button class="rb rdock" data-r="dock" aria-label="Show Nova Home" title="Nova Home" aria-pressed="false">${ic('dock', 24)}</button>
     <button class="rb" data-r="leave" aria-label="Leave room">${ic('x', 24)}</button>
     <button class="rb" data-r="settings" aria-label="Room settings">${ic('gear', 24)}</button>
     <div class="rmid" id="rmid"></div>
@@ -822,9 +825,19 @@ function buildShell() {
   /* phones: follow the visible area so the keyboard never covers the message box */
   if (window.visualViewport) {
     const vv = window.visualViewport;
-    const fit = () => { if (!el.isConnected) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); return; } el.style.height = vv.height + 'px'; el.style.top = vv.offsetTop + 'px'; el.style.bottom = 'auto'; };
+    const fit = () => {
+      if (!el.isConnected) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); return; }
+      /* Nova Home docked above the room (phones): the room is the bottom half, unless the keyboard is open */
+      const stack = document.body.classList.contains('nv-dock-stack') && vv.height > innerHeight * 0.75;
+      const h = stack ? Math.round(vv.height / 2) : vv.height;
+      el.style.height = h + 'px';
+      el.style.top = (vv.offsetTop + (stack ? vv.height - h : 0)) + 'px';
+      el.style.bottom = 'auto';
+    };
+    el._fit = fit;
     vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); fit();
   }
+  if (window.NovaDock) NovaDock.attach(el);
 }
 function renderAll() { renderHead(); renderSettings(); renderControls(); renderNow(); renderFeed(); renderVote(); renderMic(); renderVoice(); renderBadges(); }
 
@@ -1398,6 +1411,7 @@ function onClick(e) {
   const el = e.target.closest('[data-r]'); if (!el || !R) return;
   const d = el.dataset, r = d.r;
   if (r === 'leave') leave();
+  else if (r === 'dock') { if (window.NovaDock) NovaDock.toggle(); }
   else if (r === 'settings') openSettings();
   else if (r === 'set') setOpt(d.v);
   else if (r === 'add') {
@@ -1567,8 +1581,9 @@ function renderHome() {
   set('pubL', 'pubE', pub, 'No public rooms right now.');
   if (window.NovaCards) NovaCards.afterRender();
 }
+const dockOpen = () => !!(window.NovaDock && NovaDock.isOpen());
 async function loadHome() {
-  if (R || homeLoading) return;
+  if ((R && !dockOpen()) || homeLoading) return;
   homeLoading = true;
   if (!homeLoaded) renderHome();
   try {
@@ -1643,10 +1658,18 @@ document.addEventListener('click', e => {
   const c = e.target.closest('.room[data-code]');
   if (!c) return;
   if (window.NovaCards && NovaCards.swallowClick(e)) return;   // long-press / right-click just opened the room menu
-  joinByCode(c.dataset.code);
+  switchTo(c.dataset.code);
 });
+/* tapping a room in the docked Nova Home while inside another room: confirm, then the server moves you */
+async function switchTo(code) {
+  if (R && R.code !== code) {
+    const v = await gate({ icon: 'users', title: 'Switch rooms?', text: 'You will leave this Watch Party and join the other one.', actions: [{ label: 'Join', value: 'go', primary: true }, { label: 'Stay here', value: 'no' }] });
+    if (v !== 'go') return;
+  }
+  joinByCode(code);
+}
 document.addEventListener('keydown', e => {
-  if (e.key === 'Enter') { const c = e.target.closest && e.target.closest('.room[data-code]'); if (c && e.target === c) joinByCode(c.dataset.code); }
+  if (e.key === 'Enter') { const c = e.target.closest && e.target.closest('.room[data-code]'); if (c && e.target === c) switchTo(c.dataset.code); }
   else if ((e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) && window.NovaCards) {
     const c = e.target.closest && e.target.closest('.room[data-code]');
     if (c) { e.preventDefault(); NovaCards.openMenu(c.dataset.rid, c); }
@@ -1677,7 +1700,7 @@ async function boot() {
     }
   } else hashJoin();
   loadHome();
-  homeT = setInterval(() => { if (!R && !document.hidden) loadHome(); }, 10000);
+  homeT = setInterval(() => { if ((!R || dockOpen()) && !document.hidden) loadHome(); }, 10000);
 }
 
 /* Small read-only API for room-cards.js (hover preview, long-press / right-click menu) */
@@ -1706,11 +1729,11 @@ const roomApi = {
   reload: () => loadHome(),
   dismiss: id => rpc('room_dismiss', { p_room: id }),
   reportVideo: (id, reason, details) => rpc('room_report_video', { p_room: id, p_reason: reason, p_details: details || '' }),
-  toast, oops, inRoom: () => !!R
+  toast, oops, inRoom: () => !!R && !dockOpen()
 };
 /* sync(): re-read the room + Up next and repaint (used by tests and as a manual re-sync) */
 async function sync() { if (!R) return; await refreshRoom(); await refreshQueue(); renderAll(); await mountMedia(); }
-window.NovaRoom = { handle, ctx, renderHome, active: () => !!R, ready: true, api: roomApi, sync, state: stateName };
+window.NovaRoom = { handle, ctx, renderHome, active: () => !!R, ready: true, api: roomApi, sync, state: stateName, join: switchTo };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 

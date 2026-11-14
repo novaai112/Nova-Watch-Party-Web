@@ -295,7 +295,7 @@ ${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.
     const roomCard = e.target.closest('.public-room-card');
     if (roomCard && !e.target.closest('.public-room-avatar,.public-room-link')) {
       const link = roomCard.querySelector('.public-room-link');
-      if (link) location.href = link.href;
+      if (link && !(window.NovaEmbed && NovaEmbed.join(link.getAttribute('href')))) location.href = link.href;
       return;
     }
     const el = e.target.closest('[data-close],[data-act],[data-vis],[data-tab],[data-add],[data-acc],[data-dec],[data-clear],[data-lb],[data-profile-friend]'); if (!el) return; const d = el.dataset;

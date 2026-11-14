@@ -1,0 +1,62 @@
+/* ===== room-dock.css — Nova Home docked beside / above the Watch room ===== */
+/* geometry: --dk-w × --dk-h is the Home column */
+body.nv-dock{--dk-w:clamp(380px,32vw,460px);--dk-h:100vh}
+@supports (height:100dvh){body.nv-dock{--dk-h:100dvh}}
+@media(max-width:1099px){body.nv-dock{--dk-w:50vw}}                                   /* tablet: two halves */
+@media(max-width:599px){body.nv-dock{--dk-w:100vw;--dk-h:50vh}}                       /* phone: top half / bottom half */
+@supports (height:50dvh){@media(max-width:599px){body.nv-dock{--dk-h:50dvh}}}
+
+/* the header button */
+#rm .rdock{color:var(--ink)}
+#rm .rdock[aria-pressed="true"]{background:#fff;box-shadow:0 0 0 1px var(--line),0 2px 8px #0b122014}
+#rm .rmid{min-width:0}
+
+/* ---- Home column (the page's normal <main id="home"> / #picker, shown the way it looks on a phone) ---- */
+body.nv-dock .wrap{position:fixed;left:0;top:0;z-index:39;width:var(--dk-w);height:var(--dk-h);max-width:none;min-height:0;margin:0;
+  padding:0 14px 110px;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+  box-shadow:1px 0 0 var(--line)}
+body.nv-dock .wrap::-webkit-scrollbar{display:none}
+body.nv-dock .brand{font-size:36px}
+body.nv-dock .search,body.nv-dock .search.flat{max-width:none;margin:8px 0 14px;border:1px solid var(--line);border-radius:999px;padding:0 14px 0 8px;grid-template-columns:40px 1fr}
+body.nv-dock .search.flat svg{margin-left:8px}
+body.nv-dock .rooms{grid-template-columns:minmax(0,1fr)!important;gap:10px}
+body.nv-dock .room{min-height:92px}
+body.nv-dock .grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px}
+body.nv-dock .plat{min-height:112px}
+body.nv-dock .plat .logo{height:60px;max-width:92px}
+/* the + button stays inside the Home column */
+body.nv-dock .fab{right:auto!important;left:calc(var(--dk-w) - 82px);bottom:calc(22px + env(safe-area-inset-bottom))}
+@media(max-width:599px){body.nv-dock .fab{bottom:auto;top:calc(var(--dk-h) - 82px);width:56px;height:56px}}
+/* picker / platform screens open inside the Home column, never over the room */
+body.nv-dock.inroom #picker:not([hidden]){position:fixed;inset:0 auto auto 0;width:var(--dk-w);height:var(--dk-h);padding:0 14px 40px;z-index:39}
+body.nv-dock #scr,body.nv-dock #fr{inset:0 auto auto 0;width:var(--dk-w);height:var(--dk-h)}
+
+/* ---- the room slides to the right (or down on phones) ---- */
+body.nv-dock #rm{left:var(--dk-w)}
+body.nv-dock-anim #rm{animation:dkShift .32s cubic-bezier(.2,.8,.2,1)}
+body.nv-dock-anim .wrap,body.nv-dock-anim #nvDockPanel{animation:dkIn .32s cubic-bezier(.2,.8,.2,1)}
+@keyframes dkShift{from{left:0}}
+@keyframes dkIn{from{opacity:0;transform:translateX(-28px)}}
+@media(max-width:599px){
+  body.nv-dock #rm,body.nv-dock-stack #rm{left:0;top:var(--dk-h)}
+  body.nv-dock .wrap{box-shadow:0 1px 0 var(--line)}
+  body.nv-dock-anim #rm{animation:none}
+  body.nv-dock-anim .wrap,body.nv-dock-anim #nvDockPanel{animation:dkInTop .32s cubic-bezier(.2,.8,.2,1)}
+  /* half-height room: compact header, shorter video so the chat keeps room to breathe */
+  body.nv-dock-stack #rm .rh{padding-top:4px;padding-bottom:0}
+  body.nv-dock-stack #rm .rb{width:40px;height:40px}
+  body.nv-dock-stack #rm .vwrap{max-height:none;aspect-ratio:auto;height:min(24dvh,56.25vw)}
+  body.nv-dock-stack #rm .ctl{min-height:42px;padding-top:2px;padding-bottom:2px}
+}
+@keyframes dkInTop{from{opacity:0;transform:translateY(-28px)}}
+
+/* ---- Settings / Friends panel (fills the Home column) ---- */
+#nvDockPanel{position:fixed;left:0;top:0;z-index:40;width:var(--dk-w);height:var(--dk-h);display:none;background:#f4f7fb;box-shadow:1px 0 0 var(--line,#d8e4ef)}
+body.nv-dock-panel #nvDockPanel{display:block}
+#nvDockPanel[hidden]{display:none!important}
+#nvDockPanel .nvdp-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent;opacity:0;transition:opacity .18s}
+#nvDockPanel.ready .nvdp-frame{opacity:1}
+#nvDockPanel .nvdp-load{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:10px;color:#475467;font:600 14px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+#nvDockPanel.ready .nvdp-load{display:none}
+@media(max-width:599px){#nvDockPanel{box-shadow:0 1px 0 #d8e4ef}}
+@media(prefers-reduced-motion:reduce){body.nv-dock-anim *{animation:none!important}}

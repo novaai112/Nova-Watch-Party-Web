@@ -367,6 +367,8 @@ body.message-page-active.people-experience-active .people-list{grid-column:2;gri
 <script>
 const {sb,t,esc}=Nova,ic=Nova.ic,app=document.getElementById('app'),$=s=>document.querySelector(s);
 let U,P={},PD=null,REQ=[],PROFILE_RELATION=null,PLAN={pro:false,end:null},PREVIEW=false,NSFW=false,FAILED=null,RT=0,UN={ok:false,val:''};
+/* leave the app page for sign-in / verification: from inside the room dock the whole tab moves, not just the panel */
+const NOVA_EXIT=u=>{try{(window.top||window).location.href=u}catch(e){location.href=u}};
 const MAXG=30,MAXB=300,DESK=matchMedia('(min-width:900px)'),HOME=(window.APP_CONFIG||{}).HOME_URL||'';
 const EMOJI="👍 ❤️ 😂 😮 😢 😡 👏 🙏 🔥 🎉 😍 😎 🤣 💯 🥳 👌 🤘 👎 😴 🎵 💔 😘 🤔 🙌 ✨ 🤯 🥰 😭".split(' ');
 const CF=window.APP_CONFIG||{},APP=esc(CF.APP_NAME||'the app'),CO=esc(CF.COMPANY_NAME||'the Company'),EM=esc(CF.SUPPORT_EMAIL||''),PH=esc(CF.SUPPORT_PHONE||''),HR=esc(CF.SUPPORT_HOURS||''),AD=esc(CF.COMPANY_ADDRESS||''),JU=esc(CF.JURISDICTION||'India'),RF=+CF.REFUND_DAYS||0;
@@ -564,7 +566,7 @@ async function saveProfile(btn,body){
 document.addEventListener('click',async e=>{const el=e.target.closest('[data-go],[data-act],[data-lang]');if(!el)return;const d=el.dataset;
  if(d.go){if(d.go=='back'){history.length>1?history.back():location.hash='home'}else location.hash=d.go}
  if(d.lang){await Nova.set('lang',d.lang);route()}
- if(d.act=='out'){await sb.auth.signOut();location.href='index.html'}
+ if(d.act=='out'){await sb.auth.signOut();NOVA_EXIT('index.html')}
  if(d.act=='changePassword')openPasswordModal();
  if(d.act=='openDelete')openDeleteModal();
  if(d.act=='savePassword'){
@@ -581,7 +583,7 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-go]
   el.disabled=true;
   const {error}=await sb.rpc('delete_my_account');
   if(error){el.disabled=false;return Nova.toast(error.message,'err')}
-  await sb.auth.signOut();location.href='index.html';
+  await sb.auth.signOut();NOVA_EXIT('index.html');
  }
  if(d.act=='emoji'){const o=document.createElement('div');o.className='ov';o.innerHTML=`<div class=sheet><div class=em>${EMOJI.map(x=>`<button>${x}</button>`).join('')}</div></div>`;
   o.onclick=async ev=>{if(ev.target.tagName=='BUTTON')await Nova.set('quick',ev.target.textContent);o.remove();route()};document.body.append(o)}
@@ -607,13 +609,13 @@ document.addEventListener('change',async e=>{const x=e.target;
   /* already verified once (stored in the database) -> switch freely, never verify again */
   if(Nova.maturityVerified){await Nova.set('hideMature',false);route();return}
   /* first time: the toggle stays ON (content hidden) until the live 18+ check succeeds */
-  if(await ask('Verify you are 18+','To show mature content we first need a quick live face check (about 30 seconds, one time only). Until it succeeds, mature content stays hidden.','Start verification',false))location.href='age-verify.html?next='+encodeURIComponent('profile.html#settings');
+  if(await ask('Verify you are 18+','To show mature content we first need a quick live face check (about 30 seconds, one time only). Until it succeeds, mature content stays hidden.','Start verification',false))NOVA_EXIT('age-verify.html?next='+encodeURIComponent('profile.html#settings'));
   return}
  await Nova.set(k,x.checked);
  if(k==='hideLoc'&&!x.checked&&Nova.geo)Nova.geo.onUnhide()});
 window.addEventListener('hashchange',()=>{route();scrollTo(0,0)});
 DESK.addEventListener?DESK.addEventListener('change',()=>route()):DESK.addListener(()=>route());
-sb.auth.onAuthStateChange(ev=>{if(ev==='SIGNED_OUT')location.href='index.html'});
+sb.auth.onAuthStateChange(ev=>{if(ev==='SIGNED_OUT')NOVA_EXIT('index.html')});
 /* boot only after nova-profile.js has registered its views (it loads right after this script) */
 document.addEventListener('nova-geo-updated',async()=>{try{await loadP();route()}catch(er){}});
 const boot=async()=>{app.innerHTML=skel();
@@ -621,7 +623,7 @@ const boot=async()=>{app.innerHTML=skel();
  try{await loadP()}catch(er){app.innerHTML='<div class="card pad"><p>We could not load your profile. Check your connection and try again.</p><button class="btn pri" onclick="location.reload()">Try again</button></div>';return}
  route()};
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',boot):boot();
-</script><script src="nova-profile.js"></script><script src="nova-chat.js?v=18"></script><script src="mobile-navigation.js?v=2"></script>
+</script><script src="nova-profile.js"></script><script src="profile-embed.js"></script><script src="nova-chat.js?v=18"></script><script src="mobile-navigation.js?v=2"></script>
 <input type="file" id="avf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" hidden>
 <input type="file" id="gf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" multiple hidden>
 </body></html>

@@ -26,6 +26,8 @@ Static website + Supabase, with Vercel serverless API routes. No build step; dep
 | `api/twitch.js` | Twitch checker: `/api/twitch?url=` detects a channel / past video / clip, `?top=1` lists live channels, `?channel=` lists a channel's live status, videos and clips (no key needed) |
 | `room-cards.js` / `room-cards.css` | Home room cards: hover live preview (synced, mute button), glass info panel, avatar name tip, right-click / long-press sheet with Delete (Cancel invite) and Report video, + button aligned with the People icon. Home grid is 3 columns on desktop, 2 on tablet, 1 on phone. |
 | `room-media.js` / `room-media.css` / `room-media-schema.sql` | Watch-room attachment picker (same as the friends chat, minus Contact and voice notes) and its database setup |
+| `room-dock.js` / `room-dock.css` | Watch-room **Nova Home dock**: the button left of the Leave X slides the room over and shows the full one-column Nova Home (rooms, search, hover / right-click preview, tap to join) next to it. Laptop: 380–460 px column on the left; tablet: two halves; phone: Home on the top half, room on the bottom half. Settings and People open the real Settings / Friends pages inside the column, so the room never closes. Tapping another room asks "Switch rooms?" first |
+| `profile-embed.js` | Lets `profile.html?embed=1` run inside the dock: Back / "Nova home" close the panel instead of navigating, a public-room card joins through the room page |
 | `supabase/functions/chat-media-search/` | Authenticated Unsplash photo search plus GIPHY and KLIPY media search |
 
 ## 1. Database
