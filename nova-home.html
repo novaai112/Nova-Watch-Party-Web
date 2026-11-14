@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light">
 <title>Nova</title>
 <link rel="icon" href="7949.jpg" type="image/jpeg">
-<link rel="stylesheet" href="auth.css"><link rel="stylesheet" href="nova-location.css">
+<link rel="stylesheet" href="auth.css"><link rel="stylesheet" href="skeleton.css?v=1"><link rel="stylesheet" href="nova-location.css">
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{--tx:#000;--mu:#000;--card:#ffffffd9;--line:#d8e4ef;--ac:#000;color-scheme:light}
@@ -137,9 +137,7 @@ input::placeholder{color:#000;opacity:.55}
 <link rel="stylesheet" href="chat-pro.css?v=2"><link rel="stylesheet" href="room.css?v=9"><link rel="stylesheet" href="room-player.css?v=1"><link rel="stylesheet" href="room-media.css?v=4"><link rel="stylesheet" href="room-cards.css?v=2"><link rel="stylesheet" href="room-dock.css?v=1">
 </head>
 <body>
-<div id="nova-auth-check" role="status" aria-live="polite">
-  <div class="auth-card"><span class="auth-spinner" aria-hidden="true"></span><span>Checking your sign-in…</span></div>
-</div>
+<div id="nova-auth-check" class="sk" role="status" aria-live="polite"><div class="sk-splash" aria-hidden="true"><div class="sk-top"><i class="skl"></i><i class="skl brand"></i><i class="skl"></i></div><i class="skl search"></i><i class="skl ln w3" style="height:20px"></i><div class="sk-wrap"><div class="sk-room"><i class="skl"></i><div class="sk-info"><i class="skl ln w4"></i><i class="skl ln w2"></i></div></div><div class="sk-room"><i class="skl"></i><div class="sk-info"><i class="skl ln w4"></i><i class="skl ln w2"></i></div></div></div></div><span class="sk-sr">Checking your sign-in…</span></div>
 <div class="wrap">
 
 <!-- ================= HOME ================= -->
@@ -208,7 +206,7 @@ input::placeholder{color:#000;opacity:.55}
 <div id="fr" hidden><div class="fh"><button class="ib fb" aria-label="Close"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button><div class="ft2"></div><button class="ib fo" aria-label="Open outside Nova" title="Open outside Nova"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button></div><iframe allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe><div class="yt-local" hidden><h2>Open Nova over HTTP to play YouTube here</h2><p>YouTube requires an HTTP referrer for embedded playback. This page was opened directly from a file, so the player cannot identify its website.</p><a target="_blank" rel="noopener noreferrer">Open on YouTube</a><p>To use the embedded player, run <code>npx serve .</code> in Nova’s folder and open the local HTTP address it prints.</p></div></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script><script src="/api/config"></script>
-<script src="nova-core.js"></script><script src="nova-location.js"></script>
+<script src="skeleton.js?v=1"></script><script src="nova-core.js"></script><script src="nova-location.js"></script>
 <script>Nova.requireAuth();</script>
 <script src="nova-add.js"></script>
 <script>
@@ -377,6 +375,7 @@ function sbox(ph,go,init){
 /* ---- status line / retry inside a search screen ---- */
 function msg(t,kind,retry){
   var r=document.getElementById('sres');if(!r)return;
+  if(kind==='wait'&&window.NovaSk){r.innerHTML=NovaSk.videos(6);return}
   r.innerHTML='<div class="nv-msg'+(kind?' '+kind:'')+'">'+(kind==='wait'?'<i class="nv-spin"></i>':'')+'<span>'+e(t)+'</span>'+(retry?'<button class="nv-retry" type="button">Try again</button>':'')+'</div>';
   if(retry)r.querySelector('.nv-retry').onclick=retry
 }
@@ -398,7 +397,7 @@ function run(q,type,extra){
       if(!list.length){msg('No results','');return}
       if(!r.querySelector('.vg'))r.innerHTML='<div class="vg"></div><div class="nv-foot" id="nvf"></div>';
       vgrid();
-      var f=document.getElementById('nvf');if(f)f.innerHTML=end?'':'<i class="nv-spin"></i>';
+      var f=document.getElementById('nvf');if(f)f.innerHTML=end?'':'<i class="skl" style="height:14px;width:96px;margin:10px auto"></i>';
       setTimeout(check,60)
     }).catch(function(err){
       if(gen!==rgen)return;busy=false;

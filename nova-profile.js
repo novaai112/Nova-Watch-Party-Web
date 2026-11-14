@@ -132,7 +132,7 @@ ${sh('keywords', 'Keywords', kwHTML(d.titles))}${sh('channels', 'Channels', chHT
   function profileFriendActions(profile, preview) {
     if (preview || profile.own || PROFILE_RELATION?.userId !== profile.id) return '';
     const state = PROFILE_RELATION.status, userId = esc(profile.id);
-    if (state === 'loading') return `<div class="profile-friend-actions"><span class=mu>Loading friendship…</span></div>`;
+    if (state === 'loading') return `<div class="profile-friend-actions">${window.NovaSk ? '<i class="skl btn" style="width:150px"></i>' : '<span class=mu>Loading friendship…</span>'}</div>`;
     if (state === 'error') return `<div class="profile-friend-actions"><span class="hint bad">Friend actions unavailable: ${esc(PROFILE_RELATION.error || 'Could not load friendship status.')}</span></div>`;
     if (state === 'friend') return `<div class=profile-friend-actions><span class=people-status>Friend</span><button class="btn sec sm" data-profile-friend=remove data-user-id="${userId}">Remove Friend</button><button class="btn sec sm" data-profile-friend=block data-user-id="${userId}">${ic('shield',15)} Block</button><button class="btn sec sm" data-msg-profile="${userId}">${ic('chat',15)} Message</button></div>`;
     if (state === 'incoming') return `<div class=profile-friend-actions><button class="btn pri sm" data-profile-friend=accept data-user-id="${userId}">${ic('check',15)} Accept Request</button><button class="btn sec sm" data-profile-friend=decline data-user-id="${userId}">${ic('x',15)} Delete Request</button><button class="btn sec sm" data-profile-friend=block data-user-id="${userId}">${ic('shield',15)} Block</button><button class="btn sec sm" data-msg-profile="${userId}">${ic('chat',15)} Message</button></div>`;
@@ -275,7 +275,7 @@ ${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.
     const room = MAXG - P._g.length; if (room <= 0) return Nova.toast(`Gallery is full (${MAXG} photos)`, 'err');
     if (files.length > room) { Nova.toast(`Only ${room} more photo${room > 1 ? 's' : ''} fit — extra files skipped`, 'err'); files = files.slice(0, room); }
     const grid = $('#gsec .gg') || (() => { const g = document.createElement('div'); g.className = 'gg'; $('#gsec').append(g); return g; })(), rows = []; let fail = 0, lastErr = '';
-    const queue = files.map(f => { const tl = document.createElement('div'); tl.className = 'gt up'; tl.innerHTML = '<i class=spin></i>'; grid.prepend(tl); return { f, tl }; });
+    const queue = files.map(f => { const tl = document.createElement('div'); tl.className = 'gt up'; tl.innerHTML = '<i class="skl" style="position:absolute;inset:0;border-radius:inherit"></i>'; grid.prepend(tl); return { f, tl }; });
     const worker = async () => { for (let j; (j = queue.shift());) { try {
       if (j.f.size > 15e6) throw new Error('Image is larger than 15 MB');
       const blob = await Nova.imgBlob(j.f, 1600, .85, false), p = `${U.id}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`;

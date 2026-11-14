@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Nova — My Account</title>
-<link rel="icon" href="7949.jpg" type="image/jpeg"><link rel="stylesheet" href="auth.css"><link rel="stylesheet" href="nova-location.css"><link rel="stylesheet" href="chat-pro.css?v=2">
+<link rel="icon" href="7949.jpg" type="image/jpeg"><link rel="stylesheet" href="auth.css"><link rel="stylesheet" href="skeleton.css?v=1"><link rel="stylesheet" href="nova-location.css"><link rel="stylesheet" href="chat-pro.css?v=2">
 <meta name="theme-color" content="#f4f4f2">
 <script src="theme.js"></script>
 <script src="translator.js"></script>
@@ -368,9 +368,9 @@ body.message-page-active.people-experience-active .people-list{grid-column:2;gri
 .public-room-unavailable small{color:var(--mu)}
 @media(max-width:600px){.public-room-card{padding:10px 12px}.public-room-content{gap:10px}.public-room-media img{width:64px;height:42px}.public-room-media b{font-size:11px}.public-room-members{max-width:45%}.public-room-member-list{gap:4px}}
 @media(max-width:899px){body.people-experience-active #app{touch-action:pan-y}}
-</style></head><body><div id="nova-auth-check" role="status" aria-live="polite"><div class="auth-card"><span class="auth-spinner" aria-hidden="true"></span><span>Checking your sign-in…</span></div></div><div id="app"></div>
+</style></head><body><div id="nova-auth-check" class="sk" role="status" aria-live="polite"><div class="sk-splash" aria-hidden="true"><div class="sk-top"><i class="skl"></i><i class="skl brand"></i><i class="skl"></i></div><i class="skl search"></i><i class="skl ln w3" style="height:20px"></i><div class="sk-wrap"><div class="sk-room"><i class="skl"></i><div class="sk-info"><i class="skl ln w4"></i><i class="skl ln w2"></i></div></div><div class="sk-room"><i class="skl"></i><div class="sk-info"><i class="skl ln w4"></i><i class="skl ln w2"></i></div></div></div></div><span class="sk-sr">Checking your sign-in…</span></div><div id="app"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js"></script><script src="/api/config"></script><script src="nova-core.js"></script><script src="nova-location.js"></script>
+<script src="skeleton.js?v=1"></script><script src="config.js"></script><script src="/api/config"></script><script src="nova-core.js"></script><script src="nova-location.js"></script>
 <script>
 const {sb,t,esc}=Nova,ic=Nova.ic,app=document.getElementById('app'),$=s=>document.querySelector(s);
 let U,P={},PD=null,REQ=[],PROFILE_RELATION=null,PLAN={pro:false,end:null},PREVIEW=false,NSFW=false,FAILED=null,RT=0,UN={ok:false,val:''};
@@ -408,7 +408,7 @@ terms:['tos',[
 ['Contact',`${CO}, ${AD}. ${EM}.`]]]};
 const inv=()=>{PD=null};
 const isVer=()=>!!(U&&(U.email_confirmed_at||U.confirmed_at));
-const skel=()=>'<div class="sk" style="height:56px;margin:12px 0"></div><div class="sk" style="height:230px;margin:12px 0"></div><div class="sk" style="height:140px"></div>';
+const skel=()=>window.NovaSk?NovaSk.profile():'<div class="sk" style="height:230px"></div>';
 const avtap=(sz,cls='')=>`<button class="avtap${sz<44?' s':''}" data-act=pickAv data-s=${sz} data-c="${cls}" aria-label="Change profile photo" title="Tap to change photo">${Nova.avatar(P,sz,cls)}${Nova.geo.badge(P,sz)}</button>`;
 let AVT=null;
 const planPill=()=>`<span class="pill pl">${ic('sparkles',11)}${PLAN.pro?'Pro Plan':'Free Plan'}</span>`;

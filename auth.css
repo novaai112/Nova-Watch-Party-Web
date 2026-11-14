@@ -50,3 +50,6 @@
 @media (prefers-reduced-motion: reduce) {
   #nova-auth-check .auth-spinner { animation-duration: 2s; }
 }
+
+#nova-auth-check.sk{display:block;padding:clamp(14px,4vw,48px);overflow:hidden}
+#nova-auth-check.sk .sk-splash{margin:0 auto}

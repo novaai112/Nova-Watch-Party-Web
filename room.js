@@ -206,15 +206,25 @@ async function enter(row) {
   ui.privTried = false; ui.phide = false; ui.rate = 1; ui.rateKey = '';
   document.body.classList.add('inroom');
   buildShell();
+  skelShell(true);
   await Promise.all([refreshRoom(), refreshMembers(), refreshQueue(), loadMsgs()]);
-  if (!R) return;
+  if (!R) { skelShell(false); return; }
   subscribe();
   hbT = setInterval(beat, 15000);
   tickT = setInterval(onTick, 1000);
   renderAll();
   await mountMedia();
+  skelShell(false);
   afterPick();
   try { history.replaceState({ v: 'room' }, '', location.pathname + location.search + '#room'); } catch (e) {}
+}
+/* skeleton placeholders while a room is opening: dark video frame + chat bubbles */
+function skelShell(on) {
+  const w = $('#vwrap'), f = $('#feed');
+  if (!on) { const v = $('#vwrap .sk-vid'); if (v) v.remove(); const k = $('#feed .sk-wrap'); if (k) k.remove(); return; }
+  if (!window.NovaSk) return;
+  if (w) w.insertAdjacentHTML('beforeend', '<i class="skl sk-vid" aria-hidden="true"></i>');
+  if (f && !f.children.length) f.innerHTML = NovaSk.msgs(5);
 }
 function cleanup(keepShell) {
   clearInterval(hbT); clearInterval(tickT); hbT = tickT = null;
@@ -837,7 +847,7 @@ function buildShell() {
     </section>
     <section class="scol">
       <div class="vbar" id="vbar" hidden></div>
-      <div class="cbar" id="cbar"><b>${ic('chat', 16)}Chat</b><button type="button" class="ib2" data-r="csearch" aria-label="Search in chat" title="Search in chat">${ic('search', 20)}</button></div>
+      <div class="cbar" id="cbar"><b>${ic('chat', 16)}Chat</b><span class="cbtns"><button type="button" class="ib2" id="skipbtn" data-r="skip" aria-label="Next video" title="Next video" hidden>${ic('skip', 20)}</button>${moreBtn()}<button type="button" class="ib2" data-r="csearch" aria-label="Search in chat" title="Search in chat">${ic('search', 20)}</button></span></div>
       <div class="csbar" id="csbar" hidden><input id="cq" type="search" placeholder="Search in chat" autocomplete="off" aria-label="Search in chat"><span class="cscount" id="cscount"></span><button type="button" class="ib2" data-r="cs-prev" aria-label="Previous match">${ic('up', 18)}</button><button type="button" class="ib2" data-r="cs-next" aria-label="Next match">${ic('down', 18)}</button><button type="button" class="ib2" data-r="cs-close" aria-label="Close search">${ic('x', 18)}</button></div>
       <div class="feed" id="feed"></div>
       <div class="mentions" id="mentions" hidden></div>
@@ -963,11 +973,12 @@ function renderControls() {
   const el = $('#ctl'); if (!el) return;
   const m = R.media;
   if (!m) { el.innerHTML = ''; return; }
-  if (m.kind === 'embed') { el.innerHTML = '<span class="hint">Everyone opens the same page. This source cannot be time-synced.</span>' + moreBtn(); return; }
+  if (m.kind === 'embed') { el.innerHTML = '<span class="hint">Everyone opens the same page. This source cannot be time-synced.</span>'; renderMoreBtn(); return; }
   const adm = isAdmin();
   el.innerHTML = `${adm ? `<button class="cb" data-r="back" aria-label="Back 10 seconds">−10</button><button class="cb" data-r="toggle" id="ptog" aria-label="Play or pause">${ic('play', 18)}</button><button class="cb" data-r="fwd" aria-label="Forward 10 seconds">+10</button>` : `<span class="cb" title="Only the admin controls playback">${ic('lock', 16)}</span>`}
     <span class="t" id="tcur">0:00</span><input type="range" id="seek" min="0" max="1000" value="0" ${adm ? '' : 'disabled'} aria-label="Position"><span class="t" id="tdur">0:00</span>
-    ${moreBtn()}${adm ? `<button class="cb" data-r="skip" aria-label="Next video">${ic('skip', 18)}</button>` : ''}`;
+    `;
+  renderMoreBtn();
 }
 function updateTimeUI() {
   if (window.NovaPlayer) NovaPlayer.update();
@@ -1009,9 +1020,10 @@ function renderSettings() {
 const canMore = () => !!R && (isAdmin() || R.playback_mode !== 'leader');
 function moreBtn() {
   const ok = canMore(), t = ok ? 'More videos' : "Only the leader can choose videos in Leader's choice";
-  return `<button class="cb${ui.more ? ' on' : ''}${ok ? '' : ' dis'}" id="morebtn" data-r="more" aria-label="${t}" title="${t}" aria-pressed="${ui.more ? 'true' : 'false'}" ${ok ? '' : 'aria-disabled="true"'}>${ic('clap', 22)}</button>`;
+  return `<button type="button" class="ib2 morebtn${ui.more ? ' on' : ''}${ok ? '' : ' dis'}" id="morebtn" data-r="more" aria-label="${t}" title="${t}" aria-pressed="${ui.more ? 'true' : 'false'}" ${ok ? '' : 'aria-disabled="true"'}>${ic('clap', 20)}</button>`;
 }
 function renderMoreBtn() {
+  const sk = $('#skipbtn'); if (sk) sk.hidden = !(R && R.media && isAdmin());
   const b = $('#morebtn'); if (!b) return;
   const ok = canMore();
   b.classList.toggle('dis', !ok); b.classList.toggle('on', ui.more);
@@ -1485,7 +1497,7 @@ function openShare() {
 }
 async function openInvite() {
   ui.sheet = 'invite';
-  sheet('<h3>Invite friends</h3><input type="search" id="fq" placeholder="Search friends" autocomplete="off"><div class="fl" id="fl"><p class="em">Loading…</p></div><div class="row"><button class="s" data-r="copy">Copy link</button><button class="p" data-r="sendinv">Invite selected</button></div>');
+  sheet('<h3>Invite friends</h3><input type="search" id="fq" placeholder="Search friends" autocomplete="off"><div class="fl" id="fl">' + (window.NovaSk ? NovaSk.rows(4) : '<p class="em">Loading…</p>') + '</div><div class="row"><button class="s" data-r="copy">Copy link</button><button class="p" data-r="sendinv">Invite selected</button></div>');
   try {
     const { data, error } = await sb.from('friendships').select('user_id,friend_id').eq('status', 'accepted').or(`user_id.eq.${ME.id},friend_id.eq.${ME.id}`);
     if (error) throw error;
@@ -1505,7 +1517,7 @@ async function openUserMenu(id) {
   if (!R || !members.some(m => m.user_id === id) || id === ME.id) return;
   ui.sheet = 'user-menu';
   const u = who(id);
-  sheet(`<div class="mh"><h3>${esc(nm(u))}</h3><button class="mx" data-r="close" aria-label="Close">${ic('x', 18)}</button></div><p class="em">Loading actions…</p>`);
+  sheet(`<div class="mh"><h3>${esc(nm(u))}</h3><button class="mx" data-r="close" aria-label="Close">${ic('x', 18)}</button></div>${window.NovaSk ? NovaSk.rows(2) : '<p class="em">Loading actions…</p>'}`);
   try {
     const { data, error } = await sb.from('friendships').select('user_id,friend_id,status')
       .or(`and(user_id.eq.${ME.id},friend_id.eq.${id}),and(user_id.eq.${id},friend_id.eq.${ME.id})`);
@@ -1797,11 +1809,13 @@ function renderHome() {
   const inv = rooms.filter(r => r.invited), pub = rooms.filter(r => !r.invited);
   const set = (l, e, list, emptyText) => {
     const a = $('#' + l), b = $('#' + e);
-    if (a) a.innerHTML = list.map(card).join('');
+    const loading = !homeLoaded && !list.length && window.NovaSk;
+    if (a) a.innerHTML = loading ? NovaSk.rooms(l === 'invL' ? 1 : 3) : list.map(card).join('');
     if (!b) return;
     b.hidden = list.length > 0;
     if (list.length) return;
     if (!homeLoaded) {
+      b.hidden = !!window.NovaSk;
       b.innerHTML = '<i class="spin" aria-hidden="true"></i> Loading rooms…';
       b.setAttribute('aria-live', 'polite');
     } else if (homeLoadError) {

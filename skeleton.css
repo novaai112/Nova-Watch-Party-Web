@@ -1,0 +1,64 @@
+/* skeleton.css — one shared skeleton-loader system for the whole Nova site.
+ * Use:  <i class="skl"></i> (any block)  +  the helpers in skeleton.js (NovaSk.*)
+ * Light + dark aware, respects prefers-reduced-motion, no layout shift (shapes match the real UI). */
+:root{--sk-a:#e3ecf3;--sk-b:#f4f8fb;--sk-r:12px}
+[data-theme=dark]{--sk-a:#262d38;--sk-b:#343d4b}
+.skl{display:block;position:relative;overflow:hidden;background:var(--sk-a);border-radius:var(--sk-r);min-height:10px;pointer-events:none;user-select:none}
+.skl::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,var(--sk-b),transparent);animation:sk-shimmer 1.4s ease-in-out infinite}
+@keyframes sk-shimmer{to{transform:translateX(100%)}}
+.skl.c{border-radius:50%}
+.skl.ln{height:12px;border-radius:6px;margin:7px 0}
+.skl.w1{width:72%}.skl.w2{width:46%}.skl.w3{width:30%}.skl.w4{width:88%}
+.skl.btn{height:40px;border-radius:12px}
+.sk-wrap{display:grid;gap:10px;width:100%}
+.sk-wrap[aria-busy]{cursor:progress}
+.sk-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* home room card (matches .room: 38% cover + info) */
+.sk-room{display:grid;grid-template-columns:38% 1fr;min-height:86px;border:1px solid var(--line,#d8e4ef);border-radius:16px;background:var(--card,#ffffffd9);overflow:hidden}
+.sk-room>.skl:first-child{border-radius:0;height:100%;min-height:86px}
+.sk-room .sk-info{padding:12px 10px;display:grid;align-content:center;gap:2px}
+.sk-room .sk-av{display:flex;gap:-6px;margin-top:6px}
+.sk-room .sk-av .skl{width:26px;height:26px;margin-right:-6px;border:2px solid var(--card,#fff)}
+@media(min-width:600px){.sk-room{min-height:104px}.sk-room>.skl:first-child{min-height:104px}}
+/* video tile (matches .vc: 16:9 thumb + 2 lines) */
+.sk-vg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 8px;padding:8px 12px 20px}
+@media(min-width:700px){.sk-vg{grid-template-columns:repeat(3,minmax(0,1fr));gap:24px 12px;padding:14px 16px 24px}}
+.sk-vc .skl.th{aspect-ratio:16/9;border-radius:10px}
+.sk-vc .skl.ln{margin:9px 0 0}.sk-vc .skl.ln+.skl.ln{margin-top:7px}
+/* platform picker tile */
+.sk-pg{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+@media(min-width:600px){.sk-pg{grid-template-columns:repeat(3,1fr)}}
+.sk-pg .skl{aspect-ratio:1.5/1;border-radius:16px}
+/* list rows (friends, chats, users, invite sheet) */
+.sk-row{display:flex;align-items:center;gap:12px;padding:10px 14px}
+.sk-row .skl.c{width:44px;height:44px;flex:none}
+.sk-row>div{flex:1;min-width:0}
+.sk-row .skl.ln{margin:5px 0}
+/* chat bubbles */
+.sk-msg{display:flex;gap:8px;padding:6px 14px;align-items:flex-end}
+.sk-msg .skl.c{width:30px;height:30px;flex:none}
+.sk-msg .skl.b{height:40px;width:58%;border-radius:18px}
+.sk-msg.r{flex-direction:row-reverse}.sk-msg.r .skl.b{width:44%}
+/* room shell (video + chat) */
+.sk-room-shell{display:grid;gap:16px;padding:0 clamp(8px,3vw,24px) 16px}
+@media(min-width:900px){.sk-room-shell{grid-template-columns:minmax(0,1.7fr) minmax(360px,1fr)}}
+.sk-room-shell .skl.vid{aspect-ratio:16/9;border-radius:16px;background:#1a2230;--sk-b:#2a3446}
+.sk-room-shell .sk-chat{border:1px solid var(--line,#d8e4ef);border-radius:20px;padding:10px 0;min-height:240px;background:var(--card,#ffffffd9)}
+/* profile */
+.sk-prof{display:grid;gap:14px}
+.sk-prof .sk-hero{display:flex;align-items:center;gap:16px;padding:6px 0}
+.sk-prof .sk-hero .skl.c{width:84px;height:84px;flex:none}
+.sk-prof .sk-hero>div{flex:1}
+.sk-prof .sk-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.sk-prof .sk-cards .skl{height:74px;border-radius:16px}
+.sk-prof .sk-gal{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.sk-prof .sk-gal .skl{aspect-ratio:1;border-radius:10px}
+/* full-page splash while the sign-in is checked */
+#nova-auth-check .sk-splash{width:min(100%,1100px);display:grid;gap:18px;align-content:start;height:100%;padding:6px}
+#nova-auth-check .sk-splash .sk-top{display:flex;align-items:center;justify-content:space-between}
+#nova-auth-check .sk-splash .sk-top .skl{width:34px;height:34px;border-radius:50%}
+#nova-auth-check .sk-splash .sk-top .skl.brand{width:90px;height:28px;border-radius:8px}
+#nova-auth-check .sk-splash .skl.search{height:48px;border-radius:24px}
+#nova-auth-check .sk-splash h6{margin:0}
+@media(prefers-reduced-motion:reduce){.skl::after{animation:none;transform:none;opacity:.35}}

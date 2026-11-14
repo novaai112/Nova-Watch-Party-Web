@@ -220,3 +220,23 @@
 #rm .mso.cancel{justify-content:center;color:var(--mu);margin-top:2px}
 /* keyboard open on a phone: hide the header, playback row and chat bar (they come back when the box loses focus) */
 #rm.kb .rh,#rm.kb #ctl,#rm.kb #cbar{display:none}
+
+/* ===== v13: no playback row under the video (the player draws its own controls); More videos + Next live in the chat bar ===== */
+#rm .ctl{display:none}
+#rm .ctl:has(.hint){display:flex;min-height:0;padding-top:8px;padding-bottom:0}
+#rm .cbtns{display:flex;align-items:center;gap:2px}
+#rm .cbtns .ib2[hidden]{display:none}
+#rm .morebtn.on{color:#e0245e;background:#e0245e14}
+#rm .morebtn.dis{opacity:.4}
+/* desktop / tablet: the video on the left sits in the vertical centre of the screen, chat fills the right */
+@media(min-width:900px){
+  #rm:not(.rm-compact):not(.pl-hidden) .vcol{display:flex;flex-direction:column;overflow:hidden}
+  #rm:not(.rm-compact):not(.pl-hidden) .vcol>.vwrap{margin:auto;width:min(100%,calc((100dvh - 110px) * 16 / 9));max-height:calc(100dvh - 110px)}
+}
+@media(max-height:480px) and (orientation:landscape){
+  #rm:not(.rm-compact):not(.pl-hidden) .vcol{display:flex;flex-direction:column;overflow:hidden}
+  #rm:not(.rm-compact):not(.pl-hidden) .vcol>.vwrap{margin:auto;width:min(100%,calc((100dvh - 60px) * 16 / 9));max-height:calc(100dvh - 60px)}
+}
+
+#rm .sk-vid{position:absolute;inset:0;z-index:3;border-radius:0;background:#10151f;--sk-b:#222c3d}
+#rm .feed .sk-wrap{padding:6px 0}

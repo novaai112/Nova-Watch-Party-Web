@@ -153,7 +153,7 @@
                 : mediaKind === 'text' ? 'Type the exact words you want to animate'
                   : mediaKind === 'gif' ? 'Loading GIFs…'
                     : mediaProvider === 'unsplash' ? 'Search Unsplash photos' : 'Search to see results here';
-      target.innerHTML = `<p class=chat-hint>${mediaHint}</p>`;
+      target.innerHTML = /^Loading/.test(mediaHint) ? '<div class="klipy-skeleton"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>' : `<p class=chat-hint>${mediaHint}</p>`;
       return;
     }
     const offset = append ? mediaSearchItems.length - items.length : 0;

@@ -64,13 +64,14 @@
         document.body.appendChild(splash);
       }
       const showError = error => {
-        splash.innerHTML = '<div class="auth-card" role="alert"><b>Could not verify your sign-in</b><span class="auth-error"></span><button type="button">Try again</button></div>';
+        splash.classList.remove('sk'); splash.innerHTML = '<div class="auth-card" role="alert"><b>Could not verify your sign-in</b><span class="auth-error"></span><button type="button">Try again</button></div>';
         splash.querySelector('.auth-error').textContent = error && error.message || 'Check your connection and try again.';
         splash.querySelector('button').addEventListener('click', () => Nova.requireAuth());
         splash.hidden = false;
       };
       splash.hidden = false;
-      splash.innerHTML = '<div class="auth-card"><span class="auth-spinner" aria-hidden="true"></span><span>Checking your sign-in…</span></div>';
+      splash.classList.toggle('sk', !!window.NovaSk);
+      if (window.NovaSk) splash.innerHTML = NovaSk.splash(); else splash.innerHTML = '<div class="auth-card"><span class="auth-spinner" aria-hidden="true"></span><span>Checking your sign-in…</span></div>';
       try {
         const { data, error } = await Nova.sb.auth.getSession();
         if (error) throw error;

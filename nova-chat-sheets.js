@@ -40,7 +40,7 @@
   Core.newChat = async function () {
     const p = panel('New chat', { body: `<label class="nc-search"><span>${ic('search', 16)}</span><input type=search id=ncNewQ placeholder="Search friends or find a username" autocomplete=off aria-label="Search"></label>
       <div class="nc-quick"><button type=button class="nc-urow action" data-new-group><span class="nc-circle">${ic('users', 20)}</span><b>New group</b></button><button type=button class="nc-urow action" data-new-scan><span class="nc-circle">${M.ic('qr', 20)}</span><b>Scan QR code</b></button></div>
-      <div id=ncNewList class="nc-ulist"><p class="nc-loading">Loading friends…</p></div>` });
+      <div id=ncNewList class="nc-ulist">${window.NovaSk ? NovaSk.rows(5) : '<p class="nc-loading">Loading friends…</p>'}</div>` });
     const list = $('#ncNewList', p.node); let friends = [], friendIds = new Set();
     const draw = async () => {
       const q = $('#ncNewQ', p.node).value; let others = [];
@@ -85,7 +85,7 @@
 
   /* -------------------------------------------------------- contact / group info */
   async function sharedList(box, conv, kind) {
-    box.innerHTML = '<p class="nc-loading">Loading…</p>';
+    box.innerHTML = window.NovaSk ? NovaSk.rows(4) : '<p class="nc-loading">Loading…</p>';
     const { data, error } = await sb.rpc('chat_search', { p_query: null, p_conversation: conv.id, p_kind: kind, p_limit: 60 });
     if (error) { box.innerHTML = empty('alert', 'Could not load', friendly(error)); return; }
     let rows = data || []; if (conv.cleared_at) rows = rows.filter(r => r.created_at > conv.cleared_at);
@@ -276,7 +276,7 @@
   const snippet = (text, q) => { const t = R.plain(text || ''), i = t.toLowerCase().indexOf(String(q || '').toLowerCase().replace(/^#/, '')); const start = Math.max(0, i - 30); return (start ? '…' : '') + t.slice(start, start + 110); };
   const hl = (text, q) => { const s = esc(text); const k = esc(String(q || '').replace(/^#/, '')).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); return k ? s.replace(new RegExp(`(${k})`, 'ig'), '<mark>$1</mark>') : s; };
   Core.globalSearch = async function (q, box) {
-    if (!box) return; box.innerHTML = '<p class="nc-loading">Searching…</p>';
+    if (!box) return; box.innerHTML = window.NovaSk ? NovaSk.rows(3) : '<p class="nc-loading">Searching…</p>';
     const [msgs, people] = await Promise.all([sb.rpc('chat_search', { p_query: q, p_limit: 25 }), searchUsers(q).catch(() => [])]);
     if (S.query.trim() !== q) return;
     if (msgs.error) { box.innerHTML = empty('alert', 'Search failed', friendly(msgs.error)); return; }
@@ -294,7 +294,7 @@
     const res = $('#ncCsRes', p.node); let seq = 0;
     const run = async () => {
       const q = $('#ncCsQ', p.node).value.trim(), my = ++seq; if (!q && kind === 'any' && !from && !to) { res.innerHTML = empty('search', 'Search this conversation', 'Find messages, photos, documents, links and voice messages.'); return; }
-      res.innerHTML = '<p class="nc-loading">Searching…</p>';
+      res.innerHTML = window.NovaSk ? NovaSk.rows(3) : '<p class="nc-loading">Searching…</p>';
       const { data, error } = await sb.rpc('chat_search', { p_query: q || null, p_conversation: conv.id, p_kind: kind, p_from: from ? new Date(`${from}T00:00:00`).toISOString() : null, p_to: to ? new Date(`${to}T23:59:59`).toISOString() : null, p_limit: 50 });
       if (my !== seq) return; if (error) { res.innerHTML = empty('alert', 'Search failed', friendly(error)); return; }
       let rows = data || []; if (conv.cleared_at) rows = rows.filter(r => r.created_at > conv.cleared_at); await Core.loadProfiles(rows.map(r => r.sender_id));

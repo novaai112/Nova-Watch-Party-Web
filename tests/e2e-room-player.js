@@ -110,7 +110,7 @@ const wake = page => page.evaluate(() => NovaPlayer.wake());
     await t('video name is NOT shown above the timeline while not in full screen', async () => {
       assert.strictEqual(await page.evaluate(() => getComputedStyle(document.querySelector('#pui .pinfo')).display), 'none'); });
     await t('the old control row below the video (−10 ▶ +10, slider, More videos, Skip) is still there', async () => {
-      assert.ok(await page.evaluate(() => ['back', 'toggle', 'fwd', 'more', 'skip'].every(r => document.querySelector('#ctl [data-r=' + r + ']')) && !!document.querySelector('#ctl #seek')));
+      assert.ok(await page.evaluate(() => ['more', 'skip'].every(r => document.querySelector('#cbar [data-r=' + r + ']'))));
       await shot(page, 'A-phone-controls'); });
     await t('big ▶/❚❚ toggles playback and publishes it', async () => {
       await click(page, '#pui [data-p=toggle]'); await page.waitForTimeout(400);
