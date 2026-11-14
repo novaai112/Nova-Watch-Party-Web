@@ -255,7 +255,7 @@ The browser tests run against an in-memory Supabase stand-in (`tests/chat/fake-s
 
 **Safety:** every transition runs under a row lock; `room_playback_log` has a unique `(room, media_ver)` row per finished/skipped/failed video, so duplicate end events, double skips and reconnects start only one next video; stale events carry `p_ver` and are ignored.
 
-**Tests:** `psql -f tests/mock-supabase.sql -f rooms-schema.sql -f tests/rooms-playback-test.sql` (scratch Postgres), `node tests/e2e-watch-room.js`, `node tests/e2e-room-cards.js` (Playwright).
+**Tests:** `psql -f tests/mock-supabase.sql -f rooms-schema.sql -f tests/rooms-playback-test.sql` (also `tests/room-admin-test.sql` for admin priority) (scratch Postgres), `node tests/e2e-watch-room.js`, `node tests/e2e-room-cards.js` (Playwright).
 
 ## Split mode (Nova Home beside the room) — v6 changes
 

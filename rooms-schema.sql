@@ -36,6 +36,37 @@ alter table public.room_members add column if not exists mic_allowed boolean not
 -- a user is in ONE room at a time and is listed ONCE (even with several tabs)
 create unique index if not exists room_members_one_room on public.room_members(user_id);
 
+-- ---------- admin management records (kept SEPARATE on purpose) ----------
+-- 1) who CREATED the room          -> rooms.creator_id            (never changes)
+-- 2) who is admin NOW              -> rooms.admin_id              (changes on transfers)
+-- 3) was the admin role handed away by the creator ON PURPOSE?  -> rooms.creator_released
+-- 4) original joining order        -> room_roster                 (never deleted when someone leaves)
+-- 5) every admin change            -> room_admin_log              (created / manual / auto / restore)
+alter table public.rooms add column if not exists creator_id uuid references auth.users(id) on delete set null;
+alter table public.rooms add column if not exists creator_released boolean not null default false;
+update public.rooms set creator_id = admin_id where creator_id is null;
+
+create table if not exists public.room_roster (
+  room_id         uuid not null references public.rooms(id) on delete cascade,
+  user_id         uuid not null references auth.users(id) on delete cascade,
+  first_joined_at timestamptz not null default now(),
+  join_seq        bigint generated always as identity,      -- tie-breaker when two people join in the same instant
+  primary key (room_id, user_id)
+);
+insert into public.room_roster(room_id, user_id, first_joined_at)
+  select room_id, user_id, joined_at from public.room_members order by joined_at on conflict do nothing;
+
+create table if not exists public.room_admin_log (
+  id        bigint generated always as identity primary key,
+  room_id   uuid not null references public.rooms(id) on delete cascade,
+  from_user uuid,
+  to_user   uuid not null,
+  kind      text not null check (kind in ('created','manual','auto','restore')),
+  by_user   uuid,
+  at        timestamptz not null default now()
+);
+create index if not exists room_admin_log_room_idx on public.room_admin_log(room_id, at desc);
+
 create table if not exists public.room_bans (
   room_id uuid not null references public.rooms(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -139,6 +170,8 @@ $$;
 
 alter table public.rooms         enable row level security;
 alter table public.room_members  enable row level security;
+alter table public.room_roster   enable row level security;     -- server-only: no client policy
+alter table public.room_admin_log enable row level security;
 alter table public.room_bans     enable row level security;
 alter table public.room_invites  enable row level security;
 alter table public.room_queue    enable row level security;
@@ -159,6 +192,8 @@ drop policy if exists invites_own_select     on public.room_invites;
 
 create policy rooms_member_select   on public.rooms         for select to authenticated using (public.is_room_member(id));
 create policy members_member_select on public.room_members  for select to authenticated using (public.is_room_member(room_id));
+drop policy if exists admin_log_member_select on public.room_admin_log;
+create policy admin_log_member_select on public.room_admin_log for select to authenticated using (public.is_room_member(room_id));
 create policy queue_member_select   on public.room_queue    for select to authenticated using (public.is_room_member(room_id));
 create policy msgs_member_select    on public.room_messages for select to authenticated using (public.is_room_member(room_id));
 create policy msgs_member_insert    on public.room_messages for insert to authenticated
@@ -277,7 +312,37 @@ language sql security definer set search_path = public as $$
   select rid, uid, ev, r.media_ver, m, d from public.rooms r where r.id = rid
 $$;
 
--- remove a member; hand admin to the longest-staying member; close the room when nobody is left
+-- who should be admin next: the room creator first, then everyone by ORIGINAL joining time (never reset by leaving / rejoining)
+create or replace function public._room_next_admin(rid uuid) returns uuid
+language sql stable security definer set search_path = public as $$
+  select m.user_id
+  from public.room_members m
+  join public.rooms r on r.id = m.room_id
+  left join public.room_roster ro on ro.room_id = m.room_id and ro.user_id = m.user_id
+  where m.room_id = rid
+  order by (m.user_id = r.creator_id) desc, coalesce(ro.first_joined_at, m.joined_at) asc, ro.join_seq asc nulls last, m.user_id
+  limit 1
+$$;
+
+-- the ONE place that changes admin_id: keeps creator_released + the log consistent
+--   kind: 'manual' (an admin handed it over)   'auto' (the admin left)   'restore' (creator is back)
+create or replace function public._room_set_admin(rid uuid, nxt uuid, kind text, by_user uuid default null) returns void
+language plpgsql security definer set search_path = public as $$
+declare r public.rooms;
+begin
+  select * into r from public.rooms where id = rid for update;
+  if r.id is null or r.admin_id = nxt then return; end if;
+  update public.rooms set
+    admin_id = nxt,
+    creator_released = case
+      when nxt = creator_id then false                                  -- creator holds it again: nothing is "released"
+      when kind = 'manual' and admin_id = creator_id then true           -- creator gave it away ON PURPOSE
+      else creator_released end
+  where id = rid;
+  insert into public.room_admin_log(room_id, from_user, to_user, kind, by_user) values (rid, r.admin_id, nxt, kind, by_user);
+end $$;
+
+-- remove a member; if they were admin, hand it to the creator / earliest ORIGINAL joiner; close the room when nobody is left
 create or replace function public._room_drop_member(rid uuid, uid uuid, txt text) returns void
 language plpgsql security definer set search_path = public as $$
 declare r public.rooms; nxt uuid;
@@ -288,9 +353,9 @@ begin
   select * into r from public.rooms where id = rid;
   if r.id is null then return; end if;
   if r.admin_id = uid then
-    select user_id into nxt from public.room_members where room_id = rid order by joined_at asc limit 1;
+    nxt := public._room_next_admin(rid);
     if nxt is not null then
-      update public.rooms set admin_id = nxt where id = rid;
+      perform public._room_set_admin(rid, nxt, 'auto', uid);
       perform public._sys(rid, nxt, 'is now the admin');
     end if;
   end if;
@@ -469,14 +534,16 @@ begin
     exit when not exists(select 1 from public.rooms where code = c);
     n := n + 1; if n > 10 then raise exception 'Try again'; end if;
   end loop;
-  insert into public.rooms(code, admin_id, title, privacy, privacy_chosen, media, media_ver, play_state, lat, lng)
-  values (c, uid, left(coalesce(nullif(trim(p_title), ''), 'Nova room'), 80), p_privacy, p_privacy <> 'public', m,
+  insert into public.rooms(code, admin_id, creator_id, title, privacy, privacy_chosen, media, media_ver, play_state, lat, lng)
+  values (c, uid, uid, left(coalesce(nullif(trim(p_title), ''), 'Nova room'), 80), p_privacy, p_privacy <> 'public', m,
           case when m is null then 0 else 1 end,
           jsonb_build_object('playing', m is not null, 'pos', 0, 'ts', public.room_now(), 'seq', 1, 'idx', 0,
                              'phase', case when m is null then 'IDLE' else 'PLAYING' end),
           case when p_privacy = 'nearby' then p_lat end, case when p_privacy = 'nearby' then p_lng end)
   returning id into rid;
-  insert into public.room_members(room_id, user_id) values (rid, uid);
+  insert into public.room_roster(room_id, user_id) values (rid, uid);
+  insert into public.room_members(room_id, user_id, joined_at) values (rid, uid, (select first_joined_at from public.room_roster where room_id = rid and user_id = uid));
+  insert into public.room_admin_log(room_id, to_user, kind, by_user) values (rid, uid, 'created', uid);
   perform public._sys(rid, uid, 'created the room');
   return (select to_jsonb(r) from public.rooms r where r.id = rid);
 end $$;
@@ -503,7 +570,7 @@ begin
   end if;
 
   -- every NEW join is checked against the room's CURRENT privacy mode: knowing the id / link is never enough
-  if r.admin_id <> uid then
+  if r.admin_id <> uid and r.creator_id is distinct from uid then      -- the room creator can always come back to their own room
     if public._room_blocked(uid, r.admin_id) then
       raise exception 'This room isn''t available to you' using hint = 'blocked';
     end if;
@@ -534,8 +601,17 @@ begin
   for x in select room_id from public.room_members where user_id = uid loop
     perform public._room_drop_member(x, uid, 'left');
   end loop;
-  insert into public.room_members(room_id, user_id) values (r.id, uid);
+  -- ORIGINAL joining time is kept forever: a returning member gets their first-ever time back (and so their old priority)
+  insert into public.room_roster(room_id, user_id) values (r.id, uid) on conflict do nothing;
+  insert into public.room_members(room_id, user_id, joined_at)
+    values (r.id, uid, (select first_joined_at from public.room_roster where room_id = r.id and user_id = uid));
   perform public._sys(r.id, uid, 'joined');
+  -- the creator is back and never gave admin away on purpose -> admin comes back, even if it changed hands meanwhile
+  if r.creator_id = uid and not r.creator_released and r.admin_id <> uid then
+    perform public._room_set_admin(r.id, uid, 'restore', uid);
+    perform public._sys(r.id, uid, 'is the admin again (room creator)');
+  end if;
+  select * into r from public.rooms where id = r.id;
   return to_jsonb(r);
 end $$;
 
@@ -904,7 +980,7 @@ begin
   if p_user = uid then raise exception 'You are already the admin'; end if;
   if not exists(select 1 from public.room_members where room_id = p_room and user_id = p_user) then
     raise exception 'That person is not in the room'; end if;
-  update public.rooms set admin_id = p_user where id = p_room;
+  perform public._room_set_admin(p_room, p_user, 'manual', uid);
   perform public._sys(p_room, p_user, 'is now the admin');
 end $$;
 
@@ -915,6 +991,8 @@ begin
   if not exists(select 1 from public.rooms where id = p_room and admin_id = uid and status = 'open') then
     raise exception 'Only the room admin can do this'; end if;
   if p_user = uid then raise exception 'Use Leave instead'; end if;
+  if exists(select 1 from public.rooms where id = p_room and creator_id = p_user) then
+    raise exception 'The room creator cannot be removed'; end if;
   delete from public.room_invites where room_id = p_room and user_id = p_user;
   insert into public.room_bans(room_id, user_id) values (p_room, p_user) on conflict do nothing;
   perform public._room_drop_member(p_room, p_user, 'was removed');
@@ -1118,12 +1196,12 @@ begin
            from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public'
              and p.proname in ('_is_friend','_sys','_notice','_distance_km','_priv_label','_room_blocked','_room_cfg','_clean_media','_set_media','_room_drop_member',
-                               '_room_sweep','_room_sweep_all','_room_next','_room_finish','_media_same','_room_defaults','_log','_unavailable','_wait_phase') loop
+                               '_room_sweep','_room_sweep_all','_room_next','_room_next_admin','_room_set_admin','_room_finish','_media_same','_room_defaults','_log','_unavailable','_wait_phase') loop
     execute format('revoke all on function %s from public, anon, authenticated', f.sig);
   end loop;
 end $$;
 
-grant select on public.rooms, public.room_members, public.room_queue, public.room_invites to authenticated;
+grant select on public.rooms, public.room_members, public.room_queue, public.room_invites, public.room_admin_log to authenticated;
 grant select, insert on public.room_messages to authenticated;
 
 -- ---------- realtime ----------

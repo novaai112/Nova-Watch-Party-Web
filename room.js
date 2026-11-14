@@ -334,7 +334,7 @@ function onRoom(p) {
   const prevAdmin = R.admin_id;
   R = Object.assign({}, R, p.new);
   if (R.status === 'closed') return gone('Room closed');
-  if (prevAdmin !== R.admin_id) toast(R.admin_id === ME.id ? 'You are now the admin' : nm(who(R.admin_id)) + ' is now the admin');
+  if (prevAdmin !== R.admin_id) toast(R.admin_id === ME.id ? (R.creator_id === ME.id ? 'You are the admin again' : 'You are now the admin') : nm(who(R.admin_id)) + ' is now the admin');
   const changed = mediaKey() !== mountKey;
   renderHead(); renderSettings(); renderNow(); renderVote(); renderBadges();
   if (changed) { renderControls(); }
@@ -1469,10 +1469,11 @@ function renderSheet() { if (ui.sheet === 'people') openPeople(true); }
 function openPeople(refresh) {
   ui.sheet = 'people';
   const adm = isAdmin();
-  const mem = members.map(m => {
-    const u = who(m.user_id), me = m.user_id === ME.id, isA = m.user_id === R.admin_id;
-    return `<div class="li">${userAvatar(u, 42, micOf(m.user_id))}<div><b>${esc(nm(u))}</b>${isA ? ' <span class="crownb">' + ic('crown', 15) + '</span>' : ''}${me ? ' (you)' : ''}${micOf(m.user_id) ? ' <span class="micon" data-vu="' + m.user_id + '">' + ic('mic', 14) + '</span>' : ''}<small>@${esc(u.username || '')}</small>${Nova.geo ? Nova.geo.line(u, { cls: 'sm left' }) : ''}</div>
-      ${adm && !me ? `${R.privacy !== 'public' ? `<button class="cb${m.mic_allowed ? ' on' : ''}" data-r="member-mic" data-id="${esc(m.user_id)}" data-on="${m.mic_allowed ? 'false' : 'true'}" title="${m.mic_allowed ? 'Disable microphone' : 'Enable microphone'}" aria-label="${m.mic_allowed ? 'Disable microphone' : 'Enable microphone'}">${ic(m.mic_allowed ? 'mic' : 'micoff', 17)}</button>` : ''}<button class="cb crownb" data-r="transfer" data-id="${esc(m.user_id)}" title="Make admin" aria-label="Make admin">${ic('crown', 18)}</button><button class="cb" data-r="kick" data-id="${esc(m.user_id)}" title="Kick from room" aria-label="Kick from room">${ic('x', 18)}</button>` : ''}</div>`;
+  /* listed in ORIGINAL joining order (room_members.joined_at keeps each person's first-ever join time) */
+  const mem = members.map((m, n) => {
+    const u = who(m.user_id), me = m.user_id === ME.id, isA = m.user_id === R.admin_id, isC = m.user_id === R.creator_id;
+    return `<div class="li">${userAvatar(u, 42, micOf(m.user_id))}<div><b><span class="ord" title="Joined #${n + 1}">${n + 1}.</span> ${esc(nm(u))}</b>${isA ? ' <span class="crownb" title="Admin">' + ic('crown', 15) + '</span>' : ''}${isC ? ' <span class="ctag" title="Room creator">Creator</span>' : ''}${me ? ' (you)' : ''}${micOf(m.user_id) ? ' <span class="micon" data-vu="' + m.user_id + '">' + ic('mic', 14) + '</span>' : ''}<small>@${esc(u.username || '')}</small>${Nova.geo ? Nova.geo.line(u, { cls: 'sm left' }) : ''}</div>
+      ${adm && !me ? `${R.privacy !== 'public' ? `<button class="cb${m.mic_allowed ? ' on' : ''}" data-r="member-mic" data-id="${esc(m.user_id)}" data-on="${m.mic_allowed ? 'false' : 'true'}" title="${m.mic_allowed ? 'Disable microphone' : 'Enable microphone'}" aria-label="${m.mic_allowed ? 'Disable microphone' : 'Enable microphone'}">${ic(m.mic_allowed ? 'mic' : 'micoff', 17)}</button>` : ''}<button class="cb crownb" data-r="transfer" data-id="${esc(m.user_id)}" title="${isC ? 'Give admin back to the creator' : 'Make admin'}" aria-label="${isC ? 'Give admin back to the creator' : 'Make admin'}">${ic('crown', 18)}</button>${isC ? '' : `<button class="cb" data-r="kick" data-id="${esc(m.user_id)}" title="Kick from room" aria-label="Kick from room">${ic('x', 18)}</button>`}` : ''}</div>`;
   }).join('');
   const vote = R.playback_mode === 'vote', lead = R.playback_mode === 'leader';
   const sorted = vote ? queue.slice().sort((a, b) => (b.votes || []).length - (a.votes || []).length) : queue.slice();
@@ -1700,7 +1701,8 @@ function onClick(e) {
   else if (r === 'rmq') rpc('room_queue_remove', { p_queue_id: d.id }).then(refreshQueue).catch(oops);
   else if (r === 'transfer') {
     const u = who(d.id);
-    if (confirm('Make ' + nm(u) + ' the admin? You will lose admin control.')) rpc('room_transfer', { p_room: R.id, p_user: d.id }).then(() => refreshRoom().then(() => { renderAll(); mountMedia(); })).catch(oops);
+    const toCreator = R && d.id === R.creator_id, fromCreator = R && ME && ME.id === R.creator_id;
+    if (confirm('Make ' + nm(u) + ' the admin? You will lose admin control.' + (fromCreator ? ' As you chose this yourself, you will not get it back automatically; the new admin has to hand it back.' : '') + (toCreator ? '' : ''))) rpc('room_transfer', { p_room: R.id, p_user: d.id }).then(() => refreshRoom().then(() => { renderAll(); mountMedia(); })).catch(oops);
   }
   else if (r === 'kick') {
     const u = who(d.id);

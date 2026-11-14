@@ -240,3 +240,7 @@
 
 #rm .sk-vid{position:absolute;inset:0;z-index:3;border-radius:0;background:#10151f;--sk-b:#222c3d}
 #rm .feed .sk-wrap{padding:6px 0}
+
+/* v14: People list shows original joining order + creator tag */
+#rm .li .ord{color:var(--mut);font-weight:600;font-variant-numeric:tabular-nums;margin-right:2px}
+#rm .li .ctag{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.02em;padding:1px 7px;border-radius:999px;background:#b8860b1f;color:#8a6508;vertical-align:middle}
