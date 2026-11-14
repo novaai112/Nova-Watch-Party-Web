@@ -1121,6 +1121,10 @@
         safe: options.safe
       }));
     },
+    ytPlaylistItems: function(playlistId, pageToken) {
+      if (!playlistId) return Promise.reject(new Error('Missing playlist.'));
+      return requestJson(youtubeUrl({ plitems: playlistId, pageToken: pageToken || '' }));
+    },
     ytInfo: function(id, playlistId) {
       if (id) return requestJson(youtubeUrl({ id: id }));
       if (playlistId) return requestJson(youtubeUrl({ pl: playlistId }));

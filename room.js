@@ -108,6 +108,7 @@ const who = id => prof[id] || { id, full_name: 'Someone', username: 'user' };
 const nm = u => u.full_name || u.username || 'Someone';
 const snow = () => Date.now() + skew;
 const toast = (m, k) => Nova.toast(m, k);
+const roomEvt = id => { try { document.dispatchEvent(new CustomEvent('nova:room', { detail: { id: id || null } })); } catch (e) {} };
 const afterPick = () => { try { if (window.novaAfterPick) window.novaAfterPick(); } catch (e) {} };
 const profileHref = id => 'profile.html#user/' + encodeURIComponent(id);
 function userAvatar(u, size, active, isHost) {
@@ -230,6 +231,7 @@ async function enter(row) {
   await mountMedia();
   skelShell(false);
   afterPick();
+  roomEvt(R && R.id);
   try { history.replaceState({ v: 'room' }, '', location.pathname + location.search + '#room'); } catch (e) {}
 }
 /* skeleton placeholders while a room is opening: dark video frame + chat bubbles */
@@ -250,6 +252,7 @@ function cleanup(keepShell) {
   destroyPlayer();
   if (window.NovaPlayer) NovaPlayer.unmount();
   R = null; members = []; queue = []; msgs = []; mountKey = ''; typers.clear();
+  roomEvt(null);
   if (!keepShell) {
     const rm = $('#rm'); if (rm) rm.remove();
     document.body.classList.remove('inroom');
@@ -1781,7 +1784,7 @@ async function handle(m, o) {
 }
 function ctx() {
   const busy = !!(R && R.media && !(R.play_state || {}).ended && !votingNow());
-  return { inRoom: !!R, admin: isAdmin(), busy };
+  return { inRoom: !!R, admin: isAdmin(), busy, roomId: R ? R.id : null };
 }
 async function setOpt(v) {
   if (!isAdmin()) return toast('Only the admin can change this');
@@ -2181,7 +2184,7 @@ if (window.NovaPlayer) NovaPlayer.init({
     const u = String(m.url || '').split('#')[0]; return safeHttps(u) ? u : '';
   }
 });
-window.NovaRoom = { handle, ctx, renderHome, active: () => !!R, ready: true, api: roomApi, sync, state: stateName, join: switchTo };
+window.NovaRoom = { rpc: (n, a) => rpc(n, a), roomId: () => (R ? R.id : null), refreshQueue: () => (R ? refreshQueue() : null), handle, ctx, renderHome, active: () => !!R, ready: true, api: roomApi, sync, state: stateName, join: switchTo };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 

@@ -134,7 +134,7 @@ input::placeholder{color:#000;opacity:.55}
 .plat .ab{font-style:normal;font-size:11px;font-weight:700;background:#000;color:#fff;border-radius:999px;padding:2px 9px;margin-top:-4px}
 #home{touch-action:pan-y}
 </style>
-<link rel="stylesheet" href="chat-pro.css?v=2"><link rel="stylesheet" href="room.css?v=9"><link rel="stylesheet" href="room-player.css?v=1"><link rel="stylesheet" href="room-media.css?v=4"><link rel="stylesheet" href="room-cards.css?v=2"><link rel="stylesheet" href="room-dock.css?v=1"><link rel="stylesheet" href="room-sync.css?v=1">
+<link rel="stylesheet" href="chat-pro.css?v=2"><link rel="stylesheet" href="room.css?v=9"><link rel="stylesheet" href="room-queue.css?v=1"><link rel="stylesheet" href="room-player.css?v=1"><link rel="stylesheet" href="room-media.css?v=4"><link rel="stylesheet" href="room-cards.css?v=2"><link rel="stylesheet" href="room-dock.css?v=1"><link rel="stylesheet" href="room-sync.css?v=1">
 </head>
 <body>
 <div id="nova-auth-check" class="sk" role="status" aria-live="polite"><div class="sk-splash" aria-hidden="true"><div class="sk-top"><i class="skl"></i><i class="skl brand"></i><i class="skl"></i></div><i class="skl search"></i><i class="skl ln w3" style="height:20px"></i><div class="sk-wrap"><div class="sk-room"><i class="skl"></i><div class="sk-info"><i class="skl ln w4"></i><i class="skl ln w2"></i></div></div><div class="sk-room"><i class="skl"></i><div class="sk-info"><i class="skl ln w4"></i><i class="skl ln w2"></i></div></div></div></div><span class="sk-sr">Checking your sign-in…</span></div>
@@ -191,6 +191,9 @@ input::placeholder{color:#000;opacity:.55}
 
   <div class="grid" id="grid"></div>
   <p class="empty" id="pe" hidden>No results</p>
+
+  <!-- my personal queue: shown only while you are inside a room -->
+  <section id="pq" hidden></section>
 </main>
 
 </div>
@@ -308,9 +311,13 @@ function rawM(m,lg){if(m.kind==='youtube')rawFrame(emb(m.id,m.id?null:m.pl),m.ti
 function launch(m,opt){
   if(!m)return;
   if(!(window.NovaRoom&&NovaRoom.ready)){rawM(m);return}
-  NovaAdd.confirm(m,function(now){
-    NovaRoom.handle(m,{now:now}).then(function(ok){if(!ok)rawM(m)}).catch(function(){rawM(m)})
-  },opt)
+  var go=function(now){NovaRoom.handle(m,{now:now}).then(function(ok){if(!ok)rawM(m)}).catch(function(){rawM(m)})};
+  /* inside a room: playlists open the import screen, single videos can also go to my personal queue */
+  if(window.NovaPQ&&NovaPQ.active()){
+    if(m.pl&&!m.id){NovaPQ.importPlaylist(m);return}
+    if(m.id&&m.kind==='youtube'){NovaPQ.chooseSingle(m,go,opt);return}
+  }
+  NovaAdd.confirm(m,go,opt)
 }
 function frame(u,t,lg,th){
   var m=window.NovaRoom&&NovaRoom.ready?mediaFrom(u,t):null;
@@ -924,7 +931,7 @@ scr.addEventListener('input',function(ev){ev.target.classList&&ev.target.classLi
 if(/^#p-(\w+)/.test(location.hash)){var m0=/^#p-(\w+)/.exec(location.hash);if(S[m0[1]])open(m0[1],false)}
 })();
 </script>
-<script src="nova-chat-rich.js?v=1"></script><script src="nova-chat-media.js?v=1"></script><script src="nova-chat-capture.js?v=1"></script><script src="room-cards.js?v=2"></script><script src="room-media.js?v=3"></script><script src="room-dock.js?v=1"></script><script src="room-player.js?v=1"></script><script src="room-sync.js?v=1"></script><script src="room.js?v=15"></script>
+<script src="nova-chat-rich.js?v=1"></script><script src="nova-chat-media.js?v=1"></script><script src="nova-chat-capture.js?v=1"></script><script src="room-cards.js?v=2"></script><script src="room-media.js?v=3"></script><script src="room-dock.js?v=1"></script><script src="room-queue.js?v=1"></script><script src="room-player.js?v=1"></script><script src="room-sync.js?v=1"></script><script src="room.js?v=15"></script>
 <script src="mobile-navigation.js?v=2"></script>
 </body>
 </html>

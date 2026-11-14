@@ -6,6 +6,8 @@
        -> { items:[{id,pl,title,channel,thumb,dur,live}], next }
    GET /api/youtube?id=VIDEO_ID   -> { id,title,channel,thumb,dur,embeddable,live }
    GET /api/youtube?pl=PLAYLIST   -> { pl,title,channel,thumb }
+   GET /api/youtube?plitems=PLAYLIST[&pageToken=..] -> { items:[{id,title,channel,thumb,dur,embeddable}], next, total }
+       (private / deleted videos are left out; one page = up to 50 videos)
 */
 const API = 'https://www.googleapis.com/youtube/v3';
 
@@ -58,6 +60,27 @@ module.exports = async (req, res) => {
         thumb: thumbOf(v.snippet.thumbnails), dur: dur(v.contentDetails && v.contentDetails.duration),
         embeddable: !(v.status && v.status.embeddable === false), live: v.snippet.liveBroadcastContent === 'live'
       }, 'public, s-maxage=3600');
+    }
+    if (q.plitems) {
+      const pid = String(q.plitems).slice(0, 64);
+      const j = await g('/playlistItems', { part: 'snippet,status', playlistId: pid, maxResults: 50, pageToken: q.pageToken || '' }, key);
+      let items = (j.items || []).filter(x => {
+        const sn = x.snippet || {}, vid = sn.resourceId && sn.resourceId.videoId;
+        return vid && !/^(Private|Deleted) video$/i.test(sn.title || '') && !(x.status && x.status.privacyStatus === 'private');
+      }).map(x => ({
+        id: x.snippet.resourceId.videoId, title: decode(x.snippet.title),
+        channel: decode(x.snippet.videoOwnerChannelTitle || x.snippet.channelTitle),
+        thumb: thumbOf(x.snippet.thumbnails), dur: '', embeddable: true
+      }));
+      if (items.length) {                   // durations + embeddable flag for the page (1 quota unit)
+        try {
+          const d = await g('/videos', { part: 'contentDetails,status', id: items.map(i => i.id).join(',') }, key);
+          const map = {}; (d.items || []).forEach(v => { map[v.id] = { dur: dur(v.contentDetails && v.contentDetails.duration), emb: !(v.status && v.status.embeddable === false) }; });
+          items = items.filter(i => !map[i.id] || map[i.id].emb);
+          items.forEach(i => { i.dur = (map[i.id] || {}).dur || ''; });
+        } catch (e) {}
+      }
+      return send(res, 200, { items, next: j.nextPageToken || '', total: (j.pageInfo && j.pageInfo.totalResults) || 0 }, 'public, s-maxage=300, stale-while-revalidate=1800');
     }
     if (q.pl) {
       const j = await g('/playlists', { part: 'snippet', id: String(q.pl).slice(0, 64) }, key);
