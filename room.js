@@ -567,7 +567,7 @@ function onTick() {
   micMap.forEach((v, id) => { if (v.on && Date.now() - v.ts > 11000 && !speak.get(id)) { micMap.delete(id); gone_ = true; } });
   if (gone_) renderVoice();
   const s = R.play_state || {};
-  fitYT(); paintCover(); tickMore(); paintState();
+  fitYT(); paintEndGuard(); paintCover(); tickMore(); paintState();
   if (s.vote_until) {
     renderHead();
     const late = snow() - s.vote_until;
@@ -829,9 +829,12 @@ function buildShell() {
       if (!el.isConnected) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); return; }
       /* Nova Home docked above the room (phones): the room is the bottom half, unless the keyboard is open */
       const stack = document.body.classList.contains('nv-dock-stack') && vv.height > innerHeight * 0.75;
-      const h = stack ? Math.round(vv.height / 2) : vv.height;
+      /* the Home part's height is whatever the person dragged the split to (half of the screen by default) */
+      const hw = stack ? document.querySelector('.wrap') : null;
+      const home = stack ? Math.min(Math.round((hw && hw.getBoundingClientRect().height) || vv.height / 2), Math.round(vv.height) - 150) : 0;
+      const h = vv.height - home;
       el.style.height = h + 'px';
-      el.style.top = (vv.offsetTop + (stack ? vv.height - h : 0)) + 'px';
+      el.style.top = (vv.offsetTop + home) + 'px';
       el.style.bottom = 'auto';
     };
     el._fit = fit;
@@ -1115,6 +1118,21 @@ function fitYT() {
   const W = w.clientWidth, H = w.clientHeight; if (!W || !H) return;
   const bw = Math.min(W, Math.round(H * 16 / 9));
   Object.assign(b.style, { left: Math.round((W - bw) / 2) + 'px', width: bw + 'px', top: '-72px', height: (H + 144) + 'px' });
+}
+/* YouTube draws "end screen" elements (a playlist card, a round channel picture, ...) over the last seconds of a video.
+   The embed API has no switch for them, so for those seconds two blurred panels sit over the corners where they appear. */
+const END_GUARD_SECS = 22;
+function paintEndGuard() {
+  const w = $('#vwrap'); if (!w) return;
+  let g = $('#vguard');
+  const dur = (R && R.media && P.kind === 'yt' && P.ready) ? pl.dur() : 0;
+  const cur = dur ? pl.time() : 0;
+  const on = dur > END_GUARD_SECS + 3 && cur >= dur - END_GUARD_SECS && !((R && R.play_state) || {}).ended;
+  if (!on) { if (g) g.remove(); return; }
+  if (!g) { g = document.createElement('div'); g.id = 'vguard'; g.setAttribute('aria-hidden', 'true'); g.innerHTML = '<i class="eg l"></i><i class="eg r"></i>'; w.appendChild(g); }
+  const W = w.clientWidth, H = w.clientHeight; if (!W || !H) return;
+  const bw = Math.min(W, Math.round(H * 16 / 9)), bh = Math.round(bw * 9 / 16);
+  Object.assign(g.style, { left: Math.round((W - bw) / 2) + 'px', top: Math.round((H - bh) / 2) + 'px', width: bw + 'px', height: bh + 'px' });
 }
 let mediaFailT = 0;
 function mediaFailed() {

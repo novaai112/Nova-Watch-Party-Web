@@ -23,13 +23,24 @@
     return true;
   };
 
+  /* tell the dock which page is showing (it hides its + button on Friends / chat, which have their own bottom bar) */
+  var sendRoute = function () { post({ type: 'route', hash: location.hash || '#info' }); };
+  addEventListener('hashchange', sendRoute);
+  addEventListener('load', sendRoute);
+
   addEventListener('hashchange', function () {
     if (quiet) { quiet = false; return; }
     var h = location.hash || '';
     if (stack[stack.length - 1] !== h) stack.push(h);
   });
+  /* the main profile page (the phone-style list: Info, Friends, Settings …) */
+  var isHome = function () { return (location.hash || '').slice(1).split('/')[0] === 'home'; };
+  var isPeople = function () { var k = (location.hash || '').slice(1).split('/')[0]; return k === 'friends' || k === 'chat'; };
+  function toHome() { stack = ['#home']; quiet = true; location.replace('#home'); }
   function back() {
     if (stack.length > 1) { stack.pop(); quiet = true; location.replace(stack[stack.length - 1] || '#home'); }
+    /* a sub-page reached directly (e.g. Settings) goes up to the main profile page; only that page closes the panel */
+    else if (!isHome() && !isPeople()) toHome();
     else post({ type: 'close' });
   }
 

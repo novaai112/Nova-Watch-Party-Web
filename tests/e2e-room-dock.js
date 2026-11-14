@@ -117,11 +117,11 @@ const vp = (w, h, extra) => ({ ctx: Object.assign({ viewport: { width: w, height
       assert.ok(v.w > 150 && f.h > 40 && c.h > 30, JSON.stringify({ v, f, c }));
       assert.ok(v.l >= r.l - 1 && v.r <= r.r + 1 && c.r <= r.r + 1 && c.b <= r.b + 1, JSON.stringify({ r, v, c })); });
     await page.screenshot({ path: path.join(OUT, 'dock-' + slug + '.png') });
-    await t('Settings button opens Settings inside the Home column (room keeps playing, page not navigated)', async () => {
+    await t('Settings button opens the main profile page inside the Home column (room keeps playing, page not navigated)', async () => {
       const url0 = page.url(); await page.click('#gear'); await page.waitForSelector('#nvDockPanel .nvdp-frame', { timeout: 4000 });
       const p = await rect(page, '#nvDockPanel'), w = await rect(page, '.wrap');
       assert.ok(Math.abs(p.w - w.w) <= 1 && Math.abs(p.h - w.h) <= 1 && p.l === w.l && p.t === w.t, JSON.stringify({ p, w }));
-      assert.ok(/profile\.html\?embed=1#settings/.test(await page.evaluate(() => document.querySelector('#nvDockPanel iframe').src)));
+      assert.ok(/profile\.html\?embed=1#home/.test(await page.evaluate(() => document.querySelector('#nvDockPanel iframe').src)));
       assert.strictEqual(page.url(), url0); assert.ok(await page.$('#rm #vwrap')); });
     await t('People button switches the same panel to Friends', async () => {
       await page.evaluate(() => NovaDock.closePanel()); await page.click('#ppl'); await page.waitForTimeout(300);

@@ -27,6 +27,7 @@ Static website + Supabase, with Vercel serverless API routes. No build step; dep
 | `room-cards.js` / `room-cards.css` | Home room cards: hover live preview (synced, mute button), glass info panel, avatar name tip, right-click / long-press sheet with Delete (Cancel invite) and Report video, + button aligned with the People icon. Home grid is 3 columns on desktop, 2 on tablet, 1 on phone. |
 | `room-media.js` / `room-media.css` / `room-media-schema.sql` | Watch-room attachment picker (same as the friends chat, minus Contact and voice notes) and its database setup |
 | `room-dock.js` / `room-dock.css` | Watch-room **Nova Home dock**: the button left of the Leave X slides the room over and shows the full one-column Nova Home (rooms, search, hover / right-click preview, tap to join) next to it. Laptop: 380–460 px column on the left; tablet: two halves; phone: Home on the top half, room on the bottom half. Settings and People open the real Settings / Friends pages inside the column, so the room never closes. Tapping another room asks "Switch rooms?" first |
+| `nova-chat.js` (in the dock) | Inside the dock the chat header shows the room's left-panel icon in place of the arrow; tapping it opens the Friends page |
 | `profile-embed.js` | Lets `profile.html?embed=1` run inside the dock: Back / "Nova home" close the panel instead of navigating, a public-room card joins through the room page |
 | `supabase/functions/chat-media-search/` | Authenticated Unsplash photo search plus GIPHY and KLIPY media search |
 
@@ -218,3 +219,12 @@ Turning **Hide Mature Content** off for the first time opens `age-verify.html`: 
 **Safety:** every transition runs under a row lock; `room_playback_log` has a unique `(room, media_ver)` row per finished/skipped/failed video, so duplicate end events, double skips and reconnects start only one next video; stale events carry `p_ver` and are ignored.
 
 **Tests:** `psql -f tests/mock-supabase.sql -f rooms-schema.sql -f tests/rooms-playback-test.sql` (scratch Postgres), `node tests/e2e-watch-room.js`, `node tests/e2e-room-cards.js` (Playwright).
+
+## Split mode (Nova Home beside the room) — v6 changes
+
+- **Resizable split.** The border between Nova Home and the room is an invisible drag line (cursor changes to a resize cursor on hover). Drag with the mouse or a finger; on phones the line is horizontal (Home on top, room below). Double-click / double-tap resets, arrow keys resize too. The size is remembered (`localStorage: nova_dock_size`). Limits keep both sides usable.
+- **Settings icon** in the split opens the *main profile page* inside the panel. The back arrow on Settings (and other sub-pages) returns to that main profile page; only the main profile page's back closes the panel to Nova Home.
+- **Chat**: a back arrow sits left of the profile picture in the chat header and returns to the Friends page.
+- **+ button** stays on screen while Profile / Settings cover the Home column (hidden on Friends / chat, which have their own bottom bar). It closes the panel and opens the platform picker.
+- **YouTube end cards.** The embed API cannot switch off the end-screen playlist card / channel circle, so for the last 22 s of a video two blurred panels cover the corners where they appear (`END_GUARD_SECS` in `room.js`, zones in `room.css` `#vguard`).
+- Tests: `node tests/e2e-dock-split.js` (needs `playwright` + Chromium).

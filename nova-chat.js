@@ -1,6 +1,9 @@
 /* Mobile-first private chat for accepted friends. Requires chat-schema.sql. */
 (function () {
   const { sb, esc, t } = Nova, ic = Nova.ic;
+  /* inside the Watch-room dock the chat header shows the room's left-panel icon (same as the room header button); it opens the Friends page */
+  const embedded = () => !!(window.NovaEmbed && NovaEmbed.active);
+  const DOCK_ICON = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4.5"/><path d="M10 3v18M7.4 9.2 5.4 12l2 2.8"/></svg>';
   if (typeof V === 'undefined') return;
 
   const MAX_FILE = 20 * 1024 * 1024, MAX_ATTACHMENTS = 8, PAGE_SIZE = 60;
@@ -335,7 +338,7 @@
       }
       clearPendingPreviews();
       pendingFiles = []; pendingRemote = []; pendingContacts = [];
-      target.innerHTML = `<header class=chat-head><div class=chat-head-person>${conversation.is_group ? `<span class=chat-group-avatar>${ic('users',20)}</span>` : linkedAvatar(person(threadMembers.find(m => m.user_id !== U.id)?.user_id), 42)}<span><b>${esc(titleFor(conversation, threadMembers))}</b>${conversation.is_group ? `<small>${threadMembers.length} members</small>` : ''}</span></div></header>
+      target.innerHTML = `<header class=chat-head><button type=button class="chat-head-back${embedded() ? ' chat-head-dock' : ''}" data-chat-back aria-label="Back to friends" title="Friends">${embedded() ? DOCK_ICON : ic('left',20)}</button><div class=chat-head-person>${conversation.is_group ? `<span class=chat-group-avatar>${ic('users',20)}</span>` : linkedAvatar(person(threadMembers.find(m => m.user_id !== U.id)?.user_id), 42)}<span><b>${esc(titleFor(conversation, threadMembers))}</b>${conversation.is_group ? `<small>${threadMembers.length} members</small>` : ''}</span></div></header>
         <div id=chatMessages class=chat-messages><p class=chat-loading>Loading messages…</p></div><div id=mentionList class=mention-list hidden></div><div id=recordingPanel class=voice-recording-panel hidden></div>
         <section id=chatMediaPicker class=chat-media-picker role=region aria-label="Share media" hidden>
           <div id=mediaMenu class=media-menu>
@@ -1198,9 +1201,16 @@
   }
 
   document.addEventListener('click', async event => {
-    const el = event.target.closest('[data-chat-compose],[data-open-chat],[data-open-friend],[data-chat-retry],[data-select-friend],[data-remove-friend],[data-create-chat],[data-close-chat-compose],[data-chat-send],[data-chat-record],[data-voice-pause],[data-voice-stop],[data-voice-cancel],[data-chat-media],[data-chat-older],[data-mention],[data-remove-file],[data-remove-remote],[data-remove-contact],[data-close-media],[data-media-action],[data-media-provider],[data-media-back],[data-media-kind],[data-media-result],[data-media-contact],[data-media-load-more],[data-media-retry],[data-people-tab],[data-people-add],[data-people-accept],[data-people-decline],[data-people-cancel],[data-people-remove],[data-people-block],[data-people-unblock],[data-people-retry]');
+    const el = event.target.closest('[data-chat-back],[data-chat-compose],[data-open-chat],[data-open-friend],[data-chat-retry],[data-select-friend],[data-remove-friend],[data-create-chat],[data-close-chat-compose],[data-chat-send],[data-chat-record],[data-voice-pause],[data-voice-stop],[data-voice-cancel],[data-chat-media],[data-chat-older],[data-mention],[data-remove-file],[data-remove-remote],[data-remove-contact],[data-close-media],[data-media-action],[data-media-provider],[data-media-back],[data-media-kind],[data-media-result],[data-media-contact],[data-media-load-more],[data-media-retry],[data-people-tab],[data-people-add],[data-people-accept],[data-people-decline],[data-people-cancel],[data-people-remove],[data-people-block],[data-people-unblock],[data-people-retry]');
     if (!el) return;
     const d = el.dataset;
+    if (d.chatBack !== undefined) {
+      peopleTab = 'friends';
+      document.body.classList.remove('message-chat-active', 'message-thread-active');
+      location.hash = '#friends';
+      route();
+      return;
+    }
     if (d.peopleTab) {
       peopleTab = d.peopleTab;
       document.body.classList.remove('message-chat-active');

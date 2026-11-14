@@ -326,3 +326,11 @@ body.inroom{overflow:hidden}
 .nvg-a button{border:0;border-radius:12px;padding:10px 20px;font-weight:700;font-size:14.5px;cursor:pointer;background:#f3f6fa;color:#0b1220}
 .nvg-a button.p{background:#0b1220;color:#fff}
 @media (prefers-reduced-motion:reduce){#rm .cgbar i{animation:none}}
+
+/* ===== end-screen guard: hides YouTube's end cards (playlist card / channel circle) during the last seconds ===== */
+#rm #vguard{position:absolute;z-index:2;pointer-events:none;overflow:hidden}
+#rm #vguard .eg{position:absolute;bottom:0;display:block;background:rgba(8,12,20,.55);-webkit-backdrop-filter:blur(28px) saturate(.5);backdrop-filter:blur(28px) saturate(.5);animation:egIn .35s ease both}
+#rm #vguard .eg.l{left:0;width:38%;height:52%;border-top-right-radius:20px}
+#rm #vguard .eg.r{right:0;width:22%;height:52%;border-top-left-radius:20px}
+@keyframes egIn{from{opacity:0}}
+@media(prefers-reduced-motion:reduce){#rm #vguard .eg{animation:none}}
