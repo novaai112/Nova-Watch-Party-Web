@@ -1,0 +1,23 @@
+/* Sync Engine v2 (F1): status pill on the video, 3-2-1 overlay, per-member sync badges in the People list.  Logic: room-sync.js */
+#rm .syncbar{position:absolute;left:50%;top:10px;transform:translateX(-50%);z-index:8;display:flex;align-items:center;gap:8px;max-width:calc(100% - 150px);padding:6px 8px 6px 12px;border-radius:999px;background:rgba(18,16,34,.72);color:#fff;font-size:12.5px;font-weight:600;line-height:1.2;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 4px 18px #0006;white-space:nowrap;animation:syncIn .18s ease}
+#rm .syncbar[hidden]{display:none}
+#rm .syncbar span{overflow:hidden;text-overflow:ellipsis}
+#rm .syncbar button{flex:none;border:0;border-radius:999px;padding:5px 11px;font:inherit;font-size:12px;font-weight:700;background:#fff;color:#111;cursor:pointer}
+#rm .syncbar button:last-child:not(:first-of-type){background:#ffffff26;color:#fff}
+#rm .syncbar button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+#rm .syncbar .sdot{width:8px;height:8px;border-radius:50%;flex:none;background:#9aa}
+#rm .syncbar .sdot.ok{background:#2fd27a}
+#rm .syncbar .sdot.warn{background:#ffb020;animation:sdotp 1s ease-in-out infinite}
+#rm .syncbar .sdot.info{background:#5aa9ff}
+#rm .synccount{position:absolute;inset:0;z-index:9;display:grid;place-items:center;pointer-events:none;background:rgba(0,0,0,.45);color:#fff;font-size:min(32vh,120px);font-weight:800;text-shadow:0 4px 24px #0008}
+#rm .synccount.pop{animation:syncPop .9s ease-out}
+/* People list badges */
+#rm .li .sync{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:700;letter-spacing:.01em;vertical-align:middle;background:#0000000f;color:#344054}
+#rm .li .sync-ok{background:#1fa05a1f;color:#14783f}
+#rm .li .sync-behind,#rm .li .sync-ahead{background:#e0861f24;color:#9a5a08}
+#rm .li .sync-buf{background:#2a6df424;color:#1c50c0}
+@keyframes syncIn{from{opacity:0;transform:translate(-50%,-6px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes sdotp{50%{opacity:.35}}
+@keyframes syncPop{0%{transform:scale(.6);opacity:0}25%{transform:scale(1.05);opacity:1}100%{transform:scale(1);opacity:.9}}
+@media(prefers-reduced-motion:reduce){#rm .syncbar,#rm .synccount.pop,#rm .syncbar .sdot.warn{animation:none}}
+@media(max-width:560px){#rm .syncbar{top:8px;font-size:12px;max-width:calc(100% - 110px)}}

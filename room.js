@@ -86,9 +86,11 @@ function platBadge(m, cls) {
 let ME = null, R = null, members = [], queue = [], msgs = [], prof = {}, ch = null;
 const typers = new Map();            /* user id -> { k: 'typing'|'uploading', until } */
 let hiddenMsgs = new Set(), typingAt = 0, typingKind = '';
-let rateAt = 0, skew = 0, hbT = null, tickT = null, homeT = null, homeRooms = [], mountKey = '', advAt = 0, endedAt = 0, pubT = 0, pubAt = 0;
+let rateAt = 0, skew = 0, skewSet = false, clockAt = 0, statsAt = 0, SY = null, syncRepaintT = 0, hbT = null, tickT = null, homeT = null, homeRooms = [], mountKey = '', advAt = 0, endedAt = 0, pubT = 0, pubAt = 0;
 let homeLoaded = false, homeLoading = false, homeLoadError = '', homeErrorNotified = '';
-let roomSchemaWarned = false;
+let roomSchemaWarned = false, chSub = false;
+/* connection state for the automatic reconnect (exponential back-off, see CONNECTION below) */
+const net = { down: false, n: 0, timer: 0, since: 0, busy: false, offline: false };
 let ui = { more: false, moreAuto: false, moreDismiss: '', voteSeen: false, sheet: '', tab: 'members', privTried: false, vol: +(localStorage.getItem('nova_vol') || 50), friends: [], first: true, events: [], nowKeys: {}, q: '', qi: 0, qScroll: false, emoji: false, emojiCat: 0, emojiQ: '', phide: false, rate: 1, rateKey: '' };
 const micMap = new Map(), speak = new Map(), vad = new Map();
 const mutedUsers = new Set();
@@ -142,9 +144,19 @@ async function loadProfiles(ids) {
   const { data } = await sb.from('public_profiles').select('id,full_name,username,avatar_url,country,country_code,city,region,location_lat,location_lng').in('id', miss);
   (data || []).forEach(p => { prof[p.id] = p; });
 }
-async function syncClock() {
-  const t0 = Date.now();
-  try { const d = await rpc('room_now'); const t1 = Date.now(); skew = Number(d) - (t0 + t1) / 2; } catch (e) { skew = 0; }
+/* Server clock offset (F1): the lowest-round-trip sample of `n`, smoothed (NovaSync.pickClock / blendClock).
+   Measured on join, every 30 s (onTick) and when the tab regains focus. Resolves false when the server could not be reached. */
+async function syncClock(n) {
+  const out = [];
+  for (let i = 0; i < (n || 1); i++) {
+    const t0 = Date.now();
+    try { const d = await rpc('room_now'); const t1 = Date.now(); out.push({ offset: Number(d) - (t0 + t1) / 2, rtt: t1 - t0 }); } catch (e) {}
+  }
+  clockAt = Date.now();
+  const best = window.NovaSync ? NovaSync.pickClock(out) : out[0] || null;
+  if (!best) { if (!skewSet) skew = 0; return false; }
+  skew = skewSet && window.NovaSync ? NovaSync.blendClock(skew, best) : best.offset; skewSet = true;
+  return true;
 }
 function cachedPos() {
   try { const c = JSON.parse(sessionStorage.getItem('nova_pos') || 'null'); if (c && Date.now() - c.t < 600000) return c; } catch (e) {}
@@ -200,7 +212,9 @@ async function locationReady(why) {
    ===================================================================== */
 async function enter(row) {
   cleanup(true);
-  await syncClock();
+  skewSet = false; await syncClock(3);
+  if (window.NovaSync) { if (!SY) SY = NovaSync.create(syncHost()); SY.resetAll(); }
+  net.down = false; net.n = 0; net.busy = false; clearTimeout(net.timer); clockAt = statsAt = Date.now();
   R = row; members = []; queue = []; msgs = []; mountKey = '';
   ui.first = true; ui.sheet = ''; ui.events = []; ui.nowKeys = {}; micMap.clear(); speak.clear();
   ui.privTried = false; ui.phide = false; ui.rate = 1; ui.rateKey = '';
@@ -227,6 +241,7 @@ function skelShell(on) {
   if (f && !f.children.length) f.innerHTML = NovaSk.msgs(5);
 }
 function cleanup(keepShell) {
+  clearTimeout(net.timer); net.down = false; net.n = 0; net.busy = false;
   clearInterval(hbT); clearInterval(tickT); hbT = tickT = null;
   if (ch) { try { sb.removeChannel(ch); } catch (e) {} ch = null; }
   closeAllPeers(); stopMic();
@@ -276,6 +291,7 @@ async function refreshMembers() {
   }
   if (result.error) { oops(result.error); return; }
   members = result.data || [];
+  if (SY) SY.map.forEach((v, k) => { if (!members.some(m => m.user_id === k)) SY.map.delete(k); });
   await loadProfiles(members.map(m => m.user_id));
   if (!members.length) { beat(); return; }
   renderHead(); renderSheet(); renderFeed(); voiceSync(); renderVoice();
@@ -306,7 +322,8 @@ async function loadMsgs() {
 function subscribe() {
   const id = R.id; typers.clear();
   try { hiddenMsgs = new Set(JSON.parse(localStorage.getItem('nova_room_hide_' + id) || '[]')); } catch (e) { hiddenMsgs = new Set(); }
-  ch = sb.channel('nova-room-' + id, { config: { broadcast: { self: false } } })
+  const c = ch = sb.channel('nova-room-' + id, { config: { broadcast: { self: false } } }); chSub = false;
+  c
     .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: 'id=eq.' + id }, onRoom)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'room_members', filter: 'room_id=eq.' + id }, () => refreshMembers())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'room_queue', filter: 'room_id=eq.' + id }, () => refreshQueue())
@@ -320,6 +337,7 @@ function subscribe() {
     .on('broadcast', { event: 'kick' }, ({ payload }) => { if (payload && payload.uid === ME.id) gone('You were removed from the room'); })
     .on('broadcast', { event: 'sig' }, ({ payload }) => onSig(payload))
     .on('broadcast', { event: 'rate' }, ({ payload }) => { if (payload && !isAdmin() && typeof payload.r === 'number') setRoomRate(payload.r, false); })
+    .on('broadcast', { event: 'sync' }, ({ payload }) => { if (SY && payload && members.some(m => m.user_id === payload.u)) SY.onSync(payload); })
     .on('broadcast', { event: 'mic' }, ({ payload }) => {
       if (!payload || !payload.uid || payload.uid === ME.id) return;
       if (!canMic(payload.uid)) { micMap.delete(payload.uid); renderVoice(); return; }
@@ -327,8 +345,84 @@ function subscribe() {
       if (!payload.on) speak.delete(payload.uid);
       renderVoice();
     })
-    .subscribe(st => { if (st === 'SUBSCRIBED') { voiceSync(); if (mic) announceMic(); } });
+    .subscribe(st => {
+      if (c !== ch) return;                                     /* a channel that was already replaced / removed */
+      chSub = st === 'SUBSCRIBED';
+      if (st === 'SUBSCRIBED') { netUp(); voiceSync(); if (mic) announceMic(); }
+      else if (st === 'CHANNEL_ERROR' || st === 'TIMED_OUT' || st === 'CLOSED') netDown();
+    });
 }
+
+/* =====================================================================
+   CONNECTION · automatic reconnect with exponential back-off (F1)
+   offline / failed heartbeat / realtime channel error → "Reconnecting…" pill → retry after 1 s, 2 s, 4 s … 30 s (±20 %)
+   → fresh channel, role (admin) re-read from the server, mic announced again, player back on the live position. No manual refresh.
+   ===================================================================== */
+const isNetErr = e => !navigator.onLine || /fetch|network|timeout|timed out|abort|load failed|offline|failed to|ECONN|\b50[234]\b/i.test(String((e && (e.message || e.details)) || e));
+function netDown() {
+  if (!R || net.busy) return;
+  net.offline = !navigator.onLine;
+  if (net.down) return;                                         /* already reconnecting: the running back-off timer stays as it is */
+  net.down = true; net.n = 0; net.since = Date.now(); if (SY) SY.st.reconnects++;
+  scheduleReconnect();
+}
+function scheduleReconnect() {
+  clearTimeout(net.timer);
+  if (!R) return;
+  net.timer = setTimeout(reconnect, window.NovaSync ? NovaSync.backoff(net.n++) : 3000);
+  if (SY) SY.tick();                                            /* paints the pill straight away */
+}
+/* everything a returning member needs: role, members, queue, chat, player and position */
+async function restoreRoom() {
+  await Promise.all([refreshRoom(), refreshMembers(), refreshQueue(), loadMsgs()]);
+  if (!R) return;
+  renderAll(); await mountMedia();
+  if (!R) return;
+  if (isAdmin()) { if (P.ready) publish(pl.playing(), pl.time()); }      /* the host re-anchors the room */
+  else applyState(true);                                                  /* a member goes straight back to the live position */
+  voiceSync(); if (mic) announceMic();
+}
+async function reconnect() {
+  if (!R || !net.down || net.busy) return;
+  if (!navigator.onLine) { net.offline = true; return scheduleReconnect(); }
+  net.busy = true;
+  try {
+    if (!(await syncClock(3))) throw new Error('offline');
+    if (ch) { try { sb.removeChannel(ch); } catch (e) {} ch = null; }
+    subscribe();                                                /* a fresh realtime channel */
+    for (let i = 0; i < 40 && !chSub && net.down && R; i++) await new Promise(r => setTimeout(r, 200));   /* wait (≤ 8 s) until it is really subscribed */
+    if (net.down && !chSub) throw new Error('channel not ready');
+    const d = await rpc('room_heartbeat', { p_room: R.id });
+    if (!d.member) {                                            /* swept while away: join again (join_room keeps the original join order and the creator's admin) */
+      if (d.status !== 'open') { net.busy = false; net.down = false; return gone('Room closed'); }
+      const cp = cachedPos();
+      R = await rpc('join_room', { p_code: R.code, p_lat: cp ? cp.lat : null, p_lng: cp ? cp.lng : null });
+    }
+    await restoreRoom();
+  } catch (e) {
+    net.busy = false;
+    if (R && /removed|closed/i.test(String(e && e.message))) return gone(e.message);
+    if (net.down) scheduleReconnect();
+    return;
+  }
+  net.busy = false;
+  netUp(true);
+}
+function netUp(restored) {
+  if (!net.down) return;
+  clearTimeout(net.timer);
+  const attempts = net.n, away = Date.now() - net.since, viaLib = !net.busy && !restored;
+  net.down = false; net.n = 0; net.offline = false;
+  if (SY) { SY.st.reconnectOk++; SY.tick(); }
+  if (!R) return;
+  if (viaLib) restoreRoom().catch(() => {});                    /* the realtime library rejoined by itself: still bring the room state back */
+  if (away > 4000) toast('Back online');
+  const sm = SY ? SY.summary() : {};
+  if (SY) SY.resetStats();
+  rpc('room_sync_report', { p_room: R.id, p_stats: Object.assign(sm, { reconnect_attempts: attempts, away_ms: away }) }).catch(() => {});
+}
+window.addEventListener('offline', () => { if (R) netDown(); });
+window.addEventListener('online', () => { if (R && net.down) { net.n = 0; clearTimeout(net.timer); reconnect(); } });
 function onRoom(p) {
   if (!R || !p.new || p.new.id !== R.id) return;
   const prevAdmin = R.admin_id;
@@ -349,7 +443,7 @@ function addMsg(m) {
   if (MEDIA() && Array.isArray(m.attachments) && m.attachments.length) MEDIA().sign([m]).then(got => { if (got) renderFeed(); });
 }
 async function beat() {
-  if (!R) return;
+  if (!R || net.down) return;                                   /* while reconnecting, reconnect() does the heartbeat */
   try {
     const d = await rpc('room_heartbeat', { p_room: R.id });
     if (!R) return;
@@ -359,9 +453,15 @@ async function beat() {
         catch (e) { gone(/removed/i.test(e.message) ? 'You were removed from the room' : e.message); }
       } else gone('Room closed');
     } else if (d.admin_id && d.admin_id !== R.admin_id) await refreshRoom().then(() => { renderAll(); mountMedia(); });
-  } catch (e) {}
+  } catch (e) { if (R && isNetErr(e)) netDown(); }
 }
-document.addEventListener('visibilitychange', () => { if (!document.hidden && R) beat(); });
+/* tab back in focus: heartbeat, re-measure the clock, then re-align the player (as a nudge / seek decision, not a blind jump) */
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !R) return;
+  if (net.down) { net.n = 0; clearTimeout(net.timer); reconnect(); return; }    /* back in front of the screen: retry now, not after the back-off */
+  beat(); syncClock(3);
+  if (!isAdmin()) setTimeout(() => { if (R && !net.down && !$('#tap')) applyState(false); }, 600);
+});
 
 /* =====================================================================
    PLAYER + SYNC
@@ -448,21 +548,74 @@ const pl = {
     try { if (P.yt && P.yt.getAvailablePlaybackRates) { const a = P.yt.getAvailablePlaybackRates() || []; if (a.length) return a.reduce((b, x) => Math.abs(x - r) < Math.abs(b - r) ? x : b, a[0]); } } catch (e) {}
     return Math.round(r * 100) / 100;
   },
-  applyRate() { try { if (P.yt) { if (P.yt.getPlaybackRate && P.yt.getPlaybackRate() !== ui.rate) P.yt.setPlaybackRate(ui.rate); } else if (P.video && P.video.playbackRate !== ui.rate) P.video.playbackRate = ui.rate; } catch (e) {} }
+  /* the room speed, or the sync engine's short-lived nudge around it while this player catches up / slows down */
+  applyRate() { const r = (SY && SY.nudgeRate()) || ui.rate; try { if (P.yt) { if (P.yt.getPlaybackRate && P.yt.getPlaybackRate() !== r) P.yt.setPlaybackRate(r); } else if (P.video && P.video.playbackRate !== r) P.video.playbackRate = r; } catch (e) {} },
+  /* fixed rate steps of the player (YouTube), or null for free-rate <video> */
+  rates() { try { return P.yt && P.yt.getAvailablePlaybackRates ? (P.yt.getAvailablePlaybackRates() || null) : null; } catch (e) { return null; } }
 };
 function setRoomRate(r, fromAdmin) {
   r = pl.snapRate(r);
   if (r === ui.rate && !fromAdmin) return;
-  ui.rate = r; pl.applyRate();
+  ui.rate = r; if (SY) SY.release(); pl.applyRate();
   if (window.NovaPlayer) NovaPlayer.repaintRate();
   if (fromAdmin && isAdmin()) { publish(pl.playing(), pl.time()); sendRate(); }
+}
+/* ---- Sync Engine v2 host bridge (room-sync.js asks the page for everything through this) ---- */
+function syncSample() {
+  const s = (R && R.play_state) || {}, ready = !!(R && R.media && P.ready && P.kind !== 'embed');
+  const live = !!(P.yt && pl.dur() === 0);                                    /* a live stream has no timeline to align */
+  const exp = ready ? (s.playing ? (s.pos || 0) + (snow() - s.ts) / 1000 * ui.rate : (s.pos || 0)) : 0;
+  return { ready, live, wantPlaying: !!s.playing, ended: !!s.ended, cur: ready ? pl.time() : 0, exp, playing: ready ? pl.playing() : false };
+}
+function expectedIn(ms) {
+  const s = (R && R.play_state) || {};
+  return s.playing ? (s.pos || 0) + (snow() + ms - s.ts) / 1000 * ui.rate : (s.pos || 0);
+}
+function syncHost() {
+  return {
+    now: () => Date.now(), isAdmin, me: () => ME && ME.id, connected: () => !net.down && !!ch,
+    sample: syncSample, expectedIn, baseRate: () => ui.rate, rates: () => pl.rates(), applyRate: () => pl.applyRate(),
+    seek: t => { P.mute = Date.now() + 1500; pl.seek(t); },
+    pause: () => { P.mute = Date.now() + 1500; pl.pause(); },
+    resume: () => { P.mute = Date.now() + 1500; if (R && R.play_state && R.play_state.playing && !R.play_state.ended) pl.play(); },
+    send: payload => { try { if (ch) ch.send({ type: 'broadcast', event: 'sync', payload }); } catch (e) {} },
+    waitMode: () => (R && R.wait_mode) || 'wait',
+    adminPause: uid => { if (!isAdmin()) return; pl.pause(); publish(false, pl.time()); toast('Paused: waiting for ' + nm(who(uid))); },
+    adminResume: () => { if (!isAdmin()) return; pl.play(); publish(true, pl.time()); },
+    net: () => ({ down: net.down, n: net.n, offline: net.offline }),
+    changed: () => { if (ui.sheet === 'people') { clearTimeout(syncRepaintT); syncRepaintT = setTimeout(renderSheet, 250); } },
+    paint: paintSync, count: showCount
+  };
+}
+/* the status pill on the video: reconnecting · waiting for {name} · behind / ahead + Catch up · live position + Catch up / 3-2-1 */
+function paintSync(v) {
+  const w = $('#vwrap'); if (!w) return;
+  let b = $('#syncbar');
+  if (!v || v.mode === 'none') { if (b) { b.hidden = true; b.dataset.k = ''; } return; }
+  if (!b) { w.insertAdjacentHTML('beforeend', '<div id="syncbar" class="syncbar" role="status" aria-live="polite"></div>'); b = $('#syncbar'); }
+  const key = v.mode + (v.uid || '') + (v.pausing ? 'p' : '') + (v.n != null ? v.n : '') + (v.offline ? 'o' : '') + (v.drift != null ? Math.round(v.drift * 2) : '');
+  b.hidden = false;
+  if (b.dataset.k === key) return;
+  b.dataset.k = key;
+  const btn = (act, t) => `<button type="button" data-r="${act}">${t}</button>`;
+  if (v.mode === 'net') b.innerHTML = `<i class="sdot warn"></i><span>${v.offline ? 'You are offline' : 'Reconnecting'}…${v.n > 1 ? ' (try ' + v.n + ')' : ''}</span>`;
+  else if (v.mode === 'waiting') b.innerHTML = `<i class="sdot warn"></i><span>${v.pausing ? 'Waiting for ' + esc(nm(who(v.uid))) + '…' : esc(nm(who(v.uid))) + ' is buffering'}</span>`;
+  else if (v.mode === 'drift') b.innerHTML = `<i class="sdot ${v.drift < 0 ? 'warn' : 'info'}"></i><span>${v.drift < 0 ? 'Behind' : 'Ahead'} ${Math.abs(v.drift).toFixed(1)} s</span>${btn('syncnow', 'Catch up')}${btn('resync', '3-2-1')}`;
+  else if (v.mode === 'join') b.innerHTML = `<i class="sdot ok"></i><span>Live position</span>${btn('syncnow', 'Catch up')}${btn('resync', '3-2-1 resync')}`;
+}
+function showCount(n) {
+  const w = $('#vwrap'); if (!w) return;
+  let c = $('#synccount');
+  if (!n) { if (c) c.remove(); return; }
+  if (!c) { w.insertAdjacentHTML('beforeend', '<div id="synccount" class="synccount" aria-live="assertive"></div>'); c = $('#synccount'); }
+  c.textContent = n; c.classList.remove('pop'); void c.offsetWidth; c.classList.add('pop');
 }
 function sendRate() { if (ch && isAdmin()) { try { ch.send({ type: 'broadcast', event: 'rate', payload: { r: ui.rate } }); } catch (e) {} } }
 function destroyPlayer() {
   try { if (P.yt) P.yt.destroy(); } catch (e) {}
   try { if (P.video && P.video._hls) P.video._hls.destroy(); } catch (e) {}
-  P = freshP();
-  const w = $('#vwrap'); if (w) $$('#vwrap > *:not(#mv):not(#vcover):not(#vbadge):not(#pui):not(#pgz)').forEach(n => n.remove());
+  P = freshP(); if (SY) SY.reset();
+  const w = $('#vwrap'); if (w) $$('#vwrap > *:not(#mv):not(#vcover):not(#vbadge):not(#pui):not(#pgz):not(#syncbar):not(#synccount)').forEach(n => n.remove());
 }
 function emptyHTML() {
   const can = isAdmin() || R.playback_mode !== 'leader';
@@ -519,6 +672,8 @@ async function mountMedia() {
     v.addEventListener('ended', () => { if (isAdmin()) ended(); });
     v.addEventListener('loadedmetadata', () => { P.ready = true; pl.vol(); pl.applyRate(); renderControls(); applyState(true); });
     v.addEventListener('playing', () => { P.started = true; hideTap(); paintCover(); });
+    ['waiting', 'stalled'].forEach(ev => v.addEventListener(ev, () => { if (SY && !v.paused) SY.setBuffering(true); }));
+    ['playing', 'canplay', 'pause', 'seeked'].forEach(ev => v.addEventListener(ev, () => { if (SY && !(ev === 'seeked' && v.readyState < 3)) SY.setBuffering(false); }));
     v.addEventListener('error', () => {
       if (key !== mountKey) return;
       if (v._retry && v._retry()) return;
@@ -548,6 +703,7 @@ async function mountMedia() {
       onReady: () => { if (key !== mountKey) return; P.ready = true; pl.vol(); pl.applyRate(); renderControls(); applyState(true); setTimeout(checkBlocked, 1800); },
       onStateChange: e => {
         const s = e.data;
+        if (SY) SY.setBuffering(s === 3);                                   /* 3 = buffering */
         if ((s === 1 || s === 2) && isAdmin() && Date.now() > P.mute) publish(s === 1, pl.time());
         if (s === 1) { P.started = true; hideTap(); }
         paintCover(); paintState();
@@ -588,6 +744,7 @@ function hideTap() { const t = $('#tap'); if (t) t.remove(); }
 
 function applyState(force) {
   if (!R || !P.ready || P.kind === 'embed' || !R.media) return;
+  if (SY && SY.busy()) return;                                  /* a 3-2-1 resync owns the player until it ends */
   const s = R.play_state || {};
   P.mute = Date.now() + 1500;
   if (s.ended) { if (pl.playing()) pl.pause(); return; }
@@ -598,9 +755,14 @@ function applyState(force) {
   pl.applyRate();
   const cur = pl.time(), live = P.yt && pl.dur() === 0;
   if (s.playing) {
-    if (!live && Math.abs(cur - exp) > (force ? 0.8 : 2.2)) pl.seek(exp);
+    if (!live) {
+      if (force) { if (Math.abs(cur - exp) > 0.8) { if (SY) SY.noteSeek(Math.abs(cur - exp) > 3 ? 'join' : 'manual'); pl.seek(exp); } }   /* joining / returning: land on the live position */
+      else if (SY) SY.correct(cur, exp);                                                                                     /* otherwise nudge first, hard-seek only when far off */
+      else if (Math.abs(cur - exp) > 2.2) pl.seek(exp);
+    }
     if (!pl.playing()) pl.play();
   } else {
+    if (SY) SY.release();
     if (pl.playing()) pl.pause();
     if (!live && Math.abs(cur - (s.pos || 0)) > 0.8) pl.seek(s.pos || 0);
   }
@@ -629,6 +791,15 @@ function onTick() {
   if (gone_) renderVoice();
   const s = R.play_state || {};
   fitYT(); paintCover(); tickMore(); paintState();
+  if (Date.now() - clockAt > 30000) { clockAt = Date.now(); syncClock(1); }                 /* server clock offset every 30 s */
+  if (SY) {
+    SY.tick();
+    if (Date.now() - statsAt > 60000) {                                                      /* a small summary about once a minute */
+      statsAt = Date.now();
+      const sm = SY.summary();
+      if (sm.samples >= 10 || sm.manual_resyncs || sm.hard_seeks) { rpc('room_sync_report', { p_room: R.id, p_stats: sm }).catch(() => {}); SY.resetStats(); }
+    }
+  }
   if (isAdmin() && R.media && P.ready && Date.now() - rateAt > 6000) { rateAt = Date.now(); sendRate(); }
   if (s.vote_until) {
     renderHead();
@@ -1002,6 +1173,7 @@ function openSettings(refresh) {
     ${adm ? '' : '<p class="mnote">Only the room admin can change these settings.</p>'}
     ${group('Privacy', pv[3], PRIV.map(p => optBtn('privacy:' + p[0], p[1], p[2], p[0] === R.privacy, !adm)).join(''))}
     ${group('Playback', md[3], MODES.map(p => optBtn('mode:' + p[0], p[1], p[2], p[0] === R.playback_mode, !adm)).join(''))}
+    ${group('Playback sync', (R.wait_mode || 'wait') === 'never' ? 'The video keeps playing even if someone is buffering' : 'Pauses for everyone (up to 20 s) when someone is buffering', [['wait', 'users', 'Wait for everyone'], ['never', 'skip', 'Never wait']].map(p => optBtn('waitmode:' + p[0], p[1], p[2], (R.wait_mode || 'wait') === p[0], !adm)).join(''))}
     ${R.playback_mode === 'vote' ? group('Voting time', 'How long the vote stays open when a video ends', [12, 20, 30, 60].map(n => optBtn('votesec:' + n, 'check', n + ' s', (R.vote_seconds || 12) === n, !adm)).join('')) : ''}
     <section class="sg row"><span class="sgi">${ic(R.voice_enabled ? 'mic' : 'micoff', 18)}</span><div class="sgh"><b>Voice chat</b><small>${R.voice_enabled ? (R.privacy === 'public' ? 'Everyone can talk and listen' : 'Only admin-approved members can talk') : 'Microphones are off for everyone'}</small></div><input type="checkbox" class="sw" id="voicesw" ${R.voice_enabled ? 'checked' : ''} ${adm ? '' : 'disabled'} aria-label="Voice chat"></section>
     <section class="sg"><div class="sgh"><b>Volume</b><small>Balance between the video and voices</small></div><div class="vol">${ic('vol', 18)}<input type="range" id="volr" min="0" max="100" value="${ui.vol}" aria-label="Video and voice balance">${ic('phone', 18)}</div></section>
@@ -1465,6 +1637,13 @@ async function sendMsg() {
 /* sheets */
 function sheet(html) { closeSheet(true); const o = document.createElement('div'); o.className = 'md'; o.id = 'rmodal'; o.innerHTML = `<div class="mb">${html}</div>`; o.addEventListener('mousedown', e => { if (e.target === o) closeSheet(); }); $('#rm').appendChild(o); }
 function closeSheet(keep) { const o = $('#rmodal'); if (o) o.remove(); if (!keep) ui.sheet = ''; }
+const SYNC_LBL = { ok: 'In sync', behind: 'Behind', ahead: 'Ahead', buf: 'Buffering' };
+function syncBadge(id) {
+  const x = SY && R && R.media ? SY.statusOf(id) : null;
+  if (!x || !SYNC_LBL[x.st]) return '';
+  const extra = (x.st === 'behind' || x.st === 'ahead') && x.d ? ' ' + Math.abs(x.d).toFixed(1) + ' s' : '';
+  return ` <span class="sync sync-${x.st}" title="Playback sync">${SYNC_LBL[x.st]}${extra}</span>`;
+}
 function renderSheet() { if (ui.sheet === 'people') openPeople(true); }
 function openPeople(refresh) {
   ui.sheet = 'people';
@@ -1472,7 +1651,7 @@ function openPeople(refresh) {
   /* listed in ORIGINAL joining order (room_members.joined_at keeps each person's first-ever join time) */
   const mem = members.map((m, n) => {
     const u = who(m.user_id), me = m.user_id === ME.id, isA = m.user_id === R.admin_id, isC = m.user_id === R.creator_id;
-    return `<div class="li">${userAvatar(u, 42, micOf(m.user_id))}<div><b><span class="ord" title="Joined #${n + 1}">${n + 1}.</span> ${esc(nm(u))}</b>${isA ? ' <span class="crownb" title="Admin">' + ic('crown', 15) + '</span>' : ''}${isC ? ' <span class="ctag" title="Room creator">Creator</span>' : ''}${me ? ' (you)' : ''}${micOf(m.user_id) ? ' <span class="micon" data-vu="' + m.user_id + '">' + ic('mic', 14) + '</span>' : ''}<small>@${esc(u.username || '')}</small>${Nova.geo ? Nova.geo.line(u, { cls: 'sm left' }) : ''}</div>
+    return `<div class="li">${userAvatar(u, 42, micOf(m.user_id))}<div><b><span class="ord" title="Joined #${n + 1}">${n + 1}.</span> ${esc(nm(u))}</b>${isA ? ' <span class="crownb" title="Admin">' + ic('crown', 15) + '</span>' : ''}${isC ? ' <span class="ctag" title="Room creator">Creator</span>' : ''}${me ? ' (you)' : ''}${syncBadge(m.user_id)}${micOf(m.user_id) ? ' <span class="micon" data-vu="' + m.user_id + '">' + ic('mic', 14) + '</span>' : ''}<small>@${esc(u.username || '')}</small>${Nova.geo ? Nova.geo.line(u, { cls: 'sm left' }) : ''}</div>
       ${adm && !me ? `${R.privacy !== 'public' ? `<button class="cb${m.mic_allowed ? ' on' : ''}" data-r="member-mic" data-id="${esc(m.user_id)}" data-on="${m.mic_allowed ? 'false' : 'true'}" title="${m.mic_allowed ? 'Disable microphone' : 'Enable microphone'}" aria-label="${m.mic_allowed ? 'Disable microphone' : 'Enable microphone'}">${ic(m.mic_allowed ? 'mic' : 'micoff', 17)}</button>` : ''}<button class="cb crownb" data-r="transfer" data-id="${esc(m.user_id)}" title="${isC ? 'Give admin back to the creator' : 'Make admin'}" aria-label="${isC ? 'Give admin back to the creator' : 'Make admin'}">${ic('crown', 18)}</button>${isC ? '' : `<button class="cb" data-r="kick" data-id="${esc(m.user_id)}" title="Kick from room" aria-label="Kick from room">${ic('x', 18)}</button>`}` : ''}</div>`;
   }).join('');
   const vote = R.playback_mode === 'vote', lead = R.playback_mode === 'leader';
@@ -1616,6 +1795,7 @@ async function setOpt(v) {
     }
   } else if (k === 'mode') a.p_mode = val;
   else if (k === 'votesec') a.p_vote_seconds = +val;
+  else if (k === 'waitmode') a.p_wait_mode = val;
   else if (k === 'voice') a.p_voice = val === 'on';
   try { R = Object.assign({}, R, await rpc('room_update', a)); if (ui.sheet !== 'settings') closeSheet(); renderAll(); voiceSync(); } catch (e) { oops(e); }
 }
@@ -1664,6 +1844,8 @@ function onClick(e) {
   else if (r === 'invite') openInvite();
   else if (r === 'send') sendMsg();
   else if (r === 'csearch') searchOpen(true);
+  else if (r === 'syncnow') { if (SY) SY.catchUp(); }
+  else if (r === 'resync') { if (SY) SY.resync(); }
   else if (r === 'cs-close') searchOpen(false);
   else if (r === 'cs-next') searchStep(1);
   else if (r === 'cs-prev') searchStep(-1);

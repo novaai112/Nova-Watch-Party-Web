@@ -96,6 +96,10 @@ alter table public.room_queue add column if not exists suggested boolean not nul
 alter table public.room_queue add column if not exists pos double precision not null default (extract(epoch from clock_timestamp()) * 1000);
 create index if not exists room_queue_pos_idx on public.room_queue(room_id, pos);
 -- Let's vote: how long a vote stays open (seconds). Leader's choice: the video the leader has already selected as next.
+-- Sync Engine v2 (F1): should the room pause (up to 20 s) while a member is buffering?  'wait' = Wait for everyone, 'never' = Never wait
+alter table public.rooms add column if not exists wait_mode text not null default 'wait';
+alter table public.rooms drop constraint if exists rooms_wait_mode_check;
+alter table public.rooms add constraint rooms_wait_mode_check check (wait_mode in ('wait','never'));
 alter table public.rooms add column if not exists vote_seconds int not null default 12 check (vote_seconds between 5 and 120);
 alter table public.rooms add column if not exists next_id uuid references public.room_queue(id) on delete set null;
 
@@ -879,10 +883,11 @@ begin
 end $$;
 
 drop function if exists public.room_update(uuid, text, text, text, boolean, double precision, double precision);
+drop function if exists public.room_update(uuid, text, text, text, boolean, double precision, double precision, int);
 create or replace function public.room_update(
   p_room uuid, p_title text default null, p_privacy text default null, p_mode text default null,
   p_voice boolean default null, p_lat double precision default null, p_lng double precision default null,
-  p_vote_seconds int default null) returns jsonb
+  p_vote_seconds int default null, p_wait_mode text default null) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare uid uuid := auth.uid(); r public.rooms; q int; np text; nv boolean; nt text; ml text;
 begin
@@ -891,6 +896,7 @@ begin
   if p_privacy is not null and p_privacy not in ('public','nearby','friends','invite') then raise exception 'Bad privacy'; end if;
   if p_mode is not null and p_mode not in ('vote','play','autoplay','leader') then raise exception 'Bad mode'; end if;
   if p_vote_seconds is not null and p_vote_seconds not between 5 and 120 then raise exception 'Voting time must be 5 to 120 seconds'; end if;
+  if p_wait_mode is not null and p_wait_mode not in ('wait','never') then raise exception 'Bad sync mode'; end if;
   np := coalesce(p_privacy, r.privacy);
   nv := coalesce(p_voice, r.voice_enabled);
   nt := left(coalesce(nullif(trim(p_title), ''), r.title), 80);
@@ -907,6 +913,7 @@ begin
     playback_mode  = coalesce(p_mode, playback_mode),
     voice_enabled  = nv,
     vote_seconds   = coalesce(p_vote_seconds, vote_seconds),
+    wait_mode      = coalesce(p_wait_mode, wait_mode),
     lat = case when np = 'nearby' then coalesce(p_lat, lat) else null end,
     lng = case when np = 'nearby' then coalesce(p_lng, lng) else null end
   where id = p_room;
@@ -931,6 +938,9 @@ begin
   end if;
   if p_vote_seconds is not null and p_vote_seconds <> r.vote_seconds then
     perform public._notice(p_room, uid, 'Voting time is set to ' || p_vote_seconds || ' seconds');
+  end if;
+  if p_wait_mode is not null and p_wait_mode <> r.wait_mode then
+    perform public._notice(p_room, uid, case p_wait_mode when 'wait' then 'Playback waits for everyone when someone is buffering' else 'Playback never waits for buffering members' end);
   end if;
   if p_title is not null and nt <> r.title then
     perform public._notice(p_room, uid, 'Room name is now "' || nt || '"');
@@ -1178,6 +1188,49 @@ begin
   ), '[]'::jsonb);
 end $$;
 
+-- Sync Engine v2 telemetry (F1): every member sends a small summary about once a minute and after each reconnect
+-- (median / p95 drift, nudges, hard seeks, manual resyncs, buffering time, reconnects).  Stored in room_playback_log as 'sync_stats';
+-- the view room_sync_metrics_daily below turns it into the PRD metrics.  Unknown keys are dropped, values are clamped.
+create or replace function public.room_sync_report(p_room uuid, p_stats jsonb) returns void
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := auth.uid(); d jsonb := '{}'::jsonb; k text; recon boolean;
+begin
+  if uid is null then raise exception 'Sign in required'; end if;
+  if not exists(select 1 from public.room_members where room_id = p_room and user_id = uid) then return; end if;
+  if p_stats is null or jsonb_typeof(p_stats) <> 'object' then return; end if;
+  recon := coalesce((case when jsonb_typeof(p_stats -> 'reconnect_ok') = 'number' then (p_stats ->> 'reconnect_ok')::numeric end), 0) > 0;
+  if exists(select 1 from public.room_playback_log where room_id = p_room and user_id = uid and event = 'sync_stats'
+            and created_at > now() - case when recon then interval '2 seconds' else interval '20 seconds' end) then return; end if;
+  foreach k in array array['samples','median_drift','p95_drift','nudges','hard_seeks','manual_resyncs','buffer_ms','reconnects','reconnect_ok','reconnect_attempts','away_ms'] loop
+    if jsonb_typeof(p_stats -> k) = 'number' then d := d || jsonb_build_object(k, least(greatest((p_stats ->> k)::numeric, 0), 86400000)); end if;
+  end loop;
+  if d = '{}'::jsonb then return; end if;
+  perform public._log(p_room, uid, 'sync_stats', null, d);
+end $$;
+
+-- PRD metrics, one row per day (operators only: run it in the SQL editor / with the service role):
+--   median_drift_s            median of the members' median drift (seconds)
+--   p95_drift_s               95th percentile of the members' p95 drift
+--   desync_actions_per_1000   manual Catch up / 3-2-1 presses per 1,000 member-sessions (the "desync complaint" signal)
+--   reconnect_success_rate    reconnects that came back / reconnect episodes reported
+create or replace view public.room_sync_metrics_daily with (security_invoker = true) as
+select date_trunc('day', created_at)::date                                           as day,
+       count(distinct room_id::text || ':' || coalesce(user_id::text, ''))           as member_sessions,
+       round((percentile_cont(0.5)  within group (order by (detail->>'median_drift')::numeric)
+              filter (where detail ? 'median_drift'))::numeric, 2)                   as median_drift_s,
+       round((percentile_cont(0.95) within group (order by (detail->>'p95_drift')::numeric)
+              filter (where detail ? 'p95_drift'))::numeric, 2)                      as p95_drift_s,
+       round(1000.0 * coalesce(sum((detail->>'manual_resyncs')::numeric), 0)
+             / nullif(count(distinct room_id::text || ':' || coalesce(user_id::text, '')), 0), 1) as desync_actions_per_1000,
+       coalesce(sum((detail->>'hard_seeks')::numeric), 0)                            as hard_seeks,
+       coalesce(sum((detail->>'reconnects')::numeric), 0)                            as reconnect_episodes,
+       round(coalesce(sum((detail->>'reconnect_ok')::numeric), 0)
+             / nullif(sum((detail->>'reconnects')::numeric), 0), 3)                  as reconnect_success_rate
+from public.room_playback_log
+where event = 'sync_stats'
+group by 1;
+revoke all on public.room_sync_metrics_daily from public, anon, authenticated;
+
 -- ---------- permissions ----------
 do $$
 declare f record;
@@ -1188,7 +1241,7 @@ begin
              and p.proname in ('room_now','is_room_member','create_room','join_room','leave_room','room_heartbeat',
                                'room_set_state','room_pick','room_ended','room_skip','room_media_failed','room_advance','room_close_vote','room_vote','room_queue_remove','room_queue_move','room_set_next',
                                'room_update','room_privacy_confirm','room_transfer','room_kick','room_invite','room_can_mic',
-                               'room_set_member_mic','room_report_user','room_dismiss','room_report_video','public_room_for_user','list_rooms') loop
+                               'room_sync_report','room_set_member_mic','room_report_user','room_dismiss','room_report_video','public_room_for_user','list_rooms') loop
     execute format('revoke all on function %s from public, anon', f.sig);
     execute format('grant execute on function %s to authenticated', f.sig);
   end loop;
