@@ -155,7 +155,7 @@ function importPlaylist(m) {
   var o = document.createElement('div'); o.id = 'pqi'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', 'Import playlist');
   o.innerHTML = '<div class="pqi-bar"><button class="pqi-back" type="button" data-i="close" aria-label="Back">' + ICON.back + '</button><h2>Import playlist</h2><span></span></div>' +
     '<div class="pqi-sc"><div class="pqi-top"><span class="pqi-cover"></span><div><h3></h3><p class="pqi-by"></p><p class="pqi-ct" aria-live="polite">Loading videos…</p></div></div>' +
-    '<div class="pqi-act"><button class="pqi-all" type="button" data-i="all" disabled>' + ICON.plus + '<span>Add all to my queue</span></button><button class="pqi-room" type="button" data-i="room">Play whole playlist in room</button></div><ul class="pqi-list"></ul><p class="pqi-msg"></p></div>';
+    '<div class="pqi-act"><button class="pqi-all" type="button" data-i="all" disabled>' + ICON.plus + '<span>Add all to my queue</span></button></div><ul class="pqi-list"></ul><p class="pqi-msg"></p></div>';
   document.body.appendChild(o);
   imp = { el: o, pl: m.pl, media: m, list: [], seen: {}, token: '', done: false, loading: false, gen: Date.now(), err: '' };
   $('h3', o).textContent = m.title || 'YouTube playlist';
@@ -198,7 +198,28 @@ function onImportClick(ev) {
   if (a === 'close') closeImport();
   else if (a === 'one') { var li = b.closest('.pqi-row'), x = s.list[+li.dataset.i]; if (x) addMany([toMedia(x)]); }
   else if (a === 'all') { var h = have(); addMany(s.list.filter(function (x) { return !h['y:' + x.id]; }).map(toMedia)); }
-  else if (a === 'room') { var m = s.media; closeImport(); if (window.NovaRoom && NovaRoom.handle) NovaRoom.handle(m, { now: false }); }
+
+}
+
+
+/* not in a room yet: the playlist's first video starts the room (synced, as any single video) and the rest land in my queue */
+function startFromPlaylist(m, fallback) {
+  var all = [], seen = {}, tok = '';
+  toast('Loading playlist…');
+  (function page() {
+    NovaAdd.ytPlaylistItems(m.pl, tok).then(function (j) {
+      (j.items || []).forEach(function (x) { if (x.id && !seen[x.id]) { seen[x.id] = 1; all.push(x); } });
+      tok = j.next || ''; if (tok && all.length < 500) return page(); finish();
+    }).catch(function (e) { toast((e && e.message) || 'Could not load this playlist', 'err'); });
+  })();
+  function finish() {
+    if (!all.length) { toast('No playable videos in this playlist', 'err'); return; }
+    var f = all[0];
+    NR().handle(NovaAdd.ytMedia({ id: f.id, title: f.title, thumb: f.thumb }), { now: true }).then(function (ok) {
+      if (!ok || all.length < 2) return;
+      return addMany(all.slice(1).map(toMedia)).then(function (r) { if (r && r.added) toast('Playing the first video. ' + r.added + ' more are in My queue.'); });
+    });
+  }
 }
 
 /* ---------------- single video chooser ---------------- */
@@ -237,6 +258,6 @@ function init() {
   document.addEventListener('visibilitychange', function () { if (!document.hidden && st.room) load(); });
   try { if (NR() && NR().active()) onRoom({ detail: { id: NR().roomId() } }); } catch (e) {}
 }
-window.NovaPQ = { active: active, importPlaylist: importPlaylist, chooseSingle: chooseSingle, add: addMany, reload: load, _mkey: mkey };
+window.NovaPQ = { active: active, importPlaylist: importPlaylist, startFromPlaylist: startFromPlaylist, chooseSingle: chooseSingle, add: addMany, reload: load, _mkey: mkey };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
