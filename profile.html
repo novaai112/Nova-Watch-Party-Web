@@ -574,7 +574,7 @@ async function saveProfile(btn,body){
 document.addEventListener('click',async e=>{const el=e.target.closest('[data-go],[data-act],[data-lang]');if(!el)return;const d=el.dataset;
  if(d.go){if(d.go=='back'){history.length>1?history.back():location.hash='home'}else location.hash=d.go}
  if(d.lang){await Nova.set('lang',d.lang);route()}
- if(d.act=='out'){await sb.auth.signOut();NOVA_EXIT('index.html')}
+ if(d.act=='out'){await sb.auth.signOut();try{localStorage.removeItem('nova_cookie_consent')}catch(e){}NOVA_EXIT('index.html')}
  if(d.act=='changePassword')openPasswordModal();
  if(d.act=='openDelete')openDeleteModal();
  if(d.act=='savePassword'){
@@ -591,7 +591,7 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-go]
   el.disabled=true;
   const {error}=await sb.rpc('delete_my_account');
   if(error){el.disabled=false;return Nova.toast(error.message,'err')}
-  await sb.auth.signOut();NOVA_EXIT('index.html');
+  await sb.auth.signOut();try{localStorage.removeItem('nova_cookie_consent')}catch(e){}NOVA_EXIT('index.html');
  }
  if(d.act=='emoji'){const o=document.createElement('div');o.className='ov';o.innerHTML=`<div class=sheet><div class=em>${EMOJI.map(x=>`<button>${x}</button>`).join('')}</div></div>`;
   o.onclick=async ev=>{if(ev.target.tagName=='BUTTON')await Nova.set('quick',ev.target.textContent);o.remove();route()};document.body.append(o)}
