@@ -90,11 +90,14 @@ create table if not exists public.room_messages (
   id         bigint generated always as identity primary key,
   room_id    uuid not null references public.rooms(id) on delete cascade,
   user_id    uuid references auth.users(id) on delete set null,
-  kind       text not null default 'chat' check (kind in ('chat','system')),
+  kind       text not null default 'chat' check (kind in ('chat','system','notice')),
   body       text not null check (char_length(body) between 1 and 500),
   created_at timestamptz not null default now()
 );
 create index if not exists room_messages_room_idx on public.room_messages(room_id, created_at desc);
+-- 'notice' = centred room-settings line ("Room is set to Public", "Mic is enabled for everyone"); only the server writes it
+alter table public.room_messages drop constraint if exists room_messages_kind_check;
+alter table public.room_messages add constraint room_messages_kind_check check (kind in ('chat','system','notice'));
 
 create table if not exists public.room_reports (
   id          bigint generated always as identity primary key,
@@ -163,6 +166,16 @@ create policy msgs_member_insert    on public.room_messages for insert to authen
 create policy invites_own_select    on public.room_invites  for select to authenticated
   using (user_id = auth.uid() or invited_by = auth.uid());
 
+-- has the creator answered "Who can join this room?" (or has the 15 s window passed → stays Public)
+alter table public.rooms add column if not exists privacy_chosen boolean not null default false;
+update public.rooms set privacy_chosen = true where privacy_chosen = false and created_at < now() - interval '1 minute';
+
+-- backend configuration (not hard-coded in the interface). Change with:  update public.room_config set value = '25' where key = 'nearby_radius_km';
+create table if not exists public.room_config (key text primary key, value text not null);
+insert into public.room_config(key, value) values ('nearby_radius_km', '50'), ('max_members', '50') on conflict (key) do nothing;
+alter table public.room_config enable row level security;
+revoke all on public.room_config from public, anon, authenticated;
+
 -- ---------- internal helpers ----------
 create or replace function public.room_now() returns bigint language sql stable as $$
   select (extract(epoch from clock_timestamp()) * 1000)::bigint
@@ -179,6 +192,38 @@ create or replace function public._sys(rid uuid, uid uuid, txt text) returns voi
 language sql security definer set search_path = public as $$
   insert into public.room_messages(room_id, user_id, kind, body) values (rid, uid, 'system', txt)
 $$;
+
+create or replace function public._room_cfg(k text, d numeric) returns numeric
+language sql stable security definer set search_path = public as $$
+  select coalesce((select case when value ~ '^[0-9]+(\.[0-9]+)?$' then value::numeric end from public.room_config where key = k), d)
+$$;
+
+create or replace function public._distance_km(a_lat double precision, a_lng double precision, b_lat double precision, b_lng double precision)
+returns double precision language sql immutable as $$
+  select 6371 * 2 * asin(least(1, sqrt(power(sin(radians(b_lat - a_lat) / 2), 2)
+         + cos(radians(a_lat)) * cos(radians(b_lat)) * power(sin(radians(b_lng - a_lng) / 2), 2))))
+$$;
+
+create or replace function public._priv_label(p text) returns text language sql immutable as $$
+  select case p when 'public' then 'Public' when 'nearby' then 'Nearby' when 'friends' then 'Friends only' when 'invite' then 'Invite only' else p end
+$$;
+
+-- centred settings line in the chat (admin changed privacy / mic / playback …)
+create or replace function public._notice(rid uuid, uid uuid, txt text) returns void
+language sql security definer set search_path = public as $$
+  insert into public.room_messages(room_id, user_id, kind, body) values (rid, uid, 'notice', left(txt, 500))
+$$;
+
+-- reciprocal block between two accounts (user_blocks comes from chat-schema.sql; works before it is installed too)
+create or replace function public._room_blocked(a uuid, b uuid) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare hit boolean := false;
+begin
+  if to_regclass('public.user_blocks') is null then return false; end if;
+  execute 'select exists(select 1 from public.user_blocks where (blocker_id = $1 and blocked_id = $2) or (blocker_id = $2 and blocked_id = $1))'
+    into hit using a, b;
+  return coalesce(hit, false);
+end $$;
 
 -- validates + normalises media coming from clients (blocks javascript:, data:, huge strings…)
 create or replace function public._clean_media(p jsonb) returns jsonb
@@ -412,6 +457,9 @@ declare uid uuid := auth.uid(); rid uuid; x uuid; c text; m jsonb; n int := 0;
 begin
   if uid is null then raise exception 'Sign in required'; end if;
   if p_privacy not in ('public','nearby','friends','invite') then raise exception 'Bad privacy'; end if;
+  if p_privacy = 'nearby' and (p_lat is null or p_lng is null or p_lat not between -90 and 90 or p_lng not between -180 and 180) then
+    raise exception 'Location permission is needed to create a Nearby room' using hint = 'nearby_location';
+  end if;
   m := public._clean_media(p_media);
   for x in select room_id from public.room_members where user_id = uid loop
     perform public._room_drop_member(x, uid, 'left');
@@ -421,46 +469,67 @@ begin
     exit when not exists(select 1 from public.rooms where code = c);
     n := n + 1; if n > 10 then raise exception 'Try again'; end if;
   end loop;
-  insert into public.rooms(code, admin_id, title, privacy, media, media_ver, play_state, lat, lng)
-  values (c, uid, left(coalesce(nullif(trim(p_title), ''), 'Nova room'), 80), p_privacy, m,
+  insert into public.rooms(code, admin_id, title, privacy, privacy_chosen, media, media_ver, play_state, lat, lng)
+  values (c, uid, left(coalesce(nullif(trim(p_title), ''), 'Nova room'), 80), p_privacy, p_privacy <> 'public', m,
           case when m is null then 0 else 1 end,
           jsonb_build_object('playing', m is not null, 'pos', 0, 'ts', public.room_now(), 'seq', 1, 'idx', 0,
                              'phase', case when m is null then 'IDLE' else 'PLAYING' end),
-          p_lat, p_lng)
+          case when p_privacy = 'nearby' then p_lat end, case when p_privacy = 'nearby' then p_lng end)
   returning id into rid;
   insert into public.room_members(room_id, user_id) values (rid, uid);
   perform public._sys(rid, uid, 'created the room');
   return (select to_jsonb(r) from public.rooms r where r.id = rid);
 end $$;
 
-create or replace function public.join_room(p_code text) returns jsonb
+drop function if exists public.join_room(text);
+create or replace function public.join_room(
+  p_code text, p_lat double precision default null, p_lng double precision default null) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare uid uuid := auth.uid(); r public.rooms; x uuid;
+declare uid uuid := auth.uid(); r public.rooms; x uuid; cap int := public._room_cfg('max_members', 50)::int;
 begin
-  if uid is null then raise exception 'Sign in required'; end if;
+  if uid is null then raise exception 'Sign in required' using hint = 'auth'; end if;
   select * into r from public.rooms where code = trim(p_code);
-  if r.id is null then raise exception 'Room not found'; end if;
+  if r.id is null then raise exception 'Room not found' using hint = 'closed'; end if;
   perform public._room_sweep(r.id);
   select * into r from public.rooms where id = r.id;
-  if r.status <> 'open' then raise exception 'This room is closed'; end if;
+  if r.status <> 'open' then raise exception 'This room is closed' using hint = 'closed'; end if;
   if exists(select 1 from public.room_bans where room_id = r.id and user_id = uid) then
-    raise exception 'You were removed from this room';
+    raise exception 'You were removed from this room' using hint = 'banned';
   end if;
+  -- people already inside are never interrupted by a privacy change
   if exists(select 1 from public.room_members where room_id = r.id and user_id = uid) then
     update public.room_members set last_seen = now() where room_id = r.id and user_id = uid;
     return to_jsonb(r);
   end if;
-  if r.privacy = 'friends' and r.admin_id <> uid
-     and not (public._is_friend(uid, r.admin_id)
-              or exists(select 1 from public.room_invites where room_id = r.id and user_id = uid)) then
-    raise exception 'This room is for the host''s friends only';
+
+  -- every NEW join is checked against the room's CURRENT privacy mode: knowing the id / link is never enough
+  if r.admin_id <> uid then
+    if public._room_blocked(uid, r.admin_id) then
+      raise exception 'This room isn''t available to you' using hint = 'blocked';
+    end if;
+    if r.privacy = 'nearby' then
+      if p_lat is null or p_lng is null or p_lat not between -90 and 90 or p_lng not between -180 and 180 then
+        raise exception 'Location permission is needed to join a Nearby room' using hint = 'nearby_location';
+      end if;
+      if r.lat is null or r.lng is null then
+        raise exception 'Your location could not be verified for this room' using hint = 'nearby_unverified';
+      end if;
+      if public._distance_km(r.lat, r.lng, p_lat, p_lng) > public._room_cfg('nearby_radius_km', 50) then
+        raise exception 'You need to be nearby to join this room' using hint = 'nearby_range';
+      end if;
+    elsif r.privacy = 'friends' then
+      -- the host (current admin) is the friendship authority; pending requests and other members' friends do not count
+      if not public._is_friend(uid, r.admin_id) then
+        raise exception 'This Watch Party is available only to friends of the room host.' using hint = 'friends';
+      end if;
+    elsif r.privacy = 'invite' then
+      if not exists(select 1 from public.room_invites where room_id = r.id and user_id = uid) then
+        raise exception 'This Watch Party is invite only. Ask the host to invite you.' using hint = 'invite';
+      end if;
+    end if;
   end if;
-  if r.privacy = 'invite' and r.admin_id <> uid
-     and not exists(select 1 from public.room_invites where room_id = r.id and user_id = uid) then
-    raise exception 'This room is invite only';
-  end if;
-  if (select count(*) from public.room_members where room_id = r.id) >= 50 then
-    raise exception 'This room is full';
+  if (select count(*) from public.room_members where room_id = r.id) >= cap then
+    raise exception 'This room is full' using hint = 'full';
   end if;
   for x in select room_id from public.room_members where user_id = uid loop
     perform public._room_drop_member(x, uid, 'left');
@@ -739,22 +808,58 @@ create or replace function public.room_update(
   p_voice boolean default null, p_lat double precision default null, p_lng double precision default null,
   p_vote_seconds int default null) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare uid uuid := auth.uid(); r public.rooms; q int;
+declare uid uuid := auth.uid(); r public.rooms; q int; np text; nv boolean; nt text; ml text;
 begin
   select * into r from public.rooms where id = p_room and admin_id = uid and status = 'open' for update;
   if r.id is null then raise exception 'Only the room admin can do this'; end if;
   if p_privacy is not null and p_privacy not in ('public','nearby','friends','invite') then raise exception 'Bad privacy'; end if;
   if p_mode is not null and p_mode not in ('vote','play','autoplay','leader') then raise exception 'Bad mode'; end if;
   if p_vote_seconds is not null and p_vote_seconds not between 5 and 120 then raise exception 'Voting time must be 5 to 120 seconds'; end if;
+  np := coalesce(p_privacy, r.privacy);
+  nv := coalesce(p_voice, r.voice_enabled);
+  nt := left(coalesce(nullif(trim(p_title), ''), r.title), 80);
+  -- Nearby needs the host's location (the room can only be matched against it); other modes never keep one
+  if np = 'nearby' and ((p_privacy is not null and p_privacy <> r.privacy) or p_lat is not null or p_lng is not null) then
+    if p_lat is null or p_lng is null or p_lat not between -90 and 90 or p_lng not between -180 and 180 then
+      raise exception 'Location permission is needed to use Nearby' using hint = 'nearby_location';
+    end if;
+  end if;
   update public.rooms set
-    title         = left(coalesce(nullif(trim(p_title), ''), title), 80),
-    privacy       = coalesce(p_privacy, privacy),
-    playback_mode = coalesce(p_mode, playback_mode),
-    voice_enabled = coalesce(p_voice, voice_enabled),
-    vote_seconds  = coalesce(p_vote_seconds, vote_seconds),
-    lat = case when coalesce(p_privacy, privacy) = 'nearby' and p_lat is not null then p_lat else lat end,
-    lng = case when coalesce(p_privacy, privacy) = 'nearby' and p_lng is not null then p_lng else lng end
+    title          = nt,
+    privacy        = np,
+    privacy_chosen = privacy_chosen or p_privacy is not null,
+    playback_mode  = coalesce(p_mode, playback_mode),
+    voice_enabled  = nv,
+    vote_seconds   = coalesce(p_vote_seconds, vote_seconds),
+    lat = case when np = 'nearby' then coalesce(p_lat, lat) else null end,
+    lng = case when np = 'nearby' then coalesce(p_lng, lng) else null end
   where id = p_room;
+
+  -- centred "what changed" lines for everybody in the room
+  if p_privacy is not null and (p_privacy <> r.privacy or not r.privacy_chosen) then
+    perform public._notice(p_room, uid, 'Room is set to ' || public._priv_label(np));
+  end if;
+  if p_voice is not null and p_voice <> r.voice_enabled then
+    perform public._notice(p_room, uid, case
+      when not nv then 'Mic is disabled for everyone'
+      when np = 'public' then 'Mic is enabled for everyone'
+      else 'Mic is on - only members the host approves can talk' end);
+  elsif nv and p_privacy is not null and p_privacy <> r.privacy and (p_privacy = 'public' or r.privacy = 'public') then
+    perform public._notice(p_room, uid, case
+      when np = 'public' then 'Mic is enabled for everyone'
+      else 'Mic now needs the host''s approval - only approved members can talk' end);
+  end if;
+  if p_mode is not null and p_mode <> r.playback_mode then
+    ml := case p_mode when 'vote' then 'Let''s vote' when 'play' then 'Just play' when 'autoplay' then 'Autoplay' else 'Leader''s choice' end;
+    perform public._notice(p_room, uid, 'Playback is set to ' || ml);
+  end if;
+  if p_vote_seconds is not null and p_vote_seconds <> r.vote_seconds then
+    perform public._notice(p_room, uid, 'Voting time is set to ' || p_vote_seconds || ' seconds');
+  end if;
+  if p_title is not null and nt <> r.title then
+    perform public._notice(p_room, uid, 'Room name is now "' || nt || '"');
+  end if;
+
   -- switching playback mode never interrupts the video that is playing; it only decides the NEXT step
   if p_mode is not null and p_mode <> r.playback_mode then
     perform public._log(p_room, uid, 'mode_changed', null, jsonb_build_object('from', r.playback_mode, 'to', p_mode));
@@ -772,6 +877,20 @@ begin
         update public.rooms set play_state = play_state || jsonb_build_object('phase', public._wait_phase(p_mode, q)) where id = p_room;
       end if;
     end if;
+  end if;
+  return (select to_jsonb(x) from public.rooms x where x.id = p_room);
+end $$;
+
+-- the creator did not answer within 15 s → the room stays Public and the chat says so (idempotent)
+create or replace function public.room_privacy_confirm(p_room uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := auth.uid(); r public.rooms;
+begin
+  select * into r from public.rooms where id = p_room and admin_id = uid and status = 'open' for update;
+  if r.id is null then raise exception 'Only the room admin can do this'; end if;
+  if not r.privacy_chosen and now() >= r.created_at + interval '14 seconds' then
+    update public.rooms set privacy_chosen = true where id = p_room;
+    perform public._notice(p_room, uid, 'Room is set to ' || public._priv_label(r.privacy));
   end if;
   return (select to_jsonb(x) from public.rooms x where x.id = p_room);
 end $$;
@@ -803,12 +922,13 @@ end $$;
 
 create or replace function public.room_invite(p_room uuid, p_users uuid[]) returns int
 language plpgsql security definer set search_path = public as $$
-declare uid uuid := auth.uid(); u uuid; n int := 0; owner_id uuid;
+declare uid uuid := auth.uid(); u uuid; n int := 0; owner_id uuid; rp text;
 begin
   if not exists(select 1 from public.room_members where room_id = p_room and user_id = uid) then
     raise exception 'Join the room first'; end if;
-  select admin_id into owner_id from public.rooms where id = p_room and status = 'open';
+  select admin_id, privacy into owner_id, rp from public.rooms where id = p_room and status = 'open';
   if owner_id is null then raise exception 'Room is closed'; end if;
+  if rp = 'invite' and uid <> owner_id then raise exception 'Only the host can invite people to an Invite only room'; end if;
   foreach u in array coalesce(p_users, '{}') loop
     if u <> uid and public._is_friend(uid, u)
        and not exists(select 1 from public.room_members where room_id = p_room and user_id = u) then
@@ -837,16 +957,21 @@ $$;
 
 create or replace function public.room_set_member_mic(p_room uuid, p_user uuid, p_allowed boolean)
 returns void language plpgsql security definer set search_path = public as $$
-declare uid uuid := auth.uid();
+declare uid uuid := auth.uid(); was boolean; nm text;
 begin
   if uid is null then raise exception 'Sign in required'; end if;
   if not exists(select 1 from public.rooms where id = p_room and admin_id = uid and status = 'open') then
     raise exception 'Only the room admin can change microphone access';
   end if;
   if p_user = uid then raise exception 'The admin microphone is always available'; end if;
+  select mic_allowed into was from public.room_members where room_id = p_room and user_id = p_user;
+  if not found then raise exception 'That person is not in the room'; end if;
   update public.room_members set mic_allowed = coalesce(p_allowed, false)
   where room_id = p_room and user_id = p_user;
-  if not found then raise exception 'That person is not in the room'; end if;
+  if was is distinct from coalesce(p_allowed, false) then
+    select coalesce(nullif(trim(full_name), ''), nullif(trim(username), '')) into nm from public.public_profiles where id = p_user;
+    perform public._notice(p_room, uid, coalesce(nm, 'A member') || '''s mic is ' || case when coalesce(p_allowed, false) then 'enabled' else 'disabled' end);
+  end if;
 end $$;
 
 create or replace function public.room_report_user(
@@ -960,15 +1085,16 @@ begin
       from public.rooms r
       where r.status = 'open'
         and not exists(select 1 from public.room_dismissed d where d.room_id = r.id and d.user_id = uid)
+        and not public._room_blocked(uid, r.admin_id)
         and (
-            r.privacy = 'public'
-         or exists(select 1 from public.room_invites i where i.room_id = r.id and i.user_id = uid)
+            r.admin_id = uid
+         or exists(select 1 from public.room_members mm where mm.room_id = r.id and mm.user_id = uid)
+         or r.privacy = 'public'
+         or (r.privacy = 'invite' and exists(select 1 from public.room_invites i where i.room_id = r.id and i.user_id = uid))
          or (r.privacy = 'friends' and public._is_friend(uid, r.admin_id))
          or (r.privacy = 'nearby' and p_lat is not null and p_lng is not null
              and r.lat is not null and r.lng is not null
-             and 6371 * 2 * asin(sqrt(
-                   power(sin(radians(r.lat - p_lat) / 2), 2)
-                   + cos(radians(p_lat)) * cos(radians(r.lat)) * power(sin(radians(r.lng - p_lng) / 2), 2))) <= 50)
+             and public._distance_km(r.lat, r.lng, p_lat, p_lng) <= public._room_cfg('nearby_radius_km', 50))
       )
     ) t
   ), '[]'::jsonb);
@@ -983,7 +1109,7 @@ begin
            where n.nspname = 'public'
              and p.proname in ('room_now','is_room_member','create_room','join_room','leave_room','room_heartbeat',
                                'room_set_state','room_pick','room_ended','room_skip','room_media_failed','room_advance','room_close_vote','room_vote','room_queue_remove','room_queue_move','room_set_next',
-                               'room_update','room_transfer','room_kick','room_invite','room_can_mic',
+                               'room_update','room_privacy_confirm','room_transfer','room_kick','room_invite','room_can_mic',
                                'room_set_member_mic','room_report_user','room_dismiss','room_report_video','public_room_for_user','list_rooms') loop
     execute format('revoke all on function %s from public, anon', f.sig);
     execute format('grant execute on function %s to authenticated', f.sig);
@@ -991,7 +1117,7 @@ begin
   for f in select p.oid::regprocedure as sig
            from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public'
-             and p.proname in ('_is_friend','_sys','_clean_media','_set_media','_room_drop_member',
+             and p.proname in ('_is_friend','_sys','_notice','_distance_km','_priv_label','_room_blocked','_room_cfg','_clean_media','_set_media','_room_drop_member',
                                '_room_sweep','_room_sweep_all','_room_next','_room_finish','_media_same','_room_defaults','_log','_unavailable','_wait_phase') loop
     execute format('revoke all on function %s from public, anon, authenticated', f.sig);
   end loop;

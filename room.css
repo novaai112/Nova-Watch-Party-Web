@@ -301,3 +301,27 @@ body.inroom{overflow:hidden}
 #rm .mvend:active{background:#ffffff40}
 #rm .li .cb:disabled{opacity:.3}
 #rm[data-pstate="VOTING"] .cd{box-shadow:0 0 0 2px #ffffff80}
+
+/* ---- centred room-settings notices: "Room is set to Public", "Mic is enabled for everyone" ---- */
+#rm .nt{display:flex;justify-content:center;margin:12px 0}
+#rm .nt span{display:inline-flex;align-items:center;gap:7px;max-width:88%;padding:6px 13px;border-radius:999px;background:var(--soft);border:1px solid var(--line);color:var(--mut);font-size:12.5px;line-height:1.3;text-align:center}
+#rm .nt em{font-style:normal;color:var(--ink);font-weight:600;overflow-wrap:anywhere}
+#rm .nt .ic{flex:none;color:var(--ink)}
+
+/* ---- "Who can join this room?" card: 15 s countdown, then it hides by itself ---- */
+#rm .cg{position:relative}
+#rm .cgh{display:block;margin:8px 2px 2px;font-size:12px;color:var(--mut)}
+#rm .cgbar{position:absolute;left:0;right:0;bottom:0;height:3px;background:#0000000d}
+#rm .cgbar i{display:block;height:100%;width:100%;background:var(--ink);transform-origin:left center;animation-name:cgshrink;animation-timing-function:linear;animation-fill-mode:forwards}
+@keyframes cgshrink{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+
+/* ---- join restriction / location dialog (works on the home screen and inside a room) ---- */
+.nvg{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(11,18,32,.38);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.nvg-b{width:min(100%,380px);background:#fff;color:#0b1220;border-radius:22px;padding:22px 20px 16px;text-align:center;box-shadow:0 24px 60px rgba(11,18,32,.3),0 0 0 1px #0000000a}
+.nvg-i{display:inline-grid;place-items:center;width:52px;height:52px;border-radius:50%;background:#f3f6fa;margin-bottom:10px}
+.nvg-b h3{margin:0 0 6px;font-size:18px;font-weight:700}
+.nvg-b p{margin:0 0 16px;font-size:14.5px;line-height:1.45;color:#475467}
+.nvg-a{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.nvg-a button{border:0;border-radius:12px;padding:10px 20px;font-weight:700;font-size:14.5px;cursor:pointer;background:#f3f6fa;color:#0b1220}
+.nvg-a button.p{background:#0b1220;color:#fff}
+@media (prefers-reduced-motion:reduce){#rm .cgbar i{animation:none}}

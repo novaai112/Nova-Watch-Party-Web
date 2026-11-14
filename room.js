@@ -49,7 +49,7 @@ const PRIV = [
   ['public', 'globe', 'Public', 'Anyone can join the room'],
   ['nearby', 'pin', 'Nearby', 'People near you can join'],
   ['friends', 'users', 'Friends only', "Only the host's friends can join"],
-  ['invite', 'lock', 'Invite only', 'Only people with the invite link can join']
+  ['invite', 'lock', 'Invite only', 'Only people you invite can join']
 ];
 const MODES = [
   ['vote', 'check', "Let's vote", 'Everyone votes; the most-voted video plays when this one ends'],
@@ -81,7 +81,7 @@ let ME = null, R = null, members = [], queue = [], msgs = [], prof = {}, ch = nu
 let skew = 0, hbT = null, tickT = null, homeT = null, homeRooms = [], mountKey = '', advAt = 0, endedAt = 0, pubT = 0, pubAt = 0;
 let homeLoaded = false, homeLoading = false, homeLoadError = '', homeErrorNotified = '';
 let roomSchemaWarned = false;
-let ui = { more: false, moreAuto: false, moreDismiss: '', voteSeen: false, sheet: '', tab: 'members', promptDone: false, vol: +(localStorage.getItem('nova_vol') || 50), friends: [], first: true, events: [], nowKeys: {} };
+let ui = { more: false, moreAuto: false, moreDismiss: '', voteSeen: false, sheet: '', tab: 'members', privTried: false, vol: +(localStorage.getItem('nova_vol') || 50), friends: [], first: true, events: [], nowKeys: {} };
 const micMap = new Map(), speak = new Map(), vad = new Map();
 const mutedUsers = new Set();
 try {
@@ -138,21 +138,53 @@ async function syncClock() {
   const t0 = Date.now();
   try { const d = await rpc('room_now'); const t1 = Date.now(); skew = Number(d) - (t0 + t1) / 2; } catch (e) { skew = 0; }
 }
-function getPos() {
+function cachedPos() {
+  try { const c = JSON.parse(sessionStorage.getItem('nova_pos') || 'null'); if (c && Date.now() - c.t < 600000) return c; } catch (e) {}
+  return null;
+}
+function getPos(fresh) {
   return new Promise(res => {
-    try { const c = JSON.parse(sessionStorage.getItem('nova_pos') || 'null'); if (c && Date.now() - c.t < 600000) return res(c); } catch (e) {}
+    if (!fresh) { const c = cachedPos(); if (c) return res(c); }
     if (!navigator.geolocation) return res(null);
     navigator.geolocation.getCurrentPosition(p => {
       const o = { lat: p.coords.latitude, lng: p.coords.longitude, t: Date.now() };
       try { sessionStorage.setItem('nova_pos', JSON.stringify(o)); } catch (e) {}
       res(o);
-    }, () => res(null), { timeout: 6000, maximumAge: 600000 });
+    }, () => res(null), { timeout: 8000, maximumAge: fresh ? 0 : 600000 });
   });
 }
 function link() {
   const base = /^https?:$/.test(location.protocol) ? location.origin + location.pathname
     : (CFG.WEBSITE_URL || '').replace(/\/?$/, '/') + 'nova-home.html';
   return base + '#join/' + R.code;
+}
+
+/* ---------- small dialog (join restrictions, location explanation) ---------- */
+function gate(o) {
+  return new Promise(res => {
+    const old = document.getElementById('nvg'); if (old) old.remove();
+    const el = document.createElement('div'); el.id = 'nvg'; el.className = 'nvg'; el.setAttribute('role', 'alertdialog'); el.setAttribute('aria-modal', 'true');
+    el.innerHTML = `<div class="nvg-b"><span class="nvg-i">${ic(o.icon || 'lock', 26)}</span><h3>${esc(o.title)}</h3><p>${esc(o.text)}</p><div class="nvg-a">${(o.actions || [{ label: 'OK', value: 'ok', primary: true }]).map(a => `<button type="button" class="${a.primary ? 'p' : 's'}" data-v="${esc(a.value)}">${esc(a.label)}</button>`).join('')}</div></div>`;
+    const done = v => { el.remove(); document.removeEventListener('keydown', onKey, true); res(v); };
+    const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); done('close'); } };
+    el.addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) done(b.dataset.v); else if (e.target === el) done('close'); });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(el);
+    const f = el.querySelector('.p') || el.querySelector('button'); if (f) f.focus();
+  });
+}
+/* location is asked only when a Nearby room really needs it, with the reason explained first */
+async function locationReady(why) {
+  const c = cachedPos(); if (c) return c;
+  let granted = false;
+  try { granted = (await navigator.permissions.query({ name: 'geolocation' })).state === 'granted'; } catch (e) {}
+  if (!granted) {
+    const v = await gate({ icon: 'pin', title: 'Use your location?', actions: [{ label: 'Allow location', value: 'go', primary: true }, { label: 'Not now', value: 'no' }],
+      text: why === 'host' ? 'Nearby rooms are shown only to people close to you, so Nova needs your location to set this room up. It is used to match nearby people and is never shown to others.'
+        : 'This Watch Party is for people nearby. Nova needs your location to check that you are close enough to join. It is not shared with the host or other members.' });
+    if (v !== 'go') return null;
+  }
+  return getPos(true);
 }
 
 /* =====================================================================
@@ -163,7 +195,7 @@ async function enter(row) {
   await syncClock();
   R = row; members = []; queue = []; msgs = []; mountKey = '';
   ui.first = true; ui.sheet = ''; ui.events = []; ui.nowKeys = {}; micMap.clear(); speak.clear();
-  try { ui.promptDone = !!sessionStorage.getItem('nova_pd_' + R.id); } catch (e) { ui.promptDone = false; }
+  ui.privTried = false;
   document.body.classList.add('inroom');
   buildShell();
   await Promise.all([refreshRoom(), refreshMembers(), refreshQueue(), loadMsgs()]);
@@ -295,7 +327,7 @@ async function beat() {
     if (!R) return;
     if (!d.member) {
       if (d.status === 'open') {
-        try { const row = await rpc('join_room', { p_code: R.code }); R = row; await Promise.all([refreshMembers(), refreshQueue()]); }
+        try { const cp = cachedPos(), row = await rpc('join_room', { p_code: R.code, p_lat: cp ? cp.lat : null, p_lng: cp ? cp.lng : null }); R = row; await Promise.all([refreshMembers(), refreshQueue()]); }
         catch (e) { gone(/removed/i.test(e.message) ? 'You were removed from the room' : e.message); }
       } else gone('Room closed');
     } else if (d.admin_id && d.admin_id !== R.admin_id) await refreshRoom().then(() => { renderAll(); mountMedia(); });
@@ -526,6 +558,7 @@ function ended() {
 }
 function onTick() {
   if (!R) return;
+  privTick();
   updateTimeUI();
   if (mic && Date.now() - micAt > 4000) { micAt = Date.now(); announceMic(); }
   let gone_ = false;
@@ -1078,8 +1111,17 @@ function mediaFailed() {
 }
 
 /* chat feed */
+function noticeIcon(t) {
+  t = String(t || '');
+  const n = /^Room is set to (\w+)/.exec(t);
+  if (n) return ic({ Public: 'globe', Nearby: 'pin', Friends: 'users', Invite: 'lock' }[n[1]] || 'globe', 15);
+  if (/mic/i.test(t)) return ic(/disabled/i.test(t) ? 'micoff' : 'mic', 15);
+  if (/^Playback|^Voting/.test(t)) return ic('play', 15);
+  return ic('gear', 15);
+}
 function msgHTML(m) {
   const u = who(m.user_id);
+  if (m.kind === 'notice') return `<div class="nt" role="status"><span>${noticeIcon(m.body)}<em>${esc(m.body)}</em></span></div>`;
   if (m.kind === 'system') return `<div class="sy">${userAvatar(u, 24)}<span><b>${esc(nm(u))}</b> ${esc(m.body)}</span></div>`;
   const me = m.user_id === ME.id;
   const text = esc(m.tr || m.body).replace(/@([\w.]{2,24})/g, (a, n) =>
@@ -1106,10 +1148,29 @@ function nowHTML(e, index) {
   const liked = canLikeMedia && NovaApp.isLiked(likeItem(media));
   return `<div class="nowm"><div class="nowc">${e.th ? `<img src="${esc(e.th)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : `<span class="nowi">${ic('play', 14)}</span>`}<span class="nowt"><small>Now playing</small><b>${esc(e.title)}</b></span>${canLikeMedia ? `<button class="cb${liked ? ' on' : ''}" data-r="like" data-event-index="${index}" aria-label="${liked ? 'Unlike video' : 'Like video'}">${ic('heart', 18).replace('fill="none"', liked ? 'fill="currentColor"' : 'fill="none"')}</button>` : ''}</div></div>`;
 }
+const PRIV_WINDOW = 15000;
+/* ms left to answer "Who can join this room?" - only for the admin of a brand-new room; the server decides via privacy_chosen */
+function privLeft() {
+  if (!R || !isAdmin() || R.privacy_chosen === true) return 0;
+  const t = Date.parse(R.created_at) || 0;
+  return t ? Math.max(0, PRIV_WINDOW - (snow() - t)) : 0;
+}
+/* nobody chose within 15 s -> the room stays Public; the server posts "Room is set to Public" in the chat */
+function privTick() {
+  if (!R || !isAdmin() || R.privacy_chosen === true || ui.privTried) return;
+  const t = Date.parse(R.created_at) || 0;
+  if (!t || snow() - t < PRIV_WINDOW) return;
+  ui.privTried = true;
+  const id = R.id;
+  rpc('room_privacy_confirm', { p_room: id })
+    .then(row => { if (R && row && row.id === id) R = Object.assign({}, R, row); })
+    .catch(() => {})
+    .then(() => { if (R && R.id === id) renderFeed(); });
+}
 function cardsHTML() {
-  /* only the one-time "who can join?" question for a new room's admin — invite link & share apps were removed */
-  if (!(isAdmin() && !ui.promptDone)) return '';
-  return `<div class="cg"><div class="cgt"><span>Who can join this room?</span></div><div class="opt">${PRIV.map(p => optBtn('privacy:' + p[0], p[1], p[2], p[0] === R.privacy)).join('')}</div></div>`;
+  const left = privLeft();
+  if (!left) return '';
+  return `<div class="cg" id="privcard"><div class="cgt"><span>Who can join this room?</span></div><div class="opt">${PRIV.map(p => optBtn('privacy:' + p[0], p[1], p[2], p[0] === R.privacy)).join('')}</div><small class="cgh">Stays ${esc((PRIV.find(x => x[0] === R.privacy) || PRIV[0])[2])} if you don't choose</small><div class="cgbar" aria-hidden="true"><i style="animation-duration:${PRIV_WINDOW}ms;animation-delay:-${PRIV_WINDOW - left}ms"></i></div></div>`;
 }
 function renderFeed() {
   const f = $('#feed'); if (!f || !R) return;
@@ -1297,11 +1358,11 @@ async function setOpt(v) {
   const [k, val] = v.split(':'), a = { p_room: R.id };
   if (k === 'privacy') {
     a.p_privacy = val;
-    if (val === 'nearby') {
-      const pos = await getPos();
-      if (pos) { a.p_lat = pos.lat; a.p_lng = pos.lng; } else toast('Location unavailable — the room will not show in Nearby lists', 'err');
+    if (val === 'nearby' && R.privacy !== 'nearby') {
+      const pos = await locationReady('host');
+      if (!pos) return toast('Location is needed for a Nearby room. The privacy was not changed.', 'err');
+      a.p_lat = pos.lat; a.p_lng = pos.lng;
     }
-    ui.promptDone = true; try { sessionStorage.setItem('nova_pd_' + R.id, '1'); } catch (e) {}
   } else if (k === 'mode') a.p_mode = val;
   else if (k === 'votesec') a.p_vote_seconds = +val;
   else if (k === 'voice') a.p_voice = val === 'on';
@@ -1539,10 +1600,30 @@ async function loadHome() {
     renderHome();
   }
 }
-async function joinByCode(code) {
+async function joinByCode(code, pos) {
   if (!await auth()) { try { sessionStorage.setItem('nova_join', code); } catch (e) {} location.href = 'index.html'; return; }
-  try { const row = await rpc('join_room', { p_code: code }); await enter(row); }
-  catch (e) { oops(e); loadHome(); }
+  pos = pos || cachedPos();
+  try { const row = await rpc('join_room', { p_code: code, p_lat: pos ? pos.lat : null, p_lng: pos ? pos.lng : null }); await enter(row); }
+  catch (e) { await joinDenied(e, code, pos); }
+}
+/* the server said no: show the right message, never room details, and allow a safe retry for location problems */
+async function joinDenied(e, code, pos) {
+  const h = (e && e.hint) || '';
+  const retryAct = [{ label: 'Try again', value: 'retry', primary: true }, { label: 'Close', value: 'close' }];
+  if (h === 'nearby_location' && !pos) {
+    const p = await locationReady('join');
+    if (p) return joinByCode(code, p);
+    if (await gate({ icon: 'pin', title: 'Location needed', text: 'This Nearby Watch Party needs to confirm that you are close by. Allow location access to try again.', actions: retryAct }) === 'retry') {
+      const p2 = await getPos(true); if (p2) return joinByCode(code, p2);
+    }
+  } else if (h === 'nearby_location' || h === 'nearby_range' || h === 'nearby_unverified') {
+    const v = await gate({ icon: 'pin', title: 'Could not verify your location', text: 'We could not confirm that you are near this Watch Party. Check your location settings and try again.', actions: retryAct });
+    if (v === 'retry') { const p = await getPos(true); if (p) return joinByCode(code, p); }
+  } else if (h === 'friends') await gate({ icon: 'users', title: 'Friends Only Room', text: 'This Watch Party is available only to friends of the room host.' });
+  else if (h === 'invite') await gate({ icon: 'lock', title: 'Invite Only Room', text: 'This Watch Party is invite only. Ask the host to invite you.' });
+  else if (h === 'banned' || h === 'blocked' || h === 'full' || h === 'closed') await gate({ icon: 'lock', title: h === 'full' ? 'Room is full' : h === 'closed' ? 'Room unavailable' : 'Cannot join', text: (e && e.message) || 'You cannot join this room.' });
+  else oops(e);
+  loadHome();
 }
 function hashJoin() {
   const m = /^#join\/([A-Za-z0-9]{6,16})/.exec(location.hash);

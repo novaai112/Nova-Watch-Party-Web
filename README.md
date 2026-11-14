@@ -43,6 +43,15 @@ It creates (Part 4 = username check, avatar bucket, gallery limits): `profiles` 
 - **Re-run `rooms-schema.sql`** for the room-card menu: it adds `room_dismissed` (Delete / Cancel invite stay hidden until the user is invited again), `room_video_reports`, the RPCs `room_dismiss` and `room_report_video`, and `created_at` + the dismissed filter in `list_rooms`.
 - Re-running `schema.sql` removes the obsolete room-invitation RPC and profile setting.
 
+
+### Room privacy (Public / Nearby / Friends only / Invite only)
+- **Re-run `rooms-schema.sql`** (safe to repeat). It adds `join_room(code, lat, lng)` with server-side checks, the centred settings notices (`room_messages.kind = 'notice'`), `rooms.privacy_chosen`, `room_privacy_confirm`, and the `room_config` table.
+- Every **new** join is validated on the server against the room's *current* mode, so a link or room id never grants access: **Public** (open, not banned/blocked, capacity), **Nearby** (needs location, within the radius), **Friends only** (accepted friend of the current host; pending requests and other members' friends do not count), **Invite only** (host-created invitation; only the host can invite).
+- Switching mode never removes people already inside. Leaving Nearby deletes the stored room location.
+- Backend settings (SQL editor): `update public.room_config set value = '25' where key = 'nearby_radius_km';` (default 50 km) and `max_members` (default 50).
+- New room: the admin sees **Who can join this room?** for 15 s (server time). No answer = it stays Public and the chat shows **Room is set to Public**.
+- Admin changes appear centred in the chat: privacy, voice chat on/off (**Mic is enabled for everyone**), per-member mic (**Suhani's mic is enabled**), playback mode, voting time.
+
 ## 2. Auth settings (Dashboard → Authentication)
 - **URL Configuration → Site URL:** `https://nova-watch-party.vercel.app/`
 - **Redirect URLs:** add `https://nova-watch-party.vercel.app/**` and, for testing, `http://localhost:3000/**`
