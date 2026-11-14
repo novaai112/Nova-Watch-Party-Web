@@ -43,6 +43,8 @@ const PATH = {
   trash: '<path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/>',
   camera: '<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>',
   smile: '<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/>',
+  reply: '<path d="M9 14 4 9l5-5"/><path d="M20 20v-7a4 4 0 00-4-4H4"/>',
+  flag: '<path d="M4 22V4M4 4h13l-2 4 2 4H4"/>',
   up: '<path d="M18 15l-6-6-6 6"/>',
   down: '<path d="M6 9l6 6 6-6"/>'
 };
@@ -81,6 +83,8 @@ function platBadge(m, cls) {
 
 /* ---------- state ---------- */
 let ME = null, R = null, members = [], queue = [], msgs = [], prof = {}, ch = null;
+const typers = new Map();            /* user id -> { k: 'typing'|'uploading', until } */
+let hiddenMsgs = new Set(), typingAt = 0, typingKind = '';
 let skew = 0, hbT = null, tickT = null, homeT = null, homeRooms = [], mountKey = '', advAt = 0, endedAt = 0, pubT = 0, pubAt = 0;
 let homeLoaded = false, homeLoading = false, homeLoadError = '', homeErrorNotified = '';
 let roomSchemaWarned = false;
@@ -218,7 +222,7 @@ function cleanup(keepShell) {
   if (window.NovaRoomMedia) NovaRoomMedia.reset();
   clearInterval(vadT); vadT = null; vad.clear(); speak.clear(); micMap.clear();
   destroyPlayer();
-  R = null; members = []; queue = []; msgs = []; mountKey = '';
+  R = null; members = []; queue = []; msgs = []; mountKey = ''; typers.clear();
   if (!keepShell) {
     const rm = $('#rm'); if (rm) rm.remove();
     document.body.classList.remove('inroom');
@@ -288,12 +292,19 @@ async function loadMsgs() {
   if (MEDIA()) MEDIA().sign(msgs).then(got => { if (got) renderFeed(); });
 }
 function subscribe() {
-  const id = R.id;
+  const id = R.id; typers.clear();
+  try { hiddenMsgs = new Set(JSON.parse(localStorage.getItem('nova_room_hide_' + id) || '[]')); } catch (e) { hiddenMsgs = new Set(); }
   ch = sb.channel('nova-room-' + id, { config: { broadcast: { self: false } } })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: 'id=eq.' + id }, onRoom)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'room_members', filter: 'room_id=eq.' + id }, () => refreshMembers())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'room_queue', filter: 'room_id=eq.' + id }, () => refreshQueue())
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'room_messages', filter: 'room_id=eq.' + id }, p => addMsg(p.new))
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'room_messages' }, p => dropMsg(p.old && p.old.id))
+    .on('broadcast', { event: 'typing' }, ({ payload }) => {
+      if (!payload || !payload.u || payload.u === ME.id) return;
+      if (!payload.k || payload.k === 'idle') typers.delete(payload.u); else typers.set(payload.u, { k: payload.k, until: Date.now() + 6000 });
+      renderTyping(); setTimeout(renderTyping, 6200);
+    })
     .on('broadcast', { event: 'kick' }, ({ payload }) => { if (payload && payload.uid === ME.id) gone('You were removed from the room'); })
     .on('broadcast', { event: 'sig' }, ({ payload }) => onSig(payload))
     .on('broadcast', { event: 'mic' }, ({ payload }) => {
@@ -319,7 +330,7 @@ function onRoom(p) {
 }
 function addMsg(m) {
   if (!R || !m || msgs.some(x => x.id === m.id)) return;
-  msgs.push(m);
+  msgs.push(m); if (typers.delete(m.user_id)) renderTyping();
   if (Nova.S.translate && m.kind === 'chat') Nova.tr(m.body).then(t => { if (t !== m.body) { m.tr = t; renderFeed(); } });
   loadProfiles([m.user_id]).then(renderFeed);
   if (MEDIA() && Array.isArray(m.attachments) && m.attachments.length) MEDIA().sign([m]).then(got => { if (got) renderFeed(); });
@@ -792,6 +803,7 @@ function buildShell() {
       <div class="mentions" id="mentions" hidden></div>
       ${MEDIA() ? MEDIA().markup() : ''}
       <div class="emopanel" id="emopanel" hidden></div>
+      <div class="typing" id="typing" role="status" aria-live="polite" hidden></div>
       <div class="cin" id="cin">
         <button class="micb" id="micb" data-r="mic" aria-label="Microphone"></button>
         ${MEDIA() ? MEDIA().buttonHTML() : ''}
@@ -805,7 +817,7 @@ function buildShell() {
   </div>
   <div id="rsheet"></div>`;
   document.body.appendChild(el);
-  if (MEDIA()) MEDIA().onChange = syncTyping;
+  if (MEDIA()) { MEDIA().onChange = syncTyping; MEDIA().onSend = sendMsg; }
   el.addEventListener('click', onClick);
   el.addEventListener('input', onInput);
   el.addEventListener('change', onChange);
@@ -828,7 +840,9 @@ function buildShell() {
   el.addEventListener('keydown', e => { if (e.target.id === 'cq') { if (e.key === 'Enter') { e.preventDefault(); searchStep(e.shiftKey ? -1 : 1); } else if (e.key === 'Escape') searchOpen(false); } else if (e.target.id === 'cmsg' && e.key === 'Enter') { e.preventDefault(); sendMsg(); } });
   /* keep the Send button tappable: pressing it must not blur the input (that would swap the icons away) */
   el.addEventListener('pointerdown', e => { if (e.target.closest('.sendb,#emopanel button,.emob')) e.preventDefault(); });
-  el.addEventListener('focusin', e => { if (e.target.id === 'cmsg') setTimeout(() => { const f = $('#feed'); if (f) f.scrollTop = f.scrollHeight; }, 280); });
+  el.addEventListener('focusin', e => { if (e.target.id === 'cmsg' || e.target.id === 'cq') kbMode(true); if (e.target.id === 'cmsg') setTimeout(() => { const f = $('#feed'); if (f) f.scrollTop = f.scrollHeight; }, 280); });
+  el.addEventListener('focusout', e => { if (e.target.id === 'cmsg' || e.target.id === 'cq') { sendTyping('idle'); setTimeout(() => { const a = document.activeElement; if (!a || (a.id !== 'cmsg' && a.id !== 'cq')) kbMode(false); }, 60); } });
+  bindMsgGestures(el);
   /* phones: follow the visible area so the keyboard never covers the message box */
   if (window.visualViewport) {
     const vv = window.visualViewport;
@@ -1214,20 +1228,117 @@ function cardsHTML() {
 function renderFeed() {
   const f = $('#feed'); if (!f || !R) return;
   const near = f.scrollHeight - f.scrollTop - f.clientHeight < 90;
-  const items = msgs.map(m => ({ t: Date.parse(m.created_at) || 0, h: msgHTML(m), sys: m.kind === 'system' }))
+  const items = msgs.filter(m => !hiddenMsgs.has(m.id)).map(m => ({ t: Date.parse(m.created_at) || 0, h: msgHTML(m), sys: m.kind === 'system' }))
     .concat(ui.events.map((e, i) => ({ t: e.t, h: nowHTML(e, i), sys: false })));
   items.sort((a, b) => a.t - b.t);
   let h = '', done = false;
   items.forEach(i => { h += i.h; if (!done && i.sys) { done = true; h += cardsHTML(); } });
   if (!done) h += cardsHTML();
-  if (!msgs.some(m => m.kind === 'chat')) h += '<div class="fempty">No messages yet — say hi 👋</div>';
+  if (!msgs.some(m => m.kind === 'chat' && !hiddenMsgs.has(m.id))) h += '<div class="fempty">No messages yet — say hi 👋</div>';
   f.innerHTML = h;
   if (ui.q.trim()) markCur(); else if (near || ui.first) { f.scrollTop = f.scrollHeight; ui.first = false; }
 }
+/* ---- typing indicator (broadcast on the room channel, like the inbox chat) ---- */
+const TYPE_TXT = { typing: 'typing…', uploading: 'sending a file…' };
+function sendTyping(kind) {
+  if (!ch || !ME || !navigator.onLine) return;
+  const now = Date.now();
+  if (kind === typingKind && kind !== 'idle' && now - typingAt < 2500) return;
+  if (kind === 'idle' && typingKind === 'idle') return;
+  typingKind = kind; typingAt = now;
+  try { ch.send({ type: 'broadcast', event: 'typing', payload: { u: ME.id, k: kind } }); } catch (e) {}
+}
+function renderTyping() {
+  const el = $('#typing'); if (!el) return;
+  const now = Date.now(), list = [];
+  typers.forEach((v, id) => { if (v.until > now && members.some(x => x.user_id === id)) list.push([id, v.k]); else if (v.until <= now) typers.delete(id); });
+  if (!list.length) { el.hidden = true; el.innerHTML = ''; return; }
+  const names = list.map(x => nm(who(x[0])));
+  const txt = list.length === 1 ? `${esc(names[0])} is ${TYPE_TXT[list[0][1]] || 'typing…'}` : list.length === 2 ? `${esc(names[0])} and ${esc(names[1])} are typing…` : `${list.length} people are typing…`;
+  el.innerHTML = `<span class="tdots"><i></i><i></i><i></i></span><span>${txt}</span>`; el.hidden = false;
+  const f = $('#feed'); if (f && f.scrollHeight - f.scrollTop - f.clientHeight < 140) f.scrollTop = f.scrollHeight;
+}
+
+/* ---- message options: long-press / right-click ---- */
+function msgById(id) { return msgs.find(m => String(m.id) === String(id)); }
+function dropMsg(id) { if (!id) return; const n = msgs.length; msgs = msgs.filter(m => String(m.id) !== String(id)); if (msgs.length !== n) renderFeed(); }
+function saveHidden() { try { localStorage.setItem('nova_room_hide_' + R.id, JSON.stringify([...hiddenMsgs].slice(-300))); } catch (e) {} }
+function copyText(t) {
+  if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(t).then(() => true, () => false);
+  const a = document.createElement('textarea'); a.value = t; a.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(a); a.select();
+  let ok = false; try { ok = document.execCommand('copy'); } catch (e) {} a.remove(); return Promise.resolve(ok);
+}
+function closeMsgMenu() { const o = $('#msgmenu'); if (o) o.remove(); }
+function openMsgMenu(id) {
+  const m = msgById(id); if (!m || m.kind !== 'chat') return;
+  closeMsgMenu(); if (MEDIA()) MEDIA().close(); emojiToggle(false);
+  const mine = m.user_id === ME.id, u = who(m.user_id), atts = Array.isArray(m.attachments) ? m.attachments : [];
+  const acts = [];
+  const A = (label, icon, run, danger) => acts.push({ label, icon, run, danger });
+  A('Reply', 'reply', () => { const i = $('#cmsg'); if (!i) return; if (!mine && u.username) i.value = '@' + u.username + ' ' + i.value; i.focus(); syncTyping(); });
+  if (m.body) A('Copy', 'copy', () => copyText(m.body).then(ok => toast(ok ? 'Copied' : 'Could not copy', ok ? undefined : 'err')));
+  if (m.body) A(m.tr ? 'Show original' : 'Translate', 'globe', () => {
+    if (m.tr) { delete m.tr; return renderFeed(); }
+    Nova.tr(m.body).then(t => { if (t && t !== m.body) { m.tr = t; renderFeed(); } else toast('Nothing to translate'); }).catch(() => toast('Translation unavailable', 'err'));
+  });
+  if (atts.length) A('Save to device', 'down', () => saveAtts(atts));
+  if (!mine) A('Report', 'flag', () => openReport(m.user_id), true);
+  A('Delete for me', 'trash', () => { hiddenMsgs.add(m.id); saveHidden(); renderFeed(); toast('Deleted for you'); }, !mine);
+  if (mine || isAdmin()) A(mine ? 'Delete for everyone' : 'Remove message', 'trash', async () => {
+    const { error } = await sb.from('room_messages').delete().eq('id', m.id);
+    if (error) return toast(/permission|policy|denied/i.test(error.message || '') ? 'Run room-chat-schema.sql in Supabase to allow deleting.' : (error.message || 'Could not delete'), 'err');
+    dropMsg(m.id);
+  }, true);
+  const o = document.createElement('div'); o.className = 'msh'; o.id = 'msgmenu';
+  const who_ = esc(nm(u)), prev = m.body ? esc(String(m.body).slice(0, 80)) : (atts.length ? esc(atts.length + ' attachment' + (atts.length > 1 ? 's' : '')) : '');
+  o.innerHTML = `<div class="msb" role="dialog" aria-label="Message options"><div class="msh-h"><b>${who_}</b><small>${prev}</small></div>${acts.map((a, i) => `<button type="button" class="mso${a.danger ? ' dng' : ''}" data-mi="${i}">${ic(a.icon, 20)}<span>${a.label}</span></button>`).join('')}<button type="button" class="mso cancel" data-mi="x">Cancel</button></div>`;
+  o.addEventListener('click', e => {
+    const b = e.target.closest('[data-mi]');
+    if (!b && e.target !== o) return;
+    closeMsgMenu(); if (b && b.dataset.mi !== 'x') acts[+b.dataset.mi].run();
+  });
+  $('#rm').appendChild(o);
+}
+async function saveAtts(atts) {
+  for (const a of atts) {
+    try {
+      let href = a.url; if (!href && a.path && MEDIA()) { await MEDIA().sign([{ attachments: [a] }]); href = MEDIA().urlFor(a.path); }
+      if (!href) continue;
+      const r = await fetch(href), b = await r.blob(), l = document.createElement('a');
+      l.href = URL.createObjectURL(b); l.download = a.name || 'file'; document.body.appendChild(l); l.click(); l.remove(); setTimeout(() => URL.revokeObjectURL(l.href), 4000);
+    } catch (e) { const l = document.createElement('a'); l.href = a.url || ''; l.target = '_blank'; l.rel = 'noopener'; if (l.href) l.click(); else toast('Could not save', 'err'); }
+  }
+}
+let pressM = null, menuAt = 0;
+function bindMsgGestures(el) {
+  const target = e => e.target.closest && e.target.closest('.cm[data-mid]');
+  el.addEventListener('contextmenu', e => {
+    const m = target(e); if (!m || e.target.closest('.uav')) return;
+    e.preventDefault(); if (!$('#msgmenu')) openMsgMenu(m.dataset.mid);
+  });
+  el.addEventListener('pointerdown', e => {
+    const m = target(e); if (!m || e.button || e.target.closest('.uav,a,audio,video[controls],input')) return;
+    clearTimeout(pressM && pressM.t);
+    pressM = { x: e.clientX, y: e.clientY, t: setTimeout(() => { menuAt = Date.now(); pressM = null; navigator.vibrate && navigator.vibrate(12); openMsgMenu(m.dataset.mid); }, 450) };
+  });
+  el.addEventListener('pointermove', e => { if (pressM && (Math.abs(e.clientX - pressM.x) > 10 || Math.abs(e.clientY - pressM.y) > 10)) { clearTimeout(pressM.t); pressM = null; } });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(n => el.addEventListener(n, () => { if (pressM) { clearTimeout(pressM.t); pressM = null; } }));
+  /* a long-press that opened the menu must not also open the photo viewer */
+  el.addEventListener('click', e => { if (Date.now() - menuAt < 600 && e.target.closest('.cm[data-mid]')) { e.stopPropagation(); e.preventDefault(); } }, true);
+}
+
+/* ---- phones: while typing, tuck away the header, playback row and chat bar so the video + messages get the room ---- */
+function kbMode(on) {
+  const el = $('#rm'); if (!el) return;
+  const small = window.matchMedia('(max-width:700px)').matches || window.matchMedia('(pointer:coarse)').matches;
+  el.classList.toggle('kb', !!on && small);
+  clearTimeout(kbMode.t); kbMode.t = setTimeout(() => { const f = $('#feed'); if (f) f.scrollTop = f.scrollHeight; if (el._fit) el._fit(); }, 260);
+}
+
 /* ---- chat search (same idea as the inbox chat: find, highlight, step through matches) ---- */
 function matches() {
   const q = ui.q.trim().toLowerCase(); if (!q) return [];
-  return msgs.filter(m => m.kind === 'chat' && (msgText(m).toLowerCase().includes(q) || (Array.isArray(m.attachments) && m.attachments.some(a => String(a && a.name || '').toLowerCase().includes(q))))).map(m => m.id);
+  return msgs.filter(m => m.kind === 'chat' && !hiddenMsgs.has(m.id) && (msgText(m).toLowerCase().includes(q) || (Array.isArray(m.attachments) && m.attachments.some(a => String(a && a.name || '').toLowerCase().includes(q))))).map(m => m.id);
 }
 function markCur() {
   const f = $('#feed'), ids = matches(), c = $('#cscount');
@@ -1277,7 +1388,7 @@ async function sendMsg() {
   const body = i.value.trim().slice(0, 500);
   const hasMedia = !!(MEDIA() && MEDIA().count());
   if (!body && !hasMedia) return;
-  sending = true;
+  sending = true; sendTyping(hasMedia ? 'uploading' : 'idle');
   const btn = $('.sendb'); if (btn) btn.disabled = true;
   try {
     let attachments = [], cleanup = null;
@@ -1294,7 +1405,7 @@ async function sendMsg() {
     syncTyping();
     addMsg(data);
   } catch (e) { toast(e.message || 'Message was not sent.', 'err'); }
-  finally { sending = false; if (btn) btn.disabled = false; }
+  finally { sending = false; sendTyping('idle'); if (btn) btn.disabled = false; }
 }
 
 /* sheets */
@@ -1600,7 +1711,7 @@ function onInput(e) {
   else if (t.id === 'cq') { ui.q = t.value; ui.qi = 0; ui.qScroll = true; renderFeed(); }
   else if (t.id === 'emoq') { ui.emojiQ = t.value; emojiPanel(); }
   else if (t.id === 'cmsg') {
-    syncTyping();
+    syncTyping(); sendTyping(t.value.trim() ? 'typing' : 'idle');
     const box = $('#mentions'), m = /@([\w.]*)$/.exec(t.value.slice(0, t.selectionStart || t.value.length));
     if (!m) { box.hidden = true; return; }
     const c = members.filter(x => x.user_id !== ME.id && (who(x.user_id).username || '').toLowerCase().startsWith(m[1].toLowerCase())).slice(0, 8);

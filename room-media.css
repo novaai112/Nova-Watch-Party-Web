@@ -197,3 +197,26 @@
 #rm .emogrid small{grid-column:1/-1;color:var(--mu);padding:10px}
 #rm .emob[aria-expanded="true"]{background:#0000000f}
 #rm .chat-media-picker{bottom:68px}
+
+/* ===== v13: typing indicator, message options sheet, keyboard collapse ===== */
+#rm .typing{flex:none;display:flex;align-items:center;gap:7px;padding:3px clamp(10px,3vw,18px) 5px 16px;font-size:12px;color:var(--mu);min-height:22px}
+#rm .typing[hidden]{display:none}
+#rm .tdots{display:inline-flex;gap:3px;align-items:center}
+#rm .tdots i{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.35;animation:rmtd 1.2s infinite ease-in-out}
+#rm .tdots i:nth-child(2){animation-delay:.18s}#rm .tdots i:nth-child(3){animation-delay:.36s}
+@keyframes rmtd{30%{opacity:1;transform:translateY(-2px)}}
+#rm .cm[data-mid]{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+#rm .msh{position:fixed;inset:0;z-index:110;display:flex;align-items:flex-end;justify-content:center;background:rgba(11,18,32,.38);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:mdf .15s ease}
+#rm .msb{width:min(100%,460px);background:var(--card,#fff);color:var(--tx);border-radius:22px 22px 0 0;padding:8px 10px max(12px,env(safe-area-inset-bottom));box-shadow:0 -10px 40px #0b122040;animation:rmup .2s cubic-bezier(.2,.8,.2,1);max-height:80vh;overflow:auto}
+@keyframes rmup{from{transform:translateY(40px);opacity:0}}
+#rm .msb{background:color-mix(in srgb,var(--card,#fff) 100%,#fff)}
+[data-theme=dark] #rm .msb{background:#1c1f26}
+#rm .msh-h{padding:8px 12px 10px;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent);margin-bottom:4px}
+#rm .msh-h b{display:block;font-size:14px}
+#rm .msh-h small{display:block;color:var(--mu);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#rm .mso{display:flex;align-items:center;gap:14px;width:100%;padding:13px 12px;border-radius:12px;font-size:15px;font-weight:600;text-align:left}
+#rm .mso:hover,#rm .mso:active{background:var(--chip)}
+#rm .mso.dng{color:var(--bad)}
+#rm .mso.cancel{justify-content:center;color:var(--mu);margin-top:2px}
+/* keyboard open on a phone: hide the header, playback row and chat bar (they come back when the box loses focus) */
+#rm.kb .rh,#rm.kb #ctl,#rm.kb #cbar{display:none}

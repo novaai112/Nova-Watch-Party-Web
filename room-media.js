@@ -654,7 +654,7 @@
     if (d.mediaAction === 'gallery') document.getElementById('chatFiles')?.click();
     if (d.mediaAction === 'document') document.getElementById('chatDocuments')?.click();
     if (d.mediaAction === 'audio') document.getElementById('chatAudio')?.click();
-    if (d.mediaAction === 'camera') document.getElementById('chatCamera')?.click();
+    if (d.mediaAction === 'camera') { closeMediaPicker(); openCamera(); }
     if (d.mediaKind) selectMediaKind(d.mediaKind);
     if (d.mediaResult !== undefined) {
       const item = mediaSearchItems[Number(d.mediaResult)];
@@ -704,5 +704,27 @@
     if (files.length) { addFiles(files); if (NovaRoomMedia.onChange) NovaRoomMedia.onChange(); }
   });
 
-  window.NovaRoomMedia = { markup, buttonHTML, count, reset, prepare, render, parts, sign, camera: () => document.getElementById('chatCamera')?.click(), close: closeMediaPicker, onChange: null };
+  /* ---- camera: the SAME live camera + photo editor + send preview as the inbox chat (nova-chat-capture.js) ---- */
+  let cameraBusy = false;
+  async function openCamera() {
+    const C = window.NovaChatMedia;
+    if (!C || !C.openCamera || !C.mediaSupported || !C.mediaSupported()) { document.getElementById('chatCamera')?.click(); return; }
+    if (cameraBusy) return; cameraBusy = true;
+    /* the Nova Home page listens to history/popstate; keep the camera overlays out of the history stack */
+    const push = history.pushState; history.pushState = function () {};
+    try {
+      const files = await C.openCamera({ video: true });
+      if (!files || !files.length) return;
+      const r = await C.openSendPreview(files.slice(0, MAX_ATTACHMENTS), { title: 'Send to room', allowMore: false });
+      if (!r) return;
+      addFiles(r.items.map(i => i.file));
+      const input = document.getElementById('cmsg');
+      if (input && r.caption) input.value = r.caption.slice(0, 500);
+      if (NovaRoomMedia.onChange) NovaRoomMedia.onChange();
+      if (NovaRoomMedia.onSend) NovaRoomMedia.onSend();
+    } catch (error) {
+      Nova.toast(/denied|NotAllowed/i.test((error && error.name || '') + (error && error.message || '')) ? 'Camera permission is blocked.' : 'Camera unavailable.', 'err');
+    } finally { history.pushState = push; cameraBusy = false; }
+  }
+  window.NovaRoomMedia = { markup, buttonHTML, count, reset, prepare, render, parts, sign, addFiles, urlFor: path => signed.get(path), camera: openCamera, close: closeMediaPicker, onChange: null };
 })();
