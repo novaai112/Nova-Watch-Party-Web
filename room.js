@@ -41,6 +41,8 @@ const PATH = {
   more: '<circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>',
   search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>',
   trash: '<path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/>',
+  camera: '<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>',
+  smile: '<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/>',
   up: '<path d="M18 15l-6-6-6 6"/>',
   down: '<path d="M6 9l6 6 6-6"/>'
 };
@@ -82,7 +84,7 @@ let ME = null, R = null, members = [], queue = [], msgs = [], prof = {}, ch = nu
 let skew = 0, hbT = null, tickT = null, homeT = null, homeRooms = [], mountKey = '', advAt = 0, endedAt = 0, pubT = 0, pubAt = 0;
 let homeLoaded = false, homeLoading = false, homeLoadError = '', homeErrorNotified = '';
 let roomSchemaWarned = false;
-let ui = { more: false, moreAuto: false, moreDismiss: '', voteSeen: false, sheet: '', tab: 'members', privTried: false, vol: +(localStorage.getItem('nova_vol') || 50), friends: [], first: true, events: [], nowKeys: {} };
+let ui = { more: false, moreAuto: false, moreDismiss: '', voteSeen: false, sheet: '', tab: 'members', privTried: false, vol: +(localStorage.getItem('nova_vol') || 50), friends: [], first: true, events: [], nowKeys: {}, q: '', qi: 0, qScroll: false, emoji: false, emojiCat: 0, emojiQ: '' };
 const micMap = new Map(), speak = new Map(), vad = new Map();
 const mutedUsers = new Set();
 try {
@@ -784,13 +786,18 @@ function buildShell() {
     </section>
     <section class="scol">
       <div class="vbar" id="vbar" hidden></div>
+      <div class="cbar" id="cbar"><b>${ic('chat', 16)}Chat</b><button type="button" class="ib2" data-r="csearch" aria-label="Search in chat" title="Search in chat">${ic('search', 20)}</button></div>
+      <div class="csbar" id="csbar" hidden><input id="cq" type="search" placeholder="Search in chat" autocomplete="off" aria-label="Search in chat"><span class="cscount" id="cscount"></span><button type="button" class="ib2" data-r="cs-prev" aria-label="Previous match">${ic('up', 18)}</button><button type="button" class="ib2" data-r="cs-next" aria-label="Next match">${ic('down', 18)}</button><button type="button" class="ib2" data-r="cs-close" aria-label="Close search">${ic('x', 18)}</button></div>
       <div class="feed" id="feed"></div>
       <div class="mentions" id="mentions" hidden></div>
       ${MEDIA() ? MEDIA().markup() : ''}
+      <div class="emopanel" id="emopanel" hidden></div>
       <div class="cin" id="cin">
         <button class="micb" id="micb" data-r="mic" aria-label="Microphone"></button>
         ${MEDIA() ? MEDIA().buttonHTML() : ''}
+        <button class="ib2 emob" data-r="emoji" aria-label="Emoji" aria-expanded="false" title="Emoji">${ic('smile', 22)}</button>
         <input id="cmsg" placeholder="Message" maxlength="500" autocomplete="off" enterkeyhint="send">
+        ${MEDIA() ? `<button class="ib2 tool" data-r="camera" aria-label="Camera" title="Camera">${ic('camera', 22)}</button>` : ''}
         <button class="ib2 tool" data-r="share" aria-label="Invite friends">${ic('userplus', 22)}</button>
         <button class="sendb" data-r="send" aria-label="Send message">${ic('send', 20)}</button>
       </div>
@@ -818,9 +825,9 @@ function buildShell() {
     }, 600);
   });
   ['pointerup', 'pointercancel', 'pointermove', 'pointerleave'].forEach(name => el.addEventListener(name, () => clearTimeout(pressTimer)));
-  el.addEventListener('keydown', e => { if (e.target.id === 'cmsg' && e.key === 'Enter') { e.preventDefault(); sendMsg(); } });
+  el.addEventListener('keydown', e => { if (e.target.id === 'cq') { if (e.key === 'Enter') { e.preventDefault(); searchStep(e.shiftKey ? -1 : 1); } else if (e.key === 'Escape') searchOpen(false); } else if (e.target.id === 'cmsg' && e.key === 'Enter') { e.preventDefault(); sendMsg(); } });
   /* keep the Send button tappable: pressing it must not blur the input (that would swap the icons away) */
-  el.addEventListener('pointerdown', e => { if (e.target.closest('.sendb')) e.preventDefault(); });
+  el.addEventListener('pointerdown', e => { if (e.target.closest('.sendb,#emopanel button,.emob')) e.preventDefault(); });
   el.addEventListener('focusin', e => { if (e.target.id === 'cmsg') setTimeout(() => { const f = $('#feed'); if (f) f.scrollTop = f.scrollHeight; }, 280); });
   /* phones: follow the visible area so the keyboard never covers the message box */
   if (window.visualViewport) {
@@ -1135,16 +1142,32 @@ function noticeIcon(t) {
   if (/^Playback|^Voting/.test(t)) return ic('play', 15);
   return ic('gear', 15);
 }
+const EOnly = t => window.NovaChatRich ? window.NovaChatRich.emojiOnlyCount(t) : 0;
+function hl(html) {   /* wrap search matches (in already-escaped text) in <mark> */
+  const q = ui.q.trim(); if (!q) return html;
+  const re = new RegExp(esc(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  return html.split(/(<[^>]*>)/).map(x => x[0] === '<' ? x : x.replace(re, mm => `<mark>${mm}</mark>`)).join('');
+}
+function msgText(m) { return String(m.tr || m.body || ''); }
 function msgHTML(m) {
   const u = who(m.user_id);
   if (m.kind === 'notice') return `<div class="nt" role="status"><span>${noticeIcon(m.body)}<em>${esc(m.body)}</em></span></div>`;
   if (m.kind === 'system') return `<div class="sy">${userAvatar(u, 24)}<span><b>${esc(nm(u))}</b> ${esc(m.body)}</span></div>`;
-  const me = m.user_id === ME.id;
-  const text = esc(m.tr || m.body).replace(/@([\w.]{2,24})/g, (a, n) =>
-    members.some(x => (who(x.user_id).username || '').toLowerCase() === n.toLowerCase()) ? `<span class="mn">${a}</span>` : a);
-  const att = MEDIA() && Array.isArray(m.attachments) && m.attachments.length ? MEDIA().render(m.attachments) : '';
+  const me = m.user_id === ME.id, raw = msgText(m);
+  const text = hl(esc(raw).replace(/@([\w.]{2,24})/g, (a, n) =>
+    members.some(x => (who(x.user_id).username || '').toLowerCase() === n.toLowerCase()) ? `<span class="mn">${a}</span>` : a));
+  const P = MEDIA() && Array.isArray(m.attachments) && m.attachments.length ? MEDIA().parts(m.attachments, m.id) : null;
   const time = m.created_at ? `<time>${new Date(m.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>` : '';
-  return `<div class="cm${me ? ' me' : ''}">${userAvatar(u, 32)}<div class="cb2">${me ? '' : `<small>${esc(nm(u))}</small>`}${text ? `<p>${text}</p>` : ''}${att ? `<div class="message-attachments">${att}</div>` : ''}${time}</div></div>`;
+  const name = me ? '' : `<small>${esc(nm(u))}</small>`;
+  const emo = !P && raw ? EOnly(raw) : 0, big = emo > 0 && emo <= 8;
+  const hit = ui.q.trim() && raw.toLowerCase().includes(ui.q.trim().toLowerCase()) ? ' hit' : '';
+  const row = (inner, cls) => `<div class="cm${me ? ' me' : ''}${hit}" data-mid="${esc(m.id || '')}">${userAvatar(u, 32)}<div class="cb2 ${cls}">${name}${inner}</div></div>`;
+  /* big emoji only / a lone GIF or sticker: bare, no card, time beside it */
+  if (big) return row(`<div class="rm-row"><p class="rm-emoji e${Math.min(emo, 3)}">${text}</p>${time}</div>`, 'bare');
+  if (P && P.hasVisual && !P.hasOther && !raw) return row(`<div class="rm-row"><div class="rm-media">${P.visual}</div>${time}</div>`, 'bare' + (P.gifOnly ? ' gifonly' : ''));
+  const card = (raw || (P && P.hasOther)) ? `<div class="mcard${P && P.hasVisual ? ' after' : ''}">${P && P.hasOther ? `<div class="message-attachments">${P.other}</div>` : ''}${text ? `<p>${text}</p>` : ''}${time}</div>` : '';
+  const vis = P && P.hasVisual ? `<div class="rm-media">${P.visual}</div>` : '';
+  return row(vis + card, vis ? 'bare' : 'card');
 }
 /* "Now playing" notice: a normal centred chat line that scrolls away with the conversation */
 function noteNow(m) {
@@ -1199,7 +1222,53 @@ function renderFeed() {
   if (!done) h += cardsHTML();
   if (!msgs.some(m => m.kind === 'chat')) h += '<div class="fempty">No messages yet — say hi 👋</div>';
   f.innerHTML = h;
-  if (near || ui.first) { f.scrollTop = f.scrollHeight; ui.first = false; }
+  if (ui.q.trim()) markCur(); else if (near || ui.first) { f.scrollTop = f.scrollHeight; ui.first = false; }
+}
+/* ---- chat search (same idea as the inbox chat: find, highlight, step through matches) ---- */
+function matches() {
+  const q = ui.q.trim().toLowerCase(); if (!q) return [];
+  return msgs.filter(m => m.kind === 'chat' && (msgText(m).toLowerCase().includes(q) || (Array.isArray(m.attachments) && m.attachments.some(a => String(a && a.name || '').toLowerCase().includes(q))))).map(m => m.id);
+}
+function markCur() {
+  const f = $('#feed'), ids = matches(), c = $('#cscount');
+  if (ui.qi >= ids.length) ui.qi = 0;
+  if (c) c.textContent = ui.q.trim() ? (ids.length ? (ui.qi + 1) + '/' + ids.length : 'No results') : '';
+  if (!f) return;
+  f.querySelectorAll('.cm.cur').forEach(x => x.classList.remove('cur'));
+  const el = ids.length ? [...f.querySelectorAll('.cm[data-mid]')].find(x => x.dataset.mid === String(ids[ui.qi])) : null;
+  if (el) { el.classList.add('cur'); if (ui.qScroll) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+  ui.qScroll = false;
+}
+function searchOpen(on) {
+  const bar = $('#csbar'), cb = $('#cbar'); if (!bar) return;
+  bar.hidden = !on; if (cb) cb.hidden = on;
+  if (on) { const i = $('#cq'); i.value = ui.q; i.focus(); }
+  else { ui.q = ''; ui.qi = 0; renderFeed(); const f = $('#feed'); if (f) f.scrollTop = f.scrollHeight; }
+}
+function searchStep(d) { const n = matches().length; if (!n) return; ui.qi = (ui.qi + d + n) % n; ui.qScroll = true; renderFeed(); }
+
+/* ---- emoji panel (the friends chat emoji set) ---- */
+function emojiPanel() {
+  const p = $('#emopanel'), rich = window.NovaChatRich; if (!p) return;
+  if (!rich) { p.innerHTML = '<div class="fempty">Emoji are not available</div>'; return; }
+  const q = ui.emojiQ.trim().toLowerCase(), cat = rich.EMOJI[ui.emojiCat] || rich.EMOJI[0];
+  const items = q ? rich.EMOJI.flatMap(c => c.items).filter(x => x[1].includes(q)).slice(0, 120) : cat.items;
+  p.innerHTML = `<div class="emosearch"><input id="emoq" type="search" placeholder="Search emoji" value="${esc(ui.emojiQ)}" autocomplete="off" aria-label="Search emoji"></div>
+    <div class="emotabs">${rich.EMOJI.map((c, i) => `<button type="button" class="${!q && i === ui.emojiCat ? 'on' : ''}" data-r="ecat" data-i="${i}" aria-label="${esc(c.name)}">${c.icon}</button>`).join('')}</div>
+    <div class="emogrid">${items.length ? items.map(x => `<button type="button" data-r="epick" data-e="${esc(x[0])}" aria-label="${esc(x[1])}">${x[0]}</button>`).join('') : '<small>No emoji found</small>'}</div>`;
+  if (q) { const i = $('#emoq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+}
+function emojiToggle(on) {
+  ui.emoji = on === undefined ? !ui.emoji : on;
+  const p = $('#emopanel'), b = $('.emob'); if (!p) return;
+  p.hidden = !ui.emoji; if (b) b.setAttribute('aria-expanded', String(ui.emoji));
+  if (ui.emoji) { if (MEDIA()) MEDIA().close(); emojiPanel(); }
+}
+function emojiPick(e) {
+  const i = $('#cmsg'); if (!i) return;
+  const a = i.selectionStart == null ? i.value.length : i.selectionStart, b = i.selectionEnd == null ? a : i.selectionEnd;
+  if (i.value.length - (b - a) + e.length > 500) return;
+  i.value = i.value.slice(0, a) + e + i.value.slice(b); i.setSelectionRange(a + e.length, a + e.length); syncTyping();
 }
 function syncTyping() { const c = $('#cin'), i = $('#cmsg'); if (c && i) c.classList.toggle('has-text', !!i.value.trim() || !!(MEDIA() && MEDIA().count())); }
 let sending = false;
@@ -1428,6 +1497,14 @@ function onClick(e) {
   else if (r === 'share') openShare();
   else if (r === 'invite') openInvite();
   else if (r === 'send') sendMsg();
+  else if (r === 'csearch') searchOpen(true);
+  else if (r === 'cs-close') searchOpen(false);
+  else if (r === 'cs-next') searchStep(1);
+  else if (r === 'cs-prev') searchStep(-1);
+  else if (r === 'emoji') emojiToggle();
+  else if (r === 'ecat') { ui.emojiCat = +d.i; ui.emojiQ = ''; emojiPanel(); }
+  else if (r === 'epick') emojiPick(d.e);
+  else if (r === 'camera') { if (MEDIA()) MEDIA().camera(); }
   else if (r === 'copy') copyLink();
   else if (r === 'app') shareApp(d.a);
   else if (r === 'openset') openSettings();
@@ -1520,6 +1597,8 @@ function onInput(e) {
   } else if (t.id === 'volr') {
     ui.vol = +t.value; localStorage.setItem('nova_vol', ui.vol); applyVolume();
   } else if (t.id === 'fq') renderFriends(t.value);
+  else if (t.id === 'cq') { ui.q = t.value; ui.qi = 0; ui.qScroll = true; renderFeed(); }
+  else if (t.id === 'emoq') { ui.emojiQ = t.value; emojiPanel(); }
   else if (t.id === 'cmsg') {
     syncTyping();
     const box = $('#mentions'), m = /@([\w.]*)$/.exec(t.value.slice(0, t.selectionStart || t.value.length));

@@ -103,7 +103,7 @@
 #rm .chat-media-picker{left:10px;bottom:68px;z-index:30}
 #rm .chat-media-picker.provider-open{left:0;bottom:64px;width:100%;border-radius:15px 15px 0 0}
 #rm .attach-btn[aria-expanded="true"]{background:#0000000f}
-#rm .cin.has-text .attach-btn,#rm .cin:focus-within .attach-btn{display:grid}
+#rm .cin.has-text .attach-btn,#rm .cin:has(#cmsg:focus) .attach-btn{display:grid}
 #rm .pending-files{padding:6px clamp(10px,3vw,18px) 0;background:transparent}
 
 /* messages: same look as the friends chat - transparent bubbles, theme text colour, time under the bubble */
@@ -121,3 +121,79 @@
 #rm .cin{background:transparent;border-top:1px solid color-mix(in srgb,var(--line) 55%,transparent)}
 #rm .cin input{background:transparent;color:var(--tx);border-color:color-mix(in srgb,var(--line) 72%,transparent)}
 #rm .cin input::placeholder{color:var(--mu)}
+
+/* ===== Watch-room chat v12: same look as the friends chat (black/white cards, bare media collage, big emoji, search, emoji panel) ===== */
+#rm{--m-sent-bg:#111114;--m-sent-tx:#fff;--m-recv-bg:#fff;--m-recv-tx:#2b2f36}
+[data-theme=dark] #rm{--m-sent-bg:#000;--m-sent-tx:#f5f5f7;--m-recv-bg:#2a2d34;--m-recv-tx:#e7e9ee}
+#rm .cb2{max-width:min(82%,420px)}
+#rm .cb2.bare{max-width:min(94%,520px)}
+#rm .cb2 small{margin:0 0 2px 8px}
+#rm .mcard{display:inline-block;max-width:100%;text-align:left;padding:8px 13px 5px;border-radius:20px 20px 20px 6px;background:var(--m-recv-bg);color:var(--m-recv-tx);box-shadow:0 1px 3px #0f172a14;overflow-wrap:anywhere;vertical-align:top}
+#rm .cm.me .mcard{background:var(--m-sent-bg);color:var(--m-sent-tx);border-radius:20px 20px 6px 20px}
+[data-theme=dark] #rm .cm.me .mcard{box-shadow:0 0 0 1px #ffffff1f}
+#rm .mcard.after{margin-top:4px}
+#rm .cm .mcard p,#rm .cm.me .mcard p{margin:0;padding:0;background:none;border:0;border-radius:0;color:inherit;display:block;font-size:14.5px;line-height:1.42;white-space:pre-wrap}
+#rm .cm .mn{color:inherit;text-decoration:underline;font-weight:700}
+#rm .mcard time{display:block;margin:2px 0 0;text-align:right;font-size:10.5px;color:inherit;opacity:.65}
+#rm .mcard .message-attachments{margin:0 0 4px;gap:6px;justify-items:stretch}
+#rm .mcard .message-file{color:inherit;padding:0;border:0;background:none}
+#rm .mcard .message-file small{display:block;opacity:.65;font-size:11px}
+#rm .mcard .message-audio{width:min(62vw,300px)}
+#rm mark{background:#facc15;color:#111;border-radius:3px;padding:0 1px}
+#rm .cm.hit .mcard{outline:1px solid #facc1599}
+#rm .cm.cur .mcard,#rm .cm.cur .rm-tile,#rm .cm.cur .rm-emoji{outline:2px solid #facc15;outline-offset:2px}
+/* bare media / emoji: no card, only the time beside it */
+#rm .rm-row{display:flex;align-items:flex-end;gap:7px;min-width:0}
+#rm .cm.me .rm-row{flex-direction:row-reverse}
+#rm .rm-row time{display:block;margin:0 2px 3px;flex:none;white-space:nowrap;font-size:11px;color:var(--mu);text-align:left}
+#rm .cm .rm-emoji{margin:0;padding:0;background:none;border:0;font-size:44px;line-height:1.1;white-space:pre-wrap;display:block;border-radius:10px}
+#rm .cm .rm-emoji.e2{font-size:38px}#rm .cm .rm-emoji.e3{font-size:32px}
+#rm .rm-media{min-width:0}
+#rm .rm-grid{display:grid;gap:3px;width:min(62vw,300px);border-radius:16px;overflow:hidden}
+#rm .rm-grid.g1{grid-template-columns:1fr;width:auto;max-width:min(62vw,300px)}
+#rm .rm-grid.g2{grid-template-columns:1fr 1fr}
+#rm .rm-grid.g3{grid-template-columns:1fr 1fr}#rm .rm-grid.g3 .rm-tile:first-child{grid-column:1/-1}
+#rm .rm-grid.g4{grid-template-columns:1fr 1fr}
+#rm .rm-tile{position:relative;display:block;padding:0;border:0;background:#0000001a;overflow:hidden;cursor:zoom-in;aspect-ratio:1;min-width:0}
+#rm .rm-grid.g1 .rm-tile{aspect-ratio:auto;border-radius:16px}
+#rm .rm-grid.g3 .rm-tile:first-child{aspect-ratio:2/1}
+#rm .rm-tile img,#rm .rm-tile video{display:block;width:100%;height:100%;object-fit:cover}
+#rm .rm-grid.g1 .rm-tile img,#rm .rm-grid.g1 .rm-tile video{height:auto;max-height:min(46vh,360px);object-fit:contain;border-radius:16px}
+/* GIF / sticker: shown bare, no frame */
+#rm .rm-tile.gif{background:none}
+#rm .gifonly .rm-grid{border-radius:0}
+#rm .rm-loading{display:grid;place-items:center;min-height:90px;min-width:120px;cursor:default}
+#rm .rm-play{position:absolute;inset:0;display:grid;place-items:center;color:#fff;background:#0003}
+#rm .rm-more{position:absolute;inset:0;display:grid;place-items:center;color:#fff;background:#0009;font-size:22px;font-weight:700}
+#rm .rm-credit{display:block;margin:3px 0 0 4px;font-size:10px;color:var(--mu)}
+#rm .rm-credit a{color:var(--ac);text-decoration:underline}
+/* viewer */
+#rm .rm-viewer{position:fixed;inset:0;z-index:90;background:#000e;display:flex;flex-direction:column;color:#fff}
+#rm .rm-v-top{display:flex;align-items:center;gap:12px;padding:12px 14px;padding-top:max(12px,env(safe-area-inset-top))}
+#rm .rm-v-top b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:600}
+#rm .rm-v-top span{font-size:13px;opacity:.75}
+#rm .rm-v-top a,#rm .rm-v-top button{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:#fff}
+#rm .rm-v-stage{flex:1;min-height:0;display:grid;place-items:center;padding:8px}
+#rm .rm-v-stage img,#rm .rm-v-stage video{max-width:100%;max-height:100%;object-fit:contain}
+#rm .rm-v-nav{position:absolute;top:50%;width:44px;height:44px;margin-top:-22px;border-radius:50%;background:#ffffff26;color:#fff;display:grid;place-items:center}
+#rm .rm-v-nav.prev{left:10px;transform:rotate(90deg)}#rm .rm-v-nav.next{right:10px;transform:rotate(-90deg)}
+/* chat bar + search */
+#rm .cbar{flex:none;display:flex;align-items:center;justify-content:space-between;padding:2px clamp(10px,3vw,18px) 2px 14px;border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent)}
+#rm .cbar b{display:flex;align-items:center;gap:7px;font-size:13.5px;font-weight:700;color:var(--tx)}
+#rm .cbar[hidden],#rm .csbar[hidden],#rm .emopanel[hidden]{display:none}
+#rm .csbar{flex:none;display:flex;align-items:center;gap:4px;padding:6px clamp(10px,3vw,18px);border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent)}
+#rm .csbar input{flex:1;min-width:0;height:38px;border-radius:999px;border:1px solid color-mix(in srgb,var(--line) 72%,transparent);background:transparent;color:var(--tx);padding:0 14px;font-size:16px;outline:0}
+#rm .cscount{font-size:12px;color:var(--mu);white-space:nowrap;min-width:46px;text-align:center}
+/* emoji panel */
+#rm .emopanel{flex:none;border-top:1px solid color-mix(in srgb,var(--line) 55%,transparent);background:var(--card);max-height:min(38vh,300px);display:flex;flex-direction:column}
+#rm .emosearch{padding:8px 12px 4px}
+#rm .emosearch input{width:100%;height:36px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--tx);padding:0 14px;font-size:16px;outline:0}
+#rm .emotabs{display:flex;gap:2px;overflow:auto;padding:2px 10px;flex:none}
+#rm .emotabs button{width:36px;height:34px;flex:none;border-radius:10px;font-size:19px;opacity:.6}
+#rm .emotabs button.on{opacity:1;background:var(--chip)}
+#rm .emogrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(40px,1fr));gap:2px;overflow:auto;padding:4px 10px 10px;min-height:0}
+#rm .emogrid button{height:40px;font-size:24px;border-radius:10px}
+#rm .emogrid button:hover{background:var(--chip)}
+#rm .emogrid small{grid-column:1/-1;color:var(--mu);padding:10px}
+#rm .emob[aria-expanded="true"]{background:#0000000f}
+#rm .chat-media-picker{bottom:68px}

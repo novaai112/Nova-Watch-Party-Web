@@ -124,8 +124,8 @@ body.inroom{overflow:hidden}
 #rm .ib2{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;flex:none;color:#344054}
 #rm .ib2:hover{background:#0000000f}
 #rm .sendb{display:none;width:42px;height:42px;border-radius:50%;background:var(--ink);color:#fff;place-items:center;flex:none}
-#rm .cin:focus-within .tool,#rm .cin.has-text .tool{display:none}
-#rm .cin:focus-within .sendb,#rm .cin.has-text .sendb{display:grid}
+#rm .cin:has(#cmsg:focus) .tool,#rm .cin.has-text .tool{display:none}
+#rm .cin:has(#cmsg:focus) .sendb,#rm .cin.has-text .sendb{display:grid}
 
 /* ----- popups: centred card, blurred page behind ----- */
 #rm .md{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(11,18,32,.30);backdrop-filter:blur(10px) saturate(1.1);-webkit-backdrop-filter:blur(10px) saturate(1.1);animation:mdf .16s ease}

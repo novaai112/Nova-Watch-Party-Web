@@ -135,6 +135,7 @@
       Nova.toast('That media link is already attached.', 'err');
       return;
     }
+    if (details.mediaKind === 'gif' || details.mediaKind === 'sticker' || /\.gif(\?|$)/i.test(media.url)) media.gif = true;
     pendingRemote.push(media);
     renderPending();
   }
@@ -517,6 +518,7 @@
     const files = [...pendingFiles], remoteFiles = [...pendingRemote], uploaded = [];
     const attachments = remoteFiles.map(item => ({
       url: item.url, name: item.name, type: item.type,
+      ...(item.gif ? { gif: true } : {}),
       ...(item.provider === 'unsplash' ? { attribution: item.attribution } : {})
     }));
     try {
@@ -546,34 +548,73 @@
     return { attachments, cleanup: () => uploaded.length && sb.storage.from(BUCKET).remove(uploaded).catch(() => {}) };
   }
 
-  /* ---- showing attachments inside a message bubble ---- */
-  function oneHTML(a) {
-    if (!a || typeof a !== 'object') return '';
+  /* ---- showing attachments inside a message ----
+     Photos / videos / GIFs / stickers are "visual": shown bare, as a collage. Documents, audio and the rest are "other": shown inside the message card. */
+  const fmtBytes = n => !n ? '' : n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+  function describe(a) {
+    if (!a || typeof a !== 'object') return null;
     if (a.url) {
       const remote = safeRemoteMedia(a.url, a.type, a.name);
-      if (!remote) return '';
-      const href = esc(remote.url), name = esc(a.name || remote.name);
-      if (remote.type.startsWith('image/')) {
-        const image = `<a class=message-image href="${href}" target=_blank rel=noopener><img src="${href}" alt="${name}" loading=lazy></a>`;
-        const at = safeUnsplashAttribution(a.attribution);
-        if (!at) return image;
-        return `<figure class=message-image-credit>${image}<figcaption>Photo by <a href="${esc(at.photographerUrl)}" target=_blank rel="noopener noreferrer">${esc(at.photographer)}</a> on <a href="${esc(at.photoUrl)}" target=_blank rel="noopener noreferrer">Unsplash</a></figcaption></figure>`;
-      }
-      if (remote.type.startsWith('video/')) return `<video class=message-video controls playsinline preload=metadata src="${href}"></video>`;
-      if (remote.type.startsWith('audio/')) return `<audio class=message-audio controls preload=metadata src="${href}"></audio>`;
-      return '';
+      if (!remote) return null;
+      return { href: remote.url, name: a.name || remote.name, type: remote.type, gif: !!a.gif || remote.type === 'image/gif',
+        attribution: remote.type.startsWith('image/') ? safeUnsplashAttribution(a.attribution) : null, size: a.size };
     }
-    if (!a.path) return '';
-    const url = signed.get(a.path);
-    const mime = a.type || '', name = esc(a.name || 'file');
-    if (!url) return `<span class=message-file>${ic('file',18)}<span>Loading ${name}…</span></span>`;
-    const href = esc(url);
-    if (mime.startsWith('image/')) return `<a class=message-image href="${href}" target=_blank rel=noopener><img src="${href}" alt="${name}" loading=lazy></a>`;
-    if (mime.startsWith('video/')) return `<video class=message-video controls playsinline preload=metadata src="${href}"></video>`;
-    if (mime.startsWith('audio/')) return `<audio class=message-audio controls preload=metadata src="${href}"></audio>`;
-    return `<a class=message-file href="${href}" target=_blank rel=noopener>${ic('file',18)}<span>${name}</span></a>`;
+    if (!a.path) return null;
+    return { href: signed.get(a.path) || '', name: a.name || 'file', type: a.type || '', gif: false, size: a.size };
   }
-  const render = list => (Array.isArray(list) ? list : []).map(oneHTML).join('');
+  const isVisual = d => d && (d.type.startsWith('image/') || d.type.startsWith('video/'));
+  function tileHTML(d, i, more) {
+    const href = esc(d.href), name = esc(d.name), video = d.type.startsWith('video/');
+    if (!href) return `<span class="rm-tile rm-loading" data-i="${i}"><span class=spin></span></span>`;
+    const body = video
+      ? (d.gif ? `<video src="${href}" autoplay loop muted playsinline></video>` : `<video src="${href}#t=0.1" preload=metadata muted playsinline></video><span class=rm-play>${ic('play',22)}</span>`)
+      : `<img src="${href}" alt="${name}" loading=lazy>`;
+    return `<button type=button class="rm-tile${d.gif ? ' gif' : ''}" data-rm-view="${i}" aria-label="Open ${name}">${body}${more ? `<span class=rm-more>+${more}</span>` : ''}</button>`;
+  }
+  function otherHTML(d) {
+    const href = esc(d.href), name = esc(d.name);
+    if (d.type.startsWith('audio/')) return href ? `<audio class=message-audio controls preload=metadata src="${href}"></audio>` : `<span class=message-file>${ic('file',18)}<span>Loading ${name}…</span></span>`;
+    if (!href) return `<span class=message-file>${ic('file',18)}<span>Loading ${name}…</span></span>`;
+    return `<a class=message-file href="${href}" target=_blank rel=noopener>${ic('file',18)}<span><b>${name}</b>${d.size ? `<small>${fmtBytes(d.size)}</small>` : ''}</span></a>`;
+  }
+  /* split a message's attachments -> { visual: html collage, other: html, hasVisual, hasOther, gifOnly } */
+  function parts(list, key) {
+    const all = (Array.isArray(list) ? list : []).map(describe).filter(Boolean);
+    const vis = all.filter(isVisual), oth = all.filter(d => !isVisual(d));
+    if (key !== undefined) groups.set(String(key), vis);
+    let visual = '';
+    if (vis.length) {
+      const n = Math.min(vis.length, 4), more = vis.length > 4 ? vis.length - 4 : 0;
+      const credit = vis.length === 1 && vis[0].attribution
+        ? `<small class=rm-credit>Photo by <a href="${esc(vis[0].attribution.photographerUrl)}" target=_blank rel="noopener noreferrer">${esc(vis[0].attribution.photographer)}</a> on <a href="${esc(vis[0].attribution.photoUrl)}" target=_blank rel="noopener noreferrer">Unsplash</a></small>` : '';
+      visual = `<div class="rm-grid g${n}" data-rm-msg="${esc(String(key ?? ''))}">${vis.slice(0, n).map((d, i) => tileHTML(d, i, i === n - 1 ? more : 0)).join('')}</div>${credit}`;
+    }
+    return { visual, other: oth.map(otherHTML).join(''), hasVisual: vis.length > 0, hasOther: oth.length > 0, gifOnly: vis.length === 1 && vis[0].gif };
+  }
+  const groups = new Map();            /* message key -> visual items (for the viewer) */
+
+  /* full-screen viewer */
+  function openViewer(key, start) {
+    const items = groups.get(String(key)) || []; if (!items.length) return;
+    let i = Math.max(0, Math.min(start, items.length - 1));
+    const el = document.createElement('div'); el.className = 'rm-viewer'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Media viewer');
+    const paint = () => {
+      const d = items[i], href = esc(d.href);
+      el.innerHTML = `<div class=rm-v-top><span>${i + 1} / ${items.length}</span><b>${esc(d.name)}</b><a href="${href}" download target=_blank rel=noopener aria-label=Download>${ic('down',22)}</a><button type=button data-v-close aria-label=Close>${ic('x',22)}</button></div>
+        <div class=rm-v-stage>${d.type.startsWith('video/') ? `<video src="${href}" controls autoplay playsinline ${d.gif ? 'loop muted' : ''}></video>` : `<img src="${href}" alt="${esc(d.name)}">`}</div>
+        ${items.length > 1 ? `<button type=button class="rm-v-nav prev" data-v-prev aria-label=Previous>${ic('chev',26)}</button><button type=button class="rm-v-nav next" data-v-next aria-label=Next>${ic('chev',26)}</button>` : ''}`;
+    };
+    const close = () => { el.remove(); document.removeEventListener('keydown', onKey, true); };
+    const step = n => { i = (i + n + items.length) % items.length; paint(); };
+    const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } else if (e.key === 'ArrowRight') step(1); else if (e.key === 'ArrowLeft') step(-1); };
+    el.addEventListener('click', e => {
+      if (e.target.closest('[data-v-close]') || e.target === el || e.target.classList.contains('rm-v-stage')) close();
+      else if (e.target.closest('[data-v-prev]')) step(-1); else if (e.target.closest('[data-v-next]')) step(1);
+    });
+    document.addEventListener('keydown', onKey, true);
+    paint(); (document.getElementById('rm') || document.body).appendChild(el);
+  }
+  const render = list => { const p = parts(list); return p.visual + p.other; };
   /* fetch signed links for stored files; resolves true when something new arrived (caller re-renders) */
   async function sign(msgs) {
     const need = [];
@@ -588,6 +629,8 @@
 
   /* ---- events (same data-attributes as the friends chat) ---- */
   document.addEventListener('click', event => {
+    const tile = event.target.closest('#rm [data-rm-view]');
+    if (tile) { const g = tile.closest('[data-rm-msg]'); if (g) openViewer(g.dataset.rmMsg, Number(tile.dataset.rmView)); return; }
     const el = event.target.closest('#rm [data-chat-media],#rm [data-remove-file],#rm [data-remove-remote],#rm [data-close-media],#rm [data-media-action],#rm [data-media-provider],#rm [data-media-back],#rm [data-media-kind],#rm [data-media-result],#rm [data-media-load-more],#rm [data-media-retry]');
     if (!el) return;
     const d = el.dataset;
@@ -661,5 +704,5 @@
     if (files.length) { addFiles(files); if (NovaRoomMedia.onChange) NovaRoomMedia.onChange(); }
   });
 
-  window.NovaRoomMedia = { markup, buttonHTML, count, reset, prepare, render, sign, close: closeMediaPicker, onChange: null };
+  window.NovaRoomMedia = { markup, buttonHTML, count, reset, prepare, render, parts, sign, camera: () => document.getElementById('chatCamera')?.click(), close: closeMediaPicker, onChange: null };
 })();
