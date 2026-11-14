@@ -210,27 +210,6 @@ const vp = (w, h, extra) => ({ ctx: Object.assign({ viewport: { width: w, height
     await t(name + ': no page errors', async () => assert.deepStrictEqual(page.errs, []));
     await ctx.close();
   }
-
-  console.log('End-screen guard (YouTube end cards)');
-  for (const [name, o] of [['laptop', vp(1366, 768)], ['phone', vp(390, 844, { hasTouch: true, isMobile: true })]]) {
-    const { ctx, page } = await open(browser, port, o);
-    await t(name + ': nothing is drawn over the video in the middle of a video', async () => {
-      await page.evaluate(() => { window.__ytt = 100; }); await page.waitForTimeout(1300); assert.strictEqual(await page.$('#vguard'), null); });
-    await t(name + ': in the last seconds two panels cover where the playlist card and channel circle appear', async () => {
-      await page.evaluate(() => { window.__ytt = 292; }); await page.waitForSelector('#vguard .eg.l', { timeout: 3000 });
-      const g = await rect(page, '#vguard'), l = await rect(page, '#vguard .eg.l'), r = await rect(page, '#vguard .eg.r'), v = await rect(page, '#vwrap');
-      assert.ok(Math.abs(g.w / g.h - 16 / 9) < 0.03, 'guard follows the 16:9 video ' + JSON.stringify(g));
-      assert.ok(g.l >= v.l - 1 && g.r <= v.r + 1 && g.t >= v.t - 1 && g.b <= v.b + 1, JSON.stringify({ g, v }));
-      assert.ok(l.l === g.l && l.b === g.b && r.r === g.r && r.b === g.b, JSON.stringify({ l, r, g }));
-      /* the two zones from the screenshot (card 2%–34% wide, circle 82%–98% wide, both in the lower half) */
-      assert.ok(l.w / g.w >= 0.36 && r.w / g.w >= 0.2 && l.h / g.h >= 0.5, JSON.stringify({ l, r, g }));
-      const pe = await page.evaluate(() => getComputedStyle(document.querySelector('#vguard')).pointerEvents); assert.strictEqual(pe, 'none'); });
-    await page.screenshot({ path: path.join(OUT, 'endguard-' + name + '.png') });
-    await t(name + ': the guard leaves when the video is replaced / restarted', async () => {
-      await page.evaluate(() => { window.__ytt = 3; }); await page.waitForTimeout(1300); assert.strictEqual(await page.$('#vguard'), null); });
-    await t(name + ': no page errors', async () => assert.deepStrictEqual(page.errs, []));
-    await ctx.close();
-  }
   await browser.close(); server.close();
   console.log(`\n${ok} passed, ${bad} failed`); process.exit(bad ? 1 : 0);
 })();

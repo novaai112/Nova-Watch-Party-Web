@@ -226,5 +226,4 @@ Turning **Hide Mature Content** off for the first time opens `age-verify.html`: 
 - **Settings icon** in the split opens the *main profile page* inside the panel. The back arrow on Settings (and other sub-pages) returns to that main profile page; only the main profile page's back closes the panel to Nova Home.
 - **Chat**: a back arrow sits left of the profile picture in the chat header and returns to the Friends page.
 - **+ button** stays on screen while Profile / Settings cover the Home column (hidden on Friends / chat, which have their own bottom bar). It closes the panel and opens the platform picker.
-- **YouTube end cards.** The embed API cannot switch off the end-screen playlist card / channel circle, so for the last 22 s of a video two blurred panels cover the corners where they appear (`END_GUARD_SECS` in `room.js`, zones in `room.css` `#vguard`).
 - Tests: `node tests/e2e-dock-split.js` (needs `playwright` + Chromium).
