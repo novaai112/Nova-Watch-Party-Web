@@ -45,6 +45,7 @@ const PATH = {
   smile: '<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/>',
   reply: '<path d="M9 14 4 9l5-5"/><path d="M20 20v-7a4 4 0 00-4-4H4"/>',
   flag: '<path d="M4 22V4M4 4h13l-2 4 2 4H4"/>',
+  vplayer: '<g stroke-width="1.7"><path d="M10.2 3H5.2A3.7 3.7 0 0 0 1.5 6.7v10.6A3.7 3.7 0 0 0 5.2 21h13.6a3.7 3.7 0 0 0 3.7-3.7V6.7A3.7 3.7 0 0 0 18.8 3h-5"/><circle cx="12" cy="3" r=".35" fill="currentColor"/><path d="M1.5 15.4h21"/><path d="M10.1 6.6 14.3 9 10.1 11.4Z"/><circle cx="5" cy="18.2" r="1.15"/><path d="M8.6 18.2h10.4"/></g>',
   up: '<path d="M18 15l-6-6-6 6"/>',
   down: '<path d="M6 9l6 6 6-6"/>'
 };
@@ -85,10 +86,10 @@ function platBadge(m, cls) {
 let ME = null, R = null, members = [], queue = [], msgs = [], prof = {}, ch = null;
 const typers = new Map();            /* user id -> { k: 'typing'|'uploading', until } */
 let hiddenMsgs = new Set(), typingAt = 0, typingKind = '';
-let skew = 0, hbT = null, tickT = null, homeT = null, homeRooms = [], mountKey = '', advAt = 0, endedAt = 0, pubT = 0, pubAt = 0;
+let rateAt = 0, skew = 0, hbT = null, tickT = null, homeT = null, homeRooms = [], mountKey = '', advAt = 0, endedAt = 0, pubT = 0, pubAt = 0;
 let homeLoaded = false, homeLoading = false, homeLoadError = '', homeErrorNotified = '';
 let roomSchemaWarned = false;
-let ui = { more: false, moreAuto: false, moreDismiss: '', voteSeen: false, sheet: '', tab: 'members', privTried: false, vol: +(localStorage.getItem('nova_vol') || 50), friends: [], first: true, events: [], nowKeys: {}, q: '', qi: 0, qScroll: false, emoji: false, emojiCat: 0, emojiQ: '' };
+let ui = { more: false, moreAuto: false, moreDismiss: '', voteSeen: false, sheet: '', tab: 'members', privTried: false, vol: +(localStorage.getItem('nova_vol') || 50), friends: [], first: true, events: [], nowKeys: {}, q: '', qi: 0, qScroll: false, emoji: false, emojiCat: 0, emojiQ: '', phide: false, rate: 1, rateKey: '' };
 const micMap = new Map(), speak = new Map(), vad = new Map();
 const mutedUsers = new Set();
 try {
@@ -202,7 +203,7 @@ async function enter(row) {
   await syncClock();
   R = row; members = []; queue = []; msgs = []; mountKey = '';
   ui.first = true; ui.sheet = ''; ui.events = []; ui.nowKeys = {}; micMap.clear(); speak.clear();
-  ui.privTried = false;
+  ui.privTried = false; ui.phide = false; ui.rate = 1; ui.rateKey = '';
   document.body.classList.add('inroom');
   buildShell();
   await Promise.all([refreshRoom(), refreshMembers(), refreshQueue(), loadMsgs()]);
@@ -222,6 +223,7 @@ function cleanup(keepShell) {
   if (window.NovaRoomMedia) NovaRoomMedia.reset();
   clearInterval(vadT); vadT = null; vad.clear(); speak.clear(); micMap.clear();
   destroyPlayer();
+  if (window.NovaPlayer) NovaPlayer.unmount();
   R = null; members = []; queue = []; msgs = []; mountKey = ''; typers.clear();
   if (!keepShell) {
     const rm = $('#rm'); if (rm) rm.remove();
@@ -307,6 +309,7 @@ function subscribe() {
     })
     .on('broadcast', { event: 'kick' }, ({ payload }) => { if (payload && payload.uid === ME.id) gone('You were removed from the room'); })
     .on('broadcast', { event: 'sig' }, ({ payload }) => onSig(payload))
+    .on('broadcast', { event: 'rate' }, ({ payload }) => { if (payload && !isAdmin() && typeof payload.r === 'number') setRoomRate(payload.r, false); })
     .on('broadcast', { event: 'mic' }, ({ payload }) => {
       if (!payload || !payload.uid || payload.uid === ME.id) return;
       if (!canMic(payload.uid)) { micMap.delete(payload.uid); renderVoice(); return; }
@@ -428,13 +431,28 @@ const pl = {
   pause() { try { if (P.yt) P.yt.pauseVideo(); else if (P.video) P.video.pause(); } catch (e) {} },
   seek(t) { try { if (P.yt) P.yt.seekTo(t, true); else if (P.video) P.video.currentTime = t; } catch (e) {} },
   idx() { try { return P.yt && R.media && R.media.pl ? P.yt.getPlaylistIndex() : null; } catch (e) { return null; } },
-  vol() { const v = Math.min(1, (100 - ui.vol) / 50); try { if (P.yt) P.yt.setVolume(Math.round(v * 100)); else if (P.video) P.video.volume = v; } catch (e) {} }
+  vol() { const v = Math.min(1, (100 - ui.vol) / 50); try { if (P.yt) P.yt.setVolume(Math.round(v * 100)); else if (P.video) P.video.volume = v; } catch (e) {} },
+  /* playback speed is a ROOM setting (admin changes it, everyone follows) so the shared position never drifts apart */
+  snapRate(r) {
+    r = Math.min(2, Math.max(.25, +r || 1));
+    try { if (P.yt && P.yt.getAvailablePlaybackRates) { const a = P.yt.getAvailablePlaybackRates() || []; if (a.length) return a.reduce((b, x) => Math.abs(x - r) < Math.abs(b - r) ? x : b, a[0]); } } catch (e) {}
+    return Math.round(r * 100) / 100;
+  },
+  applyRate() { try { if (P.yt) { if (P.yt.getPlaybackRate && P.yt.getPlaybackRate() !== ui.rate) P.yt.setPlaybackRate(ui.rate); } else if (P.video && P.video.playbackRate !== ui.rate) P.video.playbackRate = ui.rate; } catch (e) {} }
 };
+function setRoomRate(r, fromAdmin) {
+  r = pl.snapRate(r);
+  if (r === ui.rate && !fromAdmin) return;
+  ui.rate = r; pl.applyRate();
+  if (window.NovaPlayer) NovaPlayer.repaintRate();
+  if (fromAdmin && isAdmin()) { publish(pl.playing(), pl.time()); sendRate(); }
+}
+function sendRate() { if (ch && isAdmin()) { try { ch.send({ type: 'broadcast', event: 'rate', payload: { r: ui.rate } }); } catch (e) {} } }
 function destroyPlayer() {
   try { if (P.yt) P.yt.destroy(); } catch (e) {}
   try { if (P.video && P.video._hls) P.video._hls.destroy(); } catch (e) {}
   P = freshP();
-  const w = $('#vwrap'); if (w) $$('#vwrap > *:not(#mv):not(#vcover):not(#vbadge)').forEach(n => n.remove());
+  const w = $('#vwrap'); if (w) $$('#vwrap > *:not(#mv):not(#vcover):not(#vbadge):not(#pui):not(#pgz)').forEach(n => n.remove());
 }
 function emptyHTML() {
   const can = isAdmin() || R.playback_mode !== 'leader';
@@ -449,9 +467,12 @@ async function mountMedia() {
   destroyPlayer();
   const w = $('#vwrap'); if (!w) return;
   const m = R.media, adm = isAdmin();
-  if (!m) { w.insertAdjacentHTML('afterbegin', emptyHTML()); renderControls(); renderNow(); return; }
+  if (!m) { if (window.NovaPlayer) NovaPlayer.unmount(); w.insertAdjacentHTML('afterbegin', emptyHTML()); renderControls(); renderNow(); return; }
+  const rk = mkey(m) + '|' + R.media_ver;
+  if (ui.rateKey !== rk) { ui.rateKey = rk; ui.rate = 1; }
   noteNow(m);
   renderControls(); renderNow(); paintCover(); syncMore();
+  if (window.NovaPlayer) NovaPlayer.mount();
   if (m.kind === 'embed') {
     if (!safeHttps(m.url)) return;
     w.insertAdjacentHTML('afterbegin', `<iframe src="${esc(m.url)}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-forms"></iframe>`);
@@ -461,7 +482,7 @@ async function mountMedia() {
   if (m.kind === 'video') {
     if (!safeHttps(m.url)) return;
     const v = document.createElement('video');
-    v.playsInline = true; v.preload = 'auto'; v.controls = adm;
+    v.playsInline = true; v.preload = 'auto'; v.controls = false; v.disablePictureInPicture = false;
     if (m.provider === 'web') {
       const info = webStreamInfo(m);
       const proxy = new URL('/api/browse', location.href);
@@ -486,7 +507,7 @@ async function mountMedia() {
     P.kind = 'video'; P.video = v;
     ['play', 'pause', 'seeked'].forEach(ev => v.addEventListener(ev, () => { if (isAdmin() && Date.now() > P.mute) publish(!v.paused, v.currentTime); updateTimeUI(); }));
     v.addEventListener('ended', () => { if (isAdmin()) ended(); });
-    v.addEventListener('loadedmetadata', () => { P.ready = true; pl.vol(); renderControls(); applyState(true); });
+    v.addEventListener('loadedmetadata', () => { P.ready = true; pl.vol(); pl.applyRate(); renderControls(); applyState(true); });
     v.addEventListener('playing', () => { P.started = true; hideTap(); paintCover(); });
     v.addEventListener('error', () => {
       if (key !== mountKey) return;
@@ -514,7 +535,7 @@ async function mountMedia() {
   P.yt = new YT.Player('ytp', {
     videoId: m.id || undefined, playerVars: vars,
     events: {
-      onReady: () => { if (key !== mountKey) return; P.ready = true; pl.vol(); renderControls(); applyState(true); setTimeout(checkBlocked, 1800); },
+      onReady: () => { if (key !== mountKey) return; P.ready = true; pl.vol(); pl.applyRate(); renderControls(); applyState(true); setTimeout(checkBlocked, 1800); },
       onStateChange: e => {
         const s = e.data;
         if ((s === 1 || s === 2) && isAdmin() && Date.now() > P.mute) publish(s === 1, pl.time());
@@ -528,6 +549,21 @@ async function mountMedia() {
     }
   });
 }
+/* Hide Player: the video frame collapses (sound keeps playing, the control row stays) and the chat takes its place;
+   the icon right of the split icon in the header brings the frame back */
+function setPlayerHidden(b) {
+  ui.phide = !!b;
+  const rm = $('#rm'); if (!rm) return;
+  rm.classList.toggle('pl-hidden', ui.phide);
+  const sb = $('.rshow', rm); if (sb) sb.hidden = !ui.phide;
+  if (ui.phide) { if (window.NovaPlayer) { NovaPlayer.closeMenu(); NovaPlayer.exitFs(); } }
+  else { fitYT(); setTimeout(fitYT, 60); if (window.NovaPlayer) { NovaPlayer.layout(); NovaPlayer.update(); } }
+}
+function adminToggle() {
+  if (!isAdmin() || !R) return;
+  if (pl.playing()) { pl.pause(); publish(false, pl.time()); } else { pl.play(); publish(true, pl.time()); }
+  updateTimeUI();
+}
 function checkBlocked() {
   if (!R || !R.media || P.kind === 'embed') return;
   const s = R.play_state || {};
@@ -535,6 +571,7 @@ function checkBlocked() {
 }
 function showTap() {
   const w = $('#vwrap'); if (!w || $('#tap')) return;
+  if (ui.phide) setPlayerHidden(false);
   w.insertAdjacentHTML('beforeend', '<button id="tap" class="tap" data-r="tap">Tap to join playback</button>');
 }
 function hideTap() { const t = $('#tap'); if (t) t.remove(); }
@@ -547,7 +584,8 @@ function applyState(force) {
   if (P.yt && R.media.pl) {
     try { const i = P.yt.getPlaylistIndex(); if (s.idx != null && i >= 0 && i !== s.idx) { P.yt.playVideoAt(s.idx); return; } } catch (e) {}
   }
-  const exp = s.playing ? (s.pos || 0) + (snow() - s.ts) / 1000 : (s.pos || 0);
+  const exp = s.playing ? (s.pos || 0) + (snow() - s.ts) / 1000 * ui.rate : (s.pos || 0);
+  pl.applyRate();
   const cur = pl.time(), live = P.yt && pl.dur() === 0;
   if (s.playing) {
     if (!live && Math.abs(cur - exp) > (force ? 0.8 : 2.2)) pl.seek(exp);
@@ -581,6 +619,7 @@ function onTick() {
   if (gone_) renderVoice();
   const s = R.play_state || {};
   fitYT(); paintCover(); tickMore(); paintState();
+  if (isAdmin() && R.media && P.ready && Date.now() - rateAt > 6000) { rateAt = Date.now(); sendRate(); }
   if (s.vote_until) {
     renderHead();
     const late = snow() - s.vote_until;
@@ -594,7 +633,7 @@ function onTick() {
     const now = Date.now(), cur = pl.time(), playing = pl.playing();
     if (P.lastT && now > P.mute) {
       const dt = (now - P.lastT) / 1000;
-      const jump = playing ? Math.abs(cur - (P.lastC + dt)) > 2.5 : Math.abs(cur - P.lastC) > 1;
+      const jump = playing ? Math.abs(cur - (P.lastC + dt * ui.rate)) > 2.5 : Math.abs(cur - P.lastC) > 1;
       if (jump && !P.drag) publish(playing, cur);
       else if (playing && now - pubAt > 10000) publish(true, cur);
     }
@@ -784,6 +823,7 @@ function buildShell() {
   el.innerHTML = `
   <header class="rh">
     <button class="rb rdock" data-r="dock" aria-label="Show Nova Home" title="Nova Home" aria-pressed="false">${ic('dock', 24)}</button>
+    <button class="rb rshow" data-r="showplayer" aria-label="Show player" title="Show player" hidden>${ic('vplayer', 25)}</button>
     <button class="rb" data-r="leave" aria-label="Leave room">${ic('x', 24)}</button>
     <button class="rb" data-r="settings" aria-label="Room settings">${ic('gear', 24)}</button>
     <div class="rmid" id="rmid"></div>
@@ -930,6 +970,7 @@ function renderControls() {
     ${moreBtn()}${adm ? `<button class="cb" data-r="skip" aria-label="Next video">${ic('skip', 18)}</button>` : ''}`;
 }
 function updateTimeUI() {
+  if (window.NovaPlayer) NovaPlayer.update();
   if (!R || !$('#seek') || !P.ready) return;
   const cur = pl.time(), dur = pl.dur();
   $('#tcur').textContent = fmt(cur);
@@ -980,6 +1021,7 @@ function renderMoreBtn() {
 function toggleMore() {
   if (!canMore()) return toast("Only the leader can choose videos in Leader's choice");
   if (ui.more) return closeMore();
+  if (ui.phide) setPlayerHidden(false);
   ui.more = true; ui.moreAuto = false; paintMore(true);
 }
 function closeMore() { ui.more = false; ui.moreAuto = false; ui.moreDismiss = String(((R && R.play_state) || {}).seq || 0); paintMore(); }
@@ -1040,7 +1082,7 @@ function syncMore() {
   if (votingNow() && md === 'vote') ui.voteSeen = true;
   paintState();
   const need = (votingNow() && md === 'vote') || (ended && isAdmin() && (md === 'play' || md === 'leader')) || (ended && md === 'vote' && !s.vote_until);
-  if (need) { if (!ui.more && String(s.seq || 0) !== ui.moreDismiss) { ui.more = true; ui.moreAuto = true; } }
+  if (need) { if (!ui.more && String(s.seq || 0) !== ui.moreDismiss) { ui.more = true; ui.moreAuto = true; if (ui.phide) setPlayerHidden(false); } }
   else if (ui.more && ui.moreAuto) { ui.more = false; ui.moreAuto = false; }
   if (ui.more && !canMore()) { ui.more = false; ui.moreAuto = false; }
   paintMore(); paintCover(); renderMoreBtn();
@@ -1620,7 +1662,8 @@ function onClick(e) {
   else if (r === 'app') shareApp(d.a);
   else if (r === 'openset') openSettings();
   else if (r === 'tap') { hideTap(); pl.play(); applyState(true); }
-  else if (r === 'toggle' && isAdmin()) { if (pl.playing()) { pl.pause(); publish(false, pl.time()); } else { pl.play(); publish(true, pl.time()); } updateTimeUI(); }
+  else if (r === 'toggle' && isAdmin()) adminToggle();
+  else if (r === 'showplayer') setPlayerHidden(false);
   else if ((r === 'back' || r === 'fwd') && isAdmin()) { const t = Math.max(0, pl.time() + (r === 'back' ? -10 : 10)); pl.seek(t); publish(pl.playing(), t); }
   else if (r === 'skip' && isAdmin()) {
     rpc('room_skip', { p_room: R.id, p_ver: R.media_ver }).catch(oops);
@@ -1926,6 +1969,20 @@ const roomApi = {
 };
 /* sync(): re-read the room + Up next and repaint (used by tests and as a manual re-sync) */
 async function sync() { if (!R) return; await refreshRoom(); await refreshQueue(); renderAll(); await mountMedia(); }
+if (window.NovaPlayer) NovaPlayer.init({
+  R: () => R, P: () => P, pl, isAdmin, publish: (a, b) => publish(a, b), esc, fmt, thumb, fit: fitYT, toggle: adminToggle,
+  platName: m => { const k = m.kind === 'youtube' ? 'youtube' : (m.provider || m.kind || 'web'); return PLAT[k] || (k.charAt(0).toUpperCase() + k.slice(1)); },
+  adminName: () => R ? nm(who(R.admin_id)) : '',
+  rate: { get: () => ui.rate, set: r => setRoomRate(r, true) },
+  hidden: { get: () => ui.phide, set: setPlayerHidden },
+  like: { can: m => canLike(m), is: m => canLike(m) && NovaApp.isLiked(likeItem(m)), toggle: m => { if (canLike(m)) { NovaApp.toggleLike(likeItem(m)); renderNow(); } } },
+  sourceUrl: m => {
+    if (!m) return '';
+    if (m.kind === 'youtube') return m.id ? 'https://www.youtube.com/watch?v=' + encodeURIComponent(m.id) + (m.pl ? '&list=' + encodeURIComponent(m.pl) : '') : m.pl ? 'https://www.youtube.com/playlist?list=' + encodeURIComponent(m.pl) : '';
+    if (m.kind === 'video' && m.provider === 'web') { const i = webStreamInfo(m); return safeHttps(i.ref) ? i.ref : safeHttps(i.url) ? i.url : ''; }
+    const u = String(m.url || '').split('#')[0]; return safeHttps(u) ? u : '';
+  }
+});
 window.NovaRoom = { handle, ctx, renderHome, active: () => !!R, ready: true, api: roomApi, sync, state: stateName, join: switchTo };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();

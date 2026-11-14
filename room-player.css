@@ -1,0 +1,145 @@
+/* ===== room-player.css — controls drawn over the watch-room video (see room-player.js) ===== */
+#rm .vwrap{--glass:rgba(22,18,42,.52);--glass-b:rgba(255,255,255,.2)}
+#rm .vwrap .shield{display:none}                       /* the gesture layer below replaces it */
+#rm .vwrap .vcover{pointer-events:none}                 /* taps pass through to the gesture layer … */
+#rm .vwrap .vcover button{pointer-events:auto}         /* … except on its own buttons */
+#rm .vwrap.padm .vcover .pz{display:none}              /* the admin's big ▶ already shows "paused" */
+#rm .pgz{position:absolute;inset:0;z-index:2;touch-action:manipulation;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+#rm .pgz[hidden]{display:none}
+
+#rm .pui{--b:40px;--pad:12px;--big:60px;--sk:48px;--tt:18px;--ts:13px;--tm:13px;--th:4px;--mw:240px;--mr:36px;--mf:14px;--mt:12px;
+  position:absolute;inset:0;z-index:4;pointer-events:none;color:#fff;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none}
+#rm .pui svg{display:block}
+
+/* soft shading so white controls stay readable on bright frames */
+#rm .pshade{position:absolute;left:0;right:0;pointer-events:none;transition:opacity .25s}
+#rm .pshade.t{top:0;height:38%;background:linear-gradient(rgba(0,0,0,.42),transparent)}
+#rm .pshade.b{bottom:0;height:48%;background:linear-gradient(transparent,rgba(0,0,0,.72))}
+
+/* glass round buttons */
+#rm .pui .pb{width:var(--b);height:var(--b);border-radius:50%;display:grid;place-items:center;flex:none;color:#fff;pointer-events:auto;
+  background:var(--glass);border:1px solid var(--glass-b);-webkit-backdrop-filter:blur(14px) saturate(1.3);backdrop-filter:blur(14px) saturate(1.3);
+  box-shadow:0 6px 20px rgba(0,0,0,.28);transition:background .15s,transform .12s,opacity .25s;touch-action:manipulation}
+#rm .pui .pb svg{width:46%;height:46%}
+#rm .pui .pb:hover{background:rgba(36,30,66,.66)}
+#rm .pui .pb:active{transform:scale(.93)}
+#rm .pui .pb.on{color:#8ec5ff}
+#rm .pui .pb.mo.on{background:rgba(255,255,255,.26)}
+#rm .pui .pb:focus-visible,#rm .pui .pr:focus-visible,#rm .pui .ptw:focus-visible,#rm .pui .pchip:focus-visible,#rm .pui .pbtn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+
+/* top right: [full screen] [like] [⋮] */
+#rm .ptop{position:absolute;top:var(--pad);right:var(--pad);display:flex;gap:calc(var(--b) * .28);transition:opacity .25s}
+
+/* centre: ⟲15  ▶  15⟳   (admin only) */
+#rm .pmid{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);display:none;align-items:center;justify-content:center;gap:calc(var(--big) * .34);pointer-events:none;transition:opacity .25s}
+#rm .pui[data-adm="1"][data-k="media"] .pmid{display:flex}
+#rm .pui .pb.big{width:var(--big);height:var(--big)}
+#rm .pui .pb.big svg{width:46%;height:46%}
+#rm .pui .pb.big .i-play svg{margin-left:6%}
+#rm .pui .pb.sk{width:var(--sk);height:var(--sk)}
+#rm .pui .pb.sk svg{width:62%;height:62%}
+#rm .pui .pb.big .i-pause{display:none}
+#rm .pui[data-pl="1"] .pb.big .i-pause{display:grid;place-items:center;width:100%;height:100%}
+#rm .pui[data-pl="1"] .pb.big .i-play{display:none}
+#rm .pui .pb.big .i-play{display:grid;place-items:center;width:100%;height:100%}
+/* nothing to control while a vote / loading / error cover is up */
+#rm[data-pstate]:not([data-pstate="PLAYING"]):not([data-pstate="PAUSED"]) .pmid{display:none!important}
+
+/* bottom: name (full screen only) · time · timeline */
+#rm .pbot{position:absolute;left:var(--pad);right:var(--pad);bottom:calc(var(--pad) * .8);transition:opacity .25s}
+#rm .prow{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:calc(var(--th) + 4px)}
+#rm .pinfo{min-width:0;display:none;flex-direction:column;gap:2px;text-shadow:0 1px 8px rgba(0,0,0,.6)}
+#rm .pui[data-fs="1"] .pinfo{display:flex}
+#rm .ptt{font-size:var(--tt);font-weight:600;line-height:1.15;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#rm .pts{font-size:var(--ts);color:rgba(255,255,255,.72);white-space:nowrap}
+#rm .ptm{margin-left:auto;flex:none;font-size:var(--tm);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+#rm .pui[data-k="embed"] .pbot,#rm .pui[data-k="embed"] .pshade.b{display:none}
+
+/* timeline: thin bar, fat invisible hit area; only the admin gets a thumb and the pointer */
+#rm .ptw{position:relative;height:calc(var(--th) + 22px);margin:-11px 0 -9px;display:flex;align-items:center;pointer-events:none;touch-action:none;cursor:default;outline:0}
+#rm .ptw.adm{pointer-events:auto;cursor:pointer}
+#rm .ptrack{position:relative;width:100%;height:var(--th);border-radius:99px;background:rgba(255,255,255,.28);overflow:visible;transition:height .12s}
+#rm .ptw.adm:hover .ptrack,#rm .ptw.adm:focus-visible .ptrack{height:calc(var(--th) * 1.5)}
+#rm .ptrack i{position:absolute;left:0;top:0;bottom:0;border-radius:99px}
+#rm .pbuf{width:var(--bf,0%);background:rgba(255,255,255,.28)}
+#rm .pfill{width:var(--f,0%);background:#fff}
+#rm .pthumb{display:none;left:var(--f,0%)!important;top:50%!important;bottom:auto!important;width:calc(var(--th) * 3.2)!important;height:calc(var(--th) * 3.2);margin:calc(var(--th) * -1.6) 0 0 calc(var(--th) * -1.6);border-radius:50%!important;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.5)}
+#rm .ptw.adm .pthumb{display:block}
+
+/* auto-hide */
+#rm .pui[data-vis="0"] .ptop,#rm .pui[data-vis="0"] .pmid,#rm .pui[data-vis="0"] .pbot,#rm .pui[data-vis="0"] .pshade{opacity:0}
+#rm .pui[data-vis="0"] .pb,#rm .pui[data-vis="0"] .ptw{pointer-events:none}
+#rm .pui[data-k="embed"] .pshade{display:none}
+
+/* double-tap feedback */
+#rm .prip{position:absolute;top:0;bottom:0;width:34%;display:grid;place-items:center;opacity:0;pointer-events:none;background:radial-gradient(closest-side,rgba(255,255,255,.2),transparent);transition:opacity .15s}
+#rm .prip.l{left:0}#rm .prip.r{right:0}
+#rm .prip.on{opacity:1}
+#rm .prip span{display:grid;justify-items:center;gap:2px;font-size:calc(var(--tm) * 1.15);font-weight:700;text-shadow:0 1px 8px rgba(0,0,0,.6)}
+#rm .prip span b{font-weight:700}
+#rm .ptoast{position:absolute;left:50%;bottom:calc(var(--pad) * 3.4);transform:translateX(-50%);max-width:86%;padding:7px 14px;border-radius:99px;background:rgba(10,10,20,.8);font-size:calc(var(--mf) * .92);font-weight:600;text-align:center;pointer-events:none}
+#rm .ptoast[hidden]{display:none}
+
+/* ---------- ⋮ glass menu ---------- */
+#rm .pmenu{position:absolute;right:var(--pad);top:var(--mt);width:var(--mw);max-width:calc(100% - var(--pad) * 2);max-height:calc(100% - var(--mt) - var(--pad));overflow:auto;pointer-events:auto;
+  padding:calc(var(--mr) * .18);border-radius:calc(var(--mr) * .8);color:#fff;font-size:var(--mf);
+  background:linear-gradient(160deg,rgba(60,46,104,.5),rgba(18,14,36,.58));border:1px solid rgba(255,255,255,.22);
+  -webkit-backdrop-filter:blur(26px) saturate(1.5);backdrop-filter:blur(26px) saturate(1.5);
+  box-shadow:0 18px 50px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.18);transform-origin:top right;animation:pmin .18s cubic-bezier(.2,.8,.2,1);
+  scrollbar-width:none;-ms-overflow-style:none;overscroll-behavior:contain;z-index:3}
+#rm .pmenu::-webkit-scrollbar{display:none}
+#rm .pmenu[hidden]{display:none}
+@keyframes pmin{from{opacity:0;transform:scale(.94) translateY(-6px)}}
+#rm .pui .pr{display:flex;align-items:center;gap:calc(var(--mr) * .24);width:100%;min-height:var(--mr);padding:0 calc(var(--mr) * .32);border-radius:calc(var(--mr) * .5);color:#fff;font:inherit;font-weight:500;text-align:left;background:none;border:0;cursor:pointer;transition:background .12s}
+#rm .pui .pr:hover{background:rgba(255,255,255,.1)}
+#rm .pui .pr:active{background:rgba(255,255,255,.18)}
+#rm .pui .pr.on{background:rgba(255,255,255,.12)}
+#rm .pui .pi{display:grid;place-items:center;flex:none;width:calc(var(--mr) * .5);opacity:.95}
+#rm .pui .pi svg{width:100%;height:auto}
+#rm .pui .pl{flex:1 0 auto;min-width:0;white-space:nowrap}
+#rm .pui .pr .pl:only-child,#rm .plist .pr .pl{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis}
+#rm .pui .pv{flex:0 1 auto;min-width:0;margin-left:auto;font-size:.86em;color:rgba(255,255,255,.72);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#rm .pui .pch{display:grid;place-items:center;flex:none;opacity:.85}
+#rm .pui .pch svg{width:calc(var(--mr) * .42);height:auto}
+#rm .pui .pck{display:grid;place-items:center;flex:none;min-width:18px}
+#rm .ph{display:flex;align-items:center;gap:6px;min-height:var(--mr);padding:0 4px 0 0}
+#rm .ph b{font-size:1.04em;font-weight:600}
+#rm .pui .pback{width:calc(var(--mr) * .85);height:calc(var(--mr) * .85);display:grid;place-items:center;border-radius:50%;color:#fff;background:none;border:0;cursor:pointer}
+#rm .pui .pback:hover{background:rgba(255,255,255,.12)}
+#rm .plist{display:flex;flex-direction:column}
+#rm .pnote{margin:4px calc(var(--mr) * .32) calc(var(--mr) * .22);font-size:.84em;line-height:1.35;color:rgba(255,255,255,.7)}
+
+/* speed panel */
+#rm .psp{padding:0 calc(var(--mr) * .28) calc(var(--mr) * .22)}
+#rm .psv{display:block;text-align:center;font-size:1.5em;font-weight:700;font-variant-numeric:tabular-nums;margin:2px 0 calc(var(--mr) * .12)}
+#rm .psl{display:flex;align-items:center;gap:calc(var(--mr) * .16)}
+#rm .pstep{width:calc(var(--mr) * .82);height:calc(var(--mr) * .82);flex:none;display:grid;place-items:center;border-radius:50%;color:#fff;background:rgba(255,255,255,.14);border:0;cursor:pointer;touch-action:manipulation}
+#rm .pstep:active:not(:disabled){background:rgba(255,255,255,.26)}
+#rm .pstep:disabled,#rm .pchip:disabled,#rm .psl input:disabled{opacity:.4;cursor:not-allowed}
+#rm .psl input{flex:1;min-width:0;height:calc(var(--mr) * .82);accent-color:#fff;background:none;cursor:pointer}
+#rm .pchips{display:grid;grid-template-columns:repeat(4,1fr);gap:calc(var(--mr) * .12);margin-top:calc(var(--mr) * .1)}
+#rm .pchip{height:calc(var(--mr) * .8);border-radius:99px;background:rgba(255,255,255,.12);color:#fff;font:inherit;font-size:.88em;font-weight:600;border:0;cursor:pointer;touch-action:manipulation}
+#rm .pchip.on{background:#fff;color:#161226}
+
+/* details panel */
+#rm .pdet{padding:0 calc(var(--mr) * .3) calc(var(--mr) * .24)}
+#rm .pth{width:100%;aspect-ratio:16/9;border-radius:calc(var(--mr) * .38);background:#222 center/cover no-repeat;margin-bottom:calc(var(--mr) * .2);max-height:calc(var(--mr) * 2.4)}
+#rm .pdet h4{margin:0 0 calc(var(--mr) * .16);font-size:1.02em;font-weight:600;line-height:1.25;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+#rm .pk{display:flex;justify-content:space-between;gap:12px;padding:calc(var(--mr) * .13) 0;font-size:.9em;border-top:1px solid rgba(255,255,255,.12)}
+#rm .pk span{color:rgba(255,255,255,.66)}
+#rm .pk b{font-weight:600;text-align:right;overflow-wrap:anywhere}
+#rm .pact{display:flex;gap:calc(var(--mr) * .16);margin-top:calc(var(--mr) * .2)}
+#rm .pact:empty{display:none}
+#rm .pbtn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:calc(var(--mr) * .85);padding:0 10px;border-radius:99px;background:rgba(255,255,255,.14);color:#fff;font:inherit;font-size:.86em;font-weight:600;text-decoration:none;border:0;cursor:pointer;white-space:nowrap}
+#rm .pbtn:hover{background:rgba(255,255,255,.22)}
+
+/* ---------- full screen ---------- */
+#rm .vwrap:fullscreen{max-height:none!important;aspect-ratio:auto!important;width:100%!important;height:100%!important;border-radius:0!important;background:#000}
+#rm .vwrap:-webkit-full-screen{max-height:none!important;aspect-ratio:auto!important;width:100%!important;height:100%!important;border-radius:0!important;background:#000}
+#rm .vwrap.pfs{position:fixed!important;inset:0;z-index:90;max-height:none!important;aspect-ratio:auto!important;width:100%!important;height:100%!important;border-radius:0!important}
+
+@media(prefers-reduced-motion:reduce){#rm .pmenu,#rm .pui *{animation:none!important;transition:none!important}}
+
+/* small frames (phone portrait): the card covers the corner, so the bottom controls step aside while it is open */
+#rm .pui[data-sm="1"][data-menu="1"] .pbot,#rm .pui[data-sm="1"][data-menu="1"] .pmid{opacity:0;pointer-events:none}
+#rm .pui[data-sm="1"] .pth{display:none}

@@ -326,3 +326,21 @@ body.inroom{overflow:hidden}
 .nvg-a button{border:0;border-radius:12px;padding:10px 20px;font-weight:700;font-size:14.5px;cursor:pointer;background:#f3f6fa;color:#0b1220}
 .nvg-a button.p{background:#0b1220;color:#fff}
 @media (prefers-reduced-motion:reduce){#rm .cgbar i{animation:none}}
+
+/* ===== Hide Player / Show Player =====
+   Hide Player collapses the video frame (the video keeps playing, so the sound continues; the control row below stays)
+   and the chat grows into the freed space. The "show player" icon sits right of the split icon in the header. */
+#rm .rb[hidden]{display:none}
+#rm.pl-hidden .rh{grid-template-columns:44px 44px 44px 44px minmax(0,1fr) 44px 44px}
+#rm .rshow{animation:rshow .22s cubic-bezier(.2,.8,.2,1)}
+@keyframes rshow{from{opacity:0;transform:scale(.7)}}
+#rm.pl-hidden .vwrap{height:0!important;min-height:0!important;max-height:0!important;aspect-ratio:auto!important;border-radius:0!important;visibility:hidden;pointer-events:none}
+@media(min-width:900px){
+ #rm.pl-hidden:not(.rm-compact) .rbody{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);gap:10px}
+ #rm.pl-hidden:not(.rm-compact) .vcol{overflow:visible}
+}
+@media(max-height:480px) and (orientation:landscape){
+ #rm.pl-hidden:not(.rm-compact) .rbody{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+}
+@media(prefers-reduced-motion:reduce){#rm .rshow{animation:none}}
+body.pl-pfs{overflow:hidden}
