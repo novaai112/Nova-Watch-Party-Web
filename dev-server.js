@@ -30,6 +30,7 @@ const xHandler = require('./api/x');
 const driveHandler = require('./api/drive');
 const twitchHandler = require('./api/twitch');
 const ageVerifyHandler = require('./api/age-verify');
+const linkPreviewHandler = require('./api/link-preview');
 let youtubeHandler = null;
 try {
   youtubeHandler = require('./api/youtube');
@@ -64,6 +65,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/drive') return await driveHandler(req, res);
     if (pathname === '/api/twitch') return await twitchHandler(req, res);
     if (pathname === '/api/age-verify') return await ageVerifyHandler(req, res);
+    if (pathname === '/api/link-preview') return await linkPreviewHandler(req, res);
     if (pathname === '/api/youtube' && youtubeHandler) return await youtubeHandler(req, res);
 
     let safePath = path.normalize(decodeURIComponent(pathname)).replace(/^(\.\.[/\\])+/, '');

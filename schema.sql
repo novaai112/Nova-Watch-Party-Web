@@ -199,7 +199,8 @@ create or replace view public.public_profiles as
 grant select on public.public_profiles to authenticated;
 
 -- Map: users with "Hide Location" ON never appear.
-create or replace view public.map_users as
+drop view if exists public.map_users;
+create view public.map_users as
   select id, full_name, username, avatar_url, location_lat, location_lng
   from public.profiles
   where coalesce((settings ->> 'hideLoc')::boolean, false) = false

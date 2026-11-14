@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Nova — My Account</title>
-<link rel="icon" href="7949.jpg" type="image/jpeg"><link rel="stylesheet" href="auth.css"><link rel="stylesheet" href="nova-location.css">
+<link rel="icon" href="7949.jpg" type="image/jpeg"><link rel="stylesheet" href="auth.css"><link rel="stylesheet" href="nova-location.css"><link rel="stylesheet" href="chat-pro.css?v=2">
 <meta name="theme-color" content="#f4f4f2">
 <script src="theme.js"></script>
 <script src="translator.js"></script>
@@ -437,6 +437,7 @@ const languageSearchTerms=(code,name)=>{const terms=[code,name,code.replace(/[-_
 
 /* views here: home, settings, language, privacy, policy, support, setup. The rest are in nova-profile.js */
 const V={
+u:name=>{(async()=>{const {data}=await sb.from('public_profiles').select('id').eq('username',decodeURIComponent(name||'').replace(/^@/,'')).maybeSingle();if(!data){Nova.toast('No Nova user found for that link','err');location.replace('#friends');return}location.replace(data.id===U.id?'#info':'#user/'+data.id)})();return shell('friends','<div class="card pad"><p>Opening profile…</p></div>')},
 home:()=>{const s=PD&&PD.stats||{videos:0,friends:0,hours:0};
  return shell('home',`<div class="mhero mo"><div class=cover></div><div class=mtop>${HOME?`<a class=pillb href="${esc(HOME)}">${ic('left',18)}${t('profile')}</a>`:`<span class="pillb nl">${t('profile')}</span>`}<button class=bell data-go=notifications aria-label="Notifications">${ic('bell',20)}${REQ.length?'<i></i>':''}</button></div></div>
 <div class="mid mo">${avtap(108)}<h2>${esc(P.full_name||'Your name')}</h2>${Nova.geo.line(Nova.geo.mask(P,Nova.S.hideLoc))}${isVer()?`<span class=vf>${ic('badge',15)}${t('verified')}</span>`:''}<span class=pl2>${PLAN.pro?'Pro Plan':'Free Plan'}</span></div>
@@ -630,7 +631,7 @@ const boot=async()=>{app.innerHTML=skel();
  try{await loadP()}catch(er){app.innerHTML='<div class="card pad"><p>We could not load your profile. Check your connection and try again.</p><button class="btn pri" onclick="location.reload()">Try again</button></div>';return}
  route()};
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',boot):boot();
-</script><script src="nova-profile.js"></script><script src="profile-embed.js"></script><script src="nova-chat.js?v=19"></script><script src="mobile-navigation.js?v=2"></script>
+</script><script src="nova-profile.js"></script><script src="profile-embed.js"></script><script src="nova-chat-rich.js?v=1"></script><script src="nova-chat-media.js?v=1"></script><script src="nova-chat-capture.js?v=1"></script><script src="nova-chat-picker.js?v=1"></script><script src="nova-chat.js?v=20"></script><script src="nova-chat-sheets.js?v=1"></script><script src="mobile-navigation.js?v=2"></script>
 <input type="file" id="avf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" hidden>
 <input type="file" id="gf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" multiple hidden>
 </body></html>

@@ -206,6 +206,42 @@ Turning **Hide Mature Content** off for the first time opens `age-verify.html`: 
 
 **Tests:** `node tests/liveness-engine.test.js`, `node tests/age-api.test.js`, and `node tests/e2e-age-verify.js` (Playwright, stubbed face model).
 
+## Nova Chat Pro (WhatsApp / Telegram / Instagram-style friend chat)
+
+The chat lives at `profile.html#chat` and keeps the site's existing look (left rail on desktop, full-screen on mobile, the original attachment popup with Unsplash / GIPHY / KLIPY, and the original recording bar). It is merged with the 18+ age-assurance system; the two do not overlap.
+
+### Install order (Supabase → SQL Editor)
+1. `schema.sql` (existing) → `chat-schema.sql` (existing base chat) → **`chat-pro-schema.sql`** (new, additive and re-runnable).
+2. Storage: the `chat-media` bucket and its policies are created by `chat-pro-schema.sql` (50 MB per file). If your project enforces a global upload limit, raise it under Storage → Settings to at least 50 MB.
+3. Optional server-side scheduler for scheduled messages: enable `pg_cron` and run the commented `cron.schedule(...)` block at the end of `chat-pro-schema.sql`. Without it, scheduled messages are sent by the sender's open app.
+4. Deploy `supabase/functions/chat-media-search` (existing) as before.
+5. Link previews call `/api/link-preview`. Set `SUPABASE_URL` and `SUPABASE_ANON_KEY` as Vercel environment variables (the function checks the caller's sign-in and blocks private/internal addresses).
+
+### What is included
+- **Conversations:** inbox with unread counts, pin (max 3), mute (8 h / 1 week / always), archive / unarchive, clear chat, delete chat, drafts that survive reloads and sync across devices, message requests (accept / reject / delete / block / report), groups.
+- **Messages:** sending → sent → delivered → read → failed + retry (IndexedDB outbox with backoff, idempotent via `client_id`), reply, edit (15 min), delete for me / for everyone (48 h), forward to up to 5 chats, reactions with customisable quick reactions, pin, translate, select-multiple, message info, scheduled messages, bold / italic / underline / strike / monospace, @mentions, #hashtags, link previews, date separators, unread divider, jump-to-latest, long-press / right-click menu, swipe-to-reply, double-tap to react.
+- **Realtime:** presence (online / last seen) with privacy, typing / recording / uploading indicators, live receipts and reactions, connection banner and automatic resync after offline.
+- **Media:** multi-photo send with preview, crop / rotate / draw / text / stickers, HD toggle and compression, view-once, camera photo + video, video messages (round), documents (PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, ZIP, TXT, CSV, audio, video) with upload progress, preview, download, share and retry, voice messages (hold, tap-to-lock, pause / resume, cancel, preview, waveform, 1× / 1.5× / 2×), full-screen viewer with swipe / pinch-zoom, profile-picture viewer.
+- **Search:** global (chats, people, messages) and in-conversation with filters (photos & videos, documents, links, voice, audio) and date range.
+- **Profiles:** QR code and shareable link (`profile.html#u/<username>`), scanner (BarcodeDetector where supported, paste fallback), block / unblock, report.
+- **Privacy:** last seen, online status, read receipts (reciprocal), typing indicators, who may send message requests, media auto-download rules.
+
+### Tests
+```
+node tests/chat-rich.test.js            # rich text, links, SSRF guard
+node tests/age-api.test.js              # existing age-verify tests
+npm i playwright && node tests/chat/e2e-core.js    # also e2e-screens.js, e2e-media.js, e2e-realtime.js
+```
+The browser tests run against an in-memory Supabase stand-in (`tests/chat/fake-sb.js`); they exercise the UI, not your database. Run `chat-pro-schema.sql` on a scratch project to verify policies.
+
+### Honest limits
+- No true background push (needs a service worker + VAPID keys); notifications appear while the site is open.
+- Uploads are single-request with progress (no resumable TUS); the limit is 50 MB per file.
+- Office preview covers DOCX and XLSX (via CDN libraries); other Office types download / open externally.
+- Typing/presence travel over Realtime broadcast channels that are not private; message content is protected by row-level security.
+- Translation uses the public MyMemory API (rate-limited) from the browser.
+- Voice transcripts use the browser's SpeechRecognition when available and are off by default.
+
 ## Watch-room playback (v3)
 
 **Setup:** re-run the latest `rooms-schema.sql` in the Supabase SQL editor (it is safe to re-run). It adds `room_playback_log`, `rooms.vote_seconds`, `rooms.next_id`, `room_queue.pos` and the functions `room_close_vote`, `room_queue_move`, `room_set_next`; `room_ended`, `room_skip`, `room_media_failed`, `room_advance` and `room_update` get new optional arguments.
@@ -227,3 +263,6 @@ Turning **Hide Mature Content** off for the first time opens `age-verify.html`: 
 - **Chat**: a back arrow sits left of the profile picture in the chat header and returns to the Friends page.
 - **+ button** stays on screen while Profile / Settings cover the Home column (hidden on Friends / chat, which have their own bottom bar). It closes the panel and opens the platform picker.
 - Tests: `node tests/e2e-dock-split.js` (needs `playwright` + Chromium).
+
+## Merged build
+This package combines **room-dock v9** (Watch-room dock, room cards, location, dock-aware Friends page) with **Nova Chat Pro** (full friend chat). Inside the dock, the chat thread header shows the room's left-panel icon and returns to Friends. Run the SQL in this order: `schema.sql` → `rooms-schema.sql` → `room-media-schema.sql` → `chat-schema.sql` → `chat-pro-schema.sql`.
