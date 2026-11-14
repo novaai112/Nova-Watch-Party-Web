@@ -27,6 +27,7 @@ const PATH = {
   x: '<path d="M18 6L6 18M6 6l12 12"/>',
   searchplay: '<circle cx="10.5" cy="10.5" r="7.5"/><path d="M21 21l-5.2-5.2"/><polygon points="9 7.5 13.5 10.5 9 13.5 9 7.5"/>',
   heart: '<path d="M12 21s-8-5.2-8-11a4.5 4.5 0 018-2.8A4.5 4.5 0 0120 10c0 5.8-8 11-8 11z"/>',
+  clap: '<rect x="3" y="9" width="18" height="12" rx="2.5"/><path d="M3 9l2.2-4.5h14.6L21 9M8.6 4.5 6.4 9M13.8 4.5 11.6 9M19 4.5 16.8 9"/><polygon points="10.5 13 15.2 15.5 10.5 18"/>',
   chev: '<path d="M6 9l6 6 6-6"/>',
   list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
   at: '<circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 006 0v-1a10 10 0 10-4 8"/>',
@@ -38,7 +39,9 @@ const PATH = {
   ghost: '<path d="M9 10h.01M15 10h.01"/><path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"/>',
   more: '<circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>',
   search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>',
-  trash: '<path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/>'
+  trash: '<path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/>',
+  up: '<path d="M18 15l-6-6-6 6"/>',
+  down: '<path d="M6 9l6 6 6-6"/>'
 };
 const ic = (n, s) => `<svg class="ic" width="${s || 22}" height="${s || 22}" viewBox="0 0 24 24" ${ST} aria-hidden="true">${PATH[n] || ''}</svg>`;
 
@@ -49,18 +52,36 @@ const PRIV = [
   ['invite', 'lock', 'Invite only', 'Only people with the invite link can join']
 ];
 const MODES = [
-  ['vote', 'check', "Let's vote", 'Voting occurs at the end of the video'],
-  ['play', 'play', 'Just play', 'Picked videos play right away'],
-  ['autoplay', 'ff', 'Autoplay', 'Videos play one after another'],
-  ['leader', 'crown', "Leader's choice", 'Only the admin picks videos']
+  ['vote', 'check', "Let's vote", 'Everyone votes; the most-voted video plays when this one ends'],
+  ['play', 'play', 'Just play', 'This video plays, then stops until the leader picks the next one'],
+  ['autoplay', 'ff', 'Autoplay', 'The next video in Up next plays by itself'],
+  ['leader', 'crown', "Leader's choice", 'Only the leader chooses what plays next']
 ];
+
+/* default videos so "More videos" / a vote is never empty (keep in sync with _room_defaults() in rooms-schema.sql) */
+const DEFAULTS = [
+  ['dQw4w9WgXcQ', 'Rick Astley - Never Gonna Give You Up'], ['9bZkp7q19f0', 'PSY - GANGNAM STYLE'],
+  ['kJQP7kiw5Fk', 'Luis Fonsi - Despacito ft. Daddy Yankee'], ['JGwWNGJdvx8', 'Ed Sheeran - Shape of You'],
+  ['fJ9rUzIMcZQ', 'Queen - Bohemian Rhapsody'], ['RgKAFK5djSk', 'Wiz Khalifa - See You Again ft. Charlie Puth'],
+  ['OPf0YbXqDm0', 'Mark Ronson - Uptown Funk ft. Bruno Mars'], ['YQHsXMglC9A', 'Adele - Hello']
+].map(d => ({ kind: 'youtube', provider: 'youtube', id: d[0], title: d[1] }));
+const mkey = m => m ? [m.kind, m.id || '', m.pl || '', String(m.url || '').split('#')[0]].join('|') : '';
+const PLAT = { youtube: 'YouTube', x: 'X', drive: 'Google Drive', twitch: 'Twitch', netflix: 'Netflix', prime: 'Prime Video', crunchyroll: 'Crunchyroll', web: 'Web', live: 'YouTube Live', playlist: 'YouTube', photos: 'Photos' };
+const YT_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="1" y="4.5" width="22" height="15" rx="4.2" fill="#f00"/><path d="M10 9v6l5.2-3z" fill="#fff"/></svg>';
+/* only the platform icon is shown on the video — never the platform's own title / share / watch-later bars */
+function platBadge(m, cls) {
+  if (!m) return '';
+  const key = m.kind === 'youtube' ? 'youtube' : (m.provider || m.kind || 'web'), src = (window.ICON || {})[key];
+  const name = PLAT[key] || (key.charAt(0).toUpperCase() + key.slice(1));
+  return `<span class="pbg ${cls || ''}" title="${esc(name)}" aria-label="${esc(name)}">${src ? `<img src="${src}" alt="">` : key === 'youtube' ? YT_SVG : ic('globe', 16)}</span>`;
+}
 
 /* ---------- state ---------- */
 let ME = null, R = null, members = [], queue = [], msgs = [], prof = {}, ch = null;
 let skew = 0, hbT = null, tickT = null, homeT = null, homeRooms = [], mountKey = '', advAt = 0, endedAt = 0, pubT = 0, pubAt = 0;
 let homeLoaded = false, homeLoading = false, homeLoadError = '', homeErrorNotified = '';
 let roomSchemaWarned = false;
-let ui = { sheet: '', tab: 'members', promptDone: false, vol: +(localStorage.getItem('nova_vol') || 50), friends: [], first: true, events: [], nowKeys: {} };
+let ui = { more: false, moreAuto: false, moreDismiss: '', voteSeen: false, sheet: '', tab: 'members', promptDone: false, vol: +(localStorage.getItem('nova_vol') || 50), friends: [], first: true, events: [], nowKeys: {} };
 const micMap = new Map(), speak = new Map(), vad = new Map();
 const mutedUsers = new Set();
 try {
@@ -209,8 +230,10 @@ async function refreshMembers() {
 }
 async function refreshQueue() {
   if (!R) return;
-  const { data } = await sb.from('room_queue').select('id,added_by,media,votes,created_at').eq('room_id', R.id).order('created_at');
-  queue = data || [];
+  let res = await sb.from('room_queue').select('id,added_by,media,votes,created_at,suggested,pos').eq('room_id', R.id).order('pos').order('created_at');
+  if (res.error) res = await sb.from('room_queue').select('id,added_by,media,votes,created_at,suggested').eq('room_id', R.id).order('created_at');
+  if (res.error) res = await sb.from('room_queue').select('id,added_by,media,votes,created_at').eq('room_id', R.id).order('created_at');
+  queue = res.data || [];
   await loadProfiles(queue.map(q => q.added_by));
   renderVote(); renderSheet(); renderBadges();
 }
@@ -364,7 +387,7 @@ function destroyPlayer() {
   try { if (P.yt) P.yt.destroy(); } catch (e) {}
   try { if (P.video && P.video._hls) P.video._hls.destroy(); } catch (e) {}
   P = freshP();
-  const w = $('#vwrap'); if (w) $$('#vwrap > *:not(#vgrid)').forEach(n => n.remove());
+  const w = $('#vwrap'); if (w) $$('#vwrap > *:not(#mv):not(#vcover):not(#vbadge)').forEach(n => n.remove());
 }
 function emptyHTML() {
   const can = isAdmin() || R.playback_mode !== 'leader';
@@ -381,7 +404,7 @@ async function mountMedia() {
   const m = R.media, adm = isAdmin();
   if (!m) { w.insertAdjacentHTML('afterbegin', emptyHTML()); renderControls(); renderNow(); return; }
   noteNow(m);
-  renderControls(); renderNow();
+  renderControls(); renderNow(); paintCover(); syncMore();
   if (m.kind === 'embed') {
     if (!safeHttps(m.url)) return;
     w.insertAdjacentHTML('afterbegin', `<iframe src="${esc(m.url)}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-forms"></iframe>`);
@@ -417,11 +440,12 @@ async function mountMedia() {
     ['play', 'pause', 'seeked'].forEach(ev => v.addEventListener(ev, () => { if (isAdmin() && Date.now() > P.mute) publish(!v.paused, v.currentTime); updateTimeUI(); }));
     v.addEventListener('ended', () => { if (isAdmin()) ended(); });
     v.addEventListener('loadedmetadata', () => { P.ready = true; pl.vol(); renderControls(); applyState(true); });
-    v.addEventListener('playing', hideTap);
+    v.addEventListener('playing', () => { P.started = true; hideTap(); paintCover(); });
     v.addEventListener('error', () => {
       if (key !== mountKey) return;
       if (v._retry && v._retry()) return;
       const c = v.error && v.error.code;
+      mediaFailed();
       toast('This video cannot be played' + (c ? ' (error ' + c + (c === 4 ? ': file not reachable or format unsupported' : c === 2 ? ': network' : '') + ')' : ''), 'err');
     });
     w.insertAdjacentElement('afterbegin', v);
@@ -435,11 +459,11 @@ async function mountMedia() {
   const box = document.createElement('div'); box.className = 'ytbox'; box.innerHTML = '<div id="ytp"></div>';
   w.insertAdjacentElement('afterbegin', box);
   if (!adm) w.insertAdjacentHTML('beforeend', '<div class="shield"></div>');
-  const vars = { autoplay: 0, controls: adm ? 1 : 0, rel: 0, playsinline: 1, modestbranding: 1, disablekb: adm ? 0 : 1, iv_load_policy: 3, fs: 1 };
+  const vars = { autoplay: 0, controls: 0, rel: 0, playsinline: 1, modestbranding: 1, disablekb: 1, iv_load_policy: 3, fs: 0, cc_load_policy: 0 };
   if (m.pl && !m.id) { vars.listType = 'playlist'; vars.list = m.pl; }
   else if (m.pl) vars.list = m.pl;
   if (/^https?:$/.test(location.protocol)) vars.origin = location.origin;
-  P.kind = 'yt';
+  P.kind = 'yt'; fitYT();
   P.yt = new YT.Player('ytp', {
     videoId: m.id || undefined, playerVars: vars,
     events: {
@@ -447,12 +471,13 @@ async function mountMedia() {
       onStateChange: e => {
         const s = e.data;
         if ((s === 1 || s === 2) && isAdmin() && Date.now() > P.mute) publish(s === 1, pl.time());
-        if (s === 1) hideTap();
+        if (s === 1) { P.started = true; hideTap(); }
+        paintCover(); paintState();
         if (s === 0 && isAdmin()) ended();
         updateTimeUI();
       },
       onAutoplayBlocked: showTap,
-      onError: () => toast('This video cannot be played in an embed' + (isAdmin() ? ' — skip it or pick another.' : '.'), 'err')
+      onError: () => { toast('This video cannot be played' + (isAdmin() ? ' — moving on.' : '.'), 'err'); mediaFailed(); }
     }
   });
 }
@@ -497,7 +522,7 @@ function publish(playing, pos) {
 function ended() {
   if (Date.now() - endedAt < 4000) return;
   endedAt = Date.now();
-  rpc('room_ended', { p_room: R.id }).catch(() => {});
+  rpc('room_ended', { p_room: R.id, p_ver: R.media_ver }).catch(() => {});
 }
 function onTick() {
   if (!R) return;
@@ -507,12 +532,13 @@ function onTick() {
   micMap.forEach((v, id) => { if (v.on && Date.now() - v.ts > 11000 && !speak.get(id)) { micMap.delete(id); gone_ = true; } });
   if (gone_) renderVoice();
   const s = R.play_state || {};
+  fitYT(); paintCover(); tickMore(); paintState();
   if (s.vote_until) {
     renderHead();
     const late = snow() - s.vote_until;
     if (((isAdmin() && late > 0) || late > 3500) && Date.now() - advAt > 5000) {
       advAt = Date.now();
-      rpc('room_advance', { p_room: R.id }).catch(() => {});
+      rpc('room_advance', { p_room: R.id, p_ver: R.media_ver }).catch(() => {});
     }
   }
   if (!P.ready || P.kind === 'embed' || !R.media) return;
@@ -775,14 +801,14 @@ function renderHead() {
   $('#rcount').textContent = members.length || 1;
   const mid = $('#rmid');
   const activeMic = R.voice_enabled ? members.map(m => m.user_id).filter(micOf) : [];
-  const timer = votingNow() ? `<div class="cd" style="--p:${Math.min(100, Math.max(0, (R.play_state.vote_until - snow()) / 120))}%"><span>${Math.ceil(Math.max(0, (R.play_state.vote_until - snow()) / 1000))}</span></div>` : '';
+  const timer = votingNow() ? `<div class="cd" style="--p:${Math.min(100, Math.max(0, (R.play_state.vote_until - snow()) / (R.play_state.vote_ms || 12000) * 100))}%"><span>${Math.ceil(Math.max(0, (R.play_state.vote_until - snow()) / 1000))}</span></div>` : '';
   if (activeMic.length) {
     mid.innerHTML = `${timer}<div class="mic-header" aria-label="Members on microphone">${activeMic.map(id => userAvatar(who(id), 36, true)).join('')}</div>`;
     return;
   }
   if (votingNow()) {
     const left = Math.max(0, (R.play_state.vote_until - snow()) / 1000);
-    mid.innerHTML = `<div class="cd" style="--p:${Math.min(100, left / 12 * 100)}%"><span>${Math.ceil(left)}</span></div>`;
+    mid.innerHTML = `<div class="cd" style="--p:${Math.min(100, left * 1000 / (R.play_state.vote_ms || 12000) * 100)}%"><span>${Math.ceil(left)}</span></div>`;
   } else if (!mid.querySelector('.brand')) mid.innerHTML = '<div class="brand">nova</div>';
 }
 function renderBadges() { /* queue count lives in the People sheet (Up next tab) */ }
@@ -827,11 +853,11 @@ function renderControls() {
   const el = $('#ctl'); if (!el) return;
   const m = R.media;
   if (!m) { el.innerHTML = ''; return; }
-  if (m.kind === 'embed') { el.innerHTML = '<span class="hint">Everyone opens the same page. This source cannot be time-synced.</span>'; return; }
+  if (m.kind === 'embed') { el.innerHTML = '<span class="hint">Everyone opens the same page. This source cannot be time-synced.</span>' + moreBtn(); return; }
   const adm = isAdmin();
   el.innerHTML = `${adm ? `<button class="cb" data-r="back" aria-label="Back 10 seconds">−10</button><button class="cb" data-r="toggle" id="ptog" aria-label="Play or pause">${ic('play', 18)}</button><button class="cb" data-r="fwd" aria-label="Forward 10 seconds">+10</button>` : `<span class="cb" title="Only the admin controls playback">${ic('lock', 16)}</span>`}
     <span class="t" id="tcur">0:00</span><input type="range" id="seek" min="0" max="1000" value="0" ${adm ? '' : 'disabled'} aria-label="Position"><span class="t" id="tdur">0:00</span>
-    ${adm ? `<button class="cb" data-r="skip" aria-label="Next video">${ic('skip', 18)}</button>` : ''}`;
+    ${moreBtn()}${adm ? `<button class="cb" data-r="skip" aria-label="Next video">${ic('skip', 18)}</button>` : ''}`;
 }
 function updateTimeUI() {
   if (!R || !$('#seek') || !P.ready) return;
@@ -854,6 +880,7 @@ function openSettings(refresh) {
     ${adm ? '' : '<p class="mnote">Only the room admin can change these settings.</p>'}
     ${group('Privacy', pv[3], PRIV.map(p => optBtn('privacy:' + p[0], p[1], p[2], p[0] === R.privacy, !adm)).join(''))}
     ${group('Playback', md[3], MODES.map(p => optBtn('mode:' + p[0], p[1], p[2], p[0] === R.playback_mode, !adm)).join(''))}
+    ${R.playback_mode === 'vote' ? group('Voting time', 'How long the vote stays open when a video ends', [12, 20, 30, 60].map(n => optBtn('votesec:' + n, 'check', n + ' s', (R.vote_seconds || 12) === n, !adm)).join('')) : ''}
     <section class="sg row"><span class="sgi">${ic(R.voice_enabled ? 'mic' : 'micoff', 18)}</span><div class="sgh"><b>Voice chat</b><small>${R.voice_enabled ? (R.privacy === 'public' ? 'Everyone can talk and listen' : 'Only admin-approved members can talk') : 'Microphones are off for everyone'}</small></div><input type="checkbox" class="sw" id="voicesw" ${R.voice_enabled ? 'checked' : ''} ${adm ? '' : 'disabled'} aria-label="Voice chat"></section>
     <section class="sg"><div class="sgh"><b>Volume</b><small>Balance between the video and voices</small></div><div class="vol">${ic('vol', 18)}<input type="range" id="volr" min="0" max="100" value="${ui.vol}" aria-label="Video and voice balance">${ic('phone', 18)}</div></section>
     <section class="sg row"><span class="sgi">${ic('globe', 18)}</span><div class="sgh"><b>Auto-translate chat</b><small>Translate messages into your language</small></div><input type="checkbox" class="sw" id="trsw" ${Nova.S.translate ? 'checked' : ''} aria-label="Auto-translate chat"></section>`;
@@ -865,17 +892,189 @@ function renderSettings() {
   openSettings(true);
 }
 
-function thumbCell(q) {
-  const t = thumb(q.media), v = (q.votes || []).length, mine = (q.votes || []).includes(ME.id);
-  return `<button class="vi${mine ? ' mine' : ''}" style="background-image:url('${esc(t)}')" data-r="vote" data-id="${q.id}"><b>${ic('heart', 12)} ${v}</b><span>${esc(q.media.title || 'Video')}</span></button>`;
+/* =====================================================================
+   MORE VIDEOS (overlay on the video) · cover · platform badge
+   ===================================================================== */
+const canMore = () => !!R && (isAdmin() || R.playback_mode !== 'leader');
+function moreBtn() {
+  const ok = canMore(), t = ok ? 'More videos' : "Only the leader can choose videos in Leader's choice";
+  return `<button class="cb${ui.more ? ' on' : ''}${ok ? '' : ' dis'}" id="morebtn" data-r="more" aria-label="${t}" title="${t}" aria-pressed="${ui.more ? 'true' : 'false'}" ${ok ? '' : 'aria-disabled="true"'}>${ic('clap', 22)}</button>`;
 }
-function renderVote() {
+function renderMoreBtn() {
+  const b = $('#morebtn'); if (!b) return;
+  const ok = canMore();
+  b.classList.toggle('dis', !ok); b.classList.toggle('on', ui.more);
+  b.setAttribute('aria-pressed', ui.more ? 'true' : 'false');
+  b.title = ok ? 'More videos' : "Only the leader can choose videos in Leader's choice";
+}
+function toggleMore() {
+  if (!canMore()) return toast("Only the leader can choose videos in Leader's choice");
+  if (ui.more) return closeMore();
+  ui.more = true; ui.moreAuto = false; paintMore(true);
+}
+function closeMore() { ui.more = false; ui.moreAuto = false; ui.moreDismiss = String(((R && R.play_state) || {}).seq || 0); paintMore(); }
+const mvLeaders = () => {
+  const mx = queue.reduce((a, q) => Math.max(a, (q.votes || []).length), 0);
+  return { mx, ties: queue.filter(q => (q.votes || []).length === mx).length };
+};
+function moreList() {
+  const vote = R.playback_mode === 'vote', cur = R.media ? mkey(R.media) : '', have = new Set(queue.map(q => mkey(q.media)));
+  let list = queue.map(q => ({ q, id: q.id, media: q.media, votes: (q.votes || []).length, mine: (q.votes || []).includes(ME.id), next: !!R.next_id && R.next_id === q.id, by: q.suggested ? 'Suggested' : 'Added by ' + (q.added_by === ME.id ? 'you' : nm(who(q.added_by))) }));
+  if (vote) list.sort((a, b) => b.votes - a.votes);
+  DEFAULTS.forEach(m => { if (!have.has(mkey(m)) && mkey(m) !== cur) list.push({ q: null, id: null, media: m, votes: 0, mine: false, by: 'Suggested' }); });
+  return list;
+}
+function moreHead() {
+  const s = R.play_state || {}, md = R.playback_mode, vu = s.vote_until, left = vu ? Math.max(0, Math.ceil((vu - snow()) / 1000)) : 0;
+  const over = !!R.media && !!s.ended, adm = isAdmin();
+  if (md === 'vote') {
+    if (vu) {
+      if (left > 0) return ['Vote for the next video', 'One vote each · tap another to move it · tap yours to withdraw', left + 's'];
+      const { mx, ties } = mvLeaders();
+      return (mx === 0 || ties > 1) ? ['Tie — the leader picks', adm ? 'Tap a video to play it' : 'Waiting for the leader', ''] : ['Counting votes…', '', ''];
+    }
+    if (over) return ['No videos to vote on yet', 'Add a video to continue', ''];
+    return ['Vote for the next video', 'Voting closes when this video ends · one vote each', ''];
+  }
+  if (md === 'play') return ['More videos', adm ? (over ? 'Tap a video to play it' : 'Tap a video to play it now') : 'Tap to add it to Up next · the leader picks what plays next', ''];
+  if (md === 'autoplay') return ['Up next', 'Videos play in this order · tap to add to the end', ''];
+  return ["Leader's choice", over ? 'Tap a video to play it' : 'Tap a video to play it next · tap it again to clear', ''];
+}
+function paintMore(scrollTop) {
   const w = $('#vwrap'); if (!w) return;
-  let g = $('#vgrid');
-  if (!votingNow()) { if (g) g.remove(); return; }
-  if (!g) { g = document.createElement('div'); g.id = 'vgrid'; g.className = 'vgrid'; w.appendChild(g); }
-  const list = queue.slice().sort((a, b) => (b.votes || []).length - (a.votes || []).length);
-  g.innerHTML = list.length ? list.map(thumbCell).join('') : '<p class="em">No suggestions</p>';
+  let o = $('#mv');
+  if (!ui.more || !R) { if (o) o.remove(); renderMoreBtn(); return; }
+  if (!o) { o = document.createElement('div'); o.id = 'mv'; o.className = 'mv'; w.appendChild(o); }
+  const old = $('#mvrow'), keep = old && !scrollTop ? old.scrollLeft : 0;
+  ui.moreList = moreList();
+  const vote = R.playback_mode === 'vote', [t, sub, tm] = moreHead(), top = vote ? Math.max(0, ...ui.moreList.map(x => x.votes)) : 0;
+  const endable = vote && isAdmin() && !!(R.play_state || {}).vote_until && (R.play_state.vote_until - snow()) > 0;
+  o.innerHTML = `<div class="mvh"><div class="mvt"><b>${esc(t)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</div>${tm ? `<span class="mvtm">${tm}</span>` : ''}${endable ? `<button class="mvend" data-r="closevote">End vote</button>` : ''}<button class="mvx" data-r="moreclose" aria-label="Close">${ic('x', 22)}</button></div>
+    <div class="mvw"><button class="mvn l" data-r="mvscroll" data-d="-1" aria-label="Scroll left">‹</button><div class="mvrow" id="mvrow">${ui.moreList.map((x, i) => `<button class="mvc${x.mine ? ' mine' : ''}${vote && top > 0 && x.votes === top ? ' lead' : ''}" data-r="mv" data-i="${i}">
+      <span class="mvth" style="background-image:url('${esc(thumb(x.media))}')">${platBadge(x.media, 'sm')}${vote ? `<b class="mvv">${ic('heart', 12)} ${x.votes}</b>` : ''}${x.mine ? '<em>Your vote</em>' : x.next ? '<em>Next</em>' : ''}</span>
+      <strong>${esc(x.media.title || 'Video')}</strong><small>${esc(x.by)}</small></button>`).join('')}</div><button class="mvn r" data-r="mvscroll" data-d="1" aria-label="Scroll right">›</button></div>`;
+  const row = $('#mvrow'); if (row && keep) row.scrollLeft = keep;
+  renderMoreBtn();
+}
+function tickMore() {
+  const o = $('#mv'); if (!o || !R) return;
+  const vu = (R.play_state || {}).vote_until; if (!vu) return;
+  const tm = $('.mvtm', o), left = Math.max(0, Math.ceil((vu - snow()) / 1000));
+  if (tm) tm.textContent = left > 0 ? left + 's' : '';
+  const h = moreHead(), b = $('.mvt b', o); if (b && b.textContent !== h[0]) paintMore();
+}
+/* open by itself when a decision is needed (vote started / leader must pick), close when the next video starts */
+function syncMore() {
+  if (!R || !$('#vwrap')) return;
+  const s = R.play_state || {}, md = R.playback_mode, ended = !!R.media && !!s.ended;
+  if (votingNow() && md === 'vote') ui.voteSeen = true;
+  paintState();
+  const need = (votingNow() && md === 'vote') || (ended && isAdmin() && (md === 'play' || md === 'leader')) || (ended && md === 'vote' && !s.vote_until);
+  if (need) { if (!ui.more && String(s.seq || 0) !== ui.moreDismiss) { ui.more = true; ui.moreAuto = true; } }
+  else if (ui.more && ui.moreAuto) { ui.more = false; ui.moreAuto = false; }
+  if (ui.more && !canMore()) { ui.more = false; ui.moreAuto = false; }
+  paintMore(); paintCover(); renderMoreBtn();
+}
+const renderVote = syncMore;
+async function tapMore(i) {
+  const x = (ui.moreList || [])[i]; if (!x || !R) return;
+  const md = R.playback_mode, adm = isAdmin(), s = R.play_state || {}, playing = !!R.media && !s.ended, title = x.media.title || 'this video';
+  try {
+    if (md === 'vote') {
+      const closed = s.vote_until && snow() > s.vote_until;
+      if (closed && adm && (mvLeaders().mx === 0 || mvLeaders().ties > 1)) {          // tie / no votes: the leader decides
+        if (x.q) await rpc('room_advance', { p_room: R.id, p_queue_id: x.id, p_ver: R.media_ver }); else await rpc('room_pick', { p_room: R.id, p_media: x.media, p_now: true });
+        await refreshRoom(); renderAll(); mountMedia(); return;
+      }
+      if (x.q) await rpc('room_vote', { p_queue_id: x.id });                           // ONE vote: moves / withdraws
+      else { await rpc('room_pick', { p_room: R.id, p_media: x.media, p_now: false }); toast('Added — your vote is on it'); await refreshRoom(); mountMedia(); }
+      await refreshQueue(); return;
+    }
+    if (md === 'leader') {                                                            // only the leader gets here
+      if (playing) {                                                                  // choose / change / clear the next video
+        if (x.q) await rpc('room_set_next', { p_room: R.id, p_queue_id: x.id });
+        else await rpc('room_pick', { p_room: R.id, p_media: x.media, p_now: false });
+        toast(x.next ? 'Next video cleared' : 'Next: ' + title);
+        await refreshRoom(); await refreshQueue(); paintMore(); return;
+      }
+      if (x.q) await rpc('room_advance', { p_room: R.id, p_queue_id: x.id, p_ver: R.media_ver }); else await rpc('room_pick', { p_room: R.id, p_media: x.media, p_now: true });
+      closeMore(); await refreshRoom(); renderAll(); mountMedia(); return;
+    }
+    if (adm) {
+      if (playing && !confirm('Play “' + title + '” now? This stops the current video.')) return;
+      if (x.q) await rpc('room_advance', { p_room: R.id, p_queue_id: x.id, p_ver: R.media_ver }); else await rpc('room_pick', { p_room: R.id, p_media: x.media, p_now: true });
+      closeMore(); await refreshRoom(); renderAll(); mountMedia(); return;
+    }
+    if (!x.q) { await rpc('room_pick', { p_room: R.id, p_media: x.media, p_now: false }); toast('Added to Up next'); await refreshQueue(); return; }
+    toast(md === 'autoplay' ? 'Videos play in queue order' : 'Only the leader plays the next video');
+  } catch (e) { oops(e); refreshQueue(); }
+}
+async function endVote() {
+  if (!isAdmin() || !R) return;
+  try { await rpc('room_close_vote', { p_room: R.id, p_ver: R.media_ver }); await refreshRoom(); await refreshQueue(); renderAll(); mountMedia(); }
+  catch (e) { oops(e); }
+}
+function coverMsg() {
+  const md = R.playback_mode, adm = isAdmin(), s = R.play_state || {};
+  const err = s.error ? "This video couldn't be played. " : '';
+  if (md === 'vote') return s.vote_until ? 'Choose the next video' : err + 'No videos to vote on yet — add one';
+  if (md === 'autoplay') return queue.length ? 'Playing the next video…' : err + 'No more videos in the queue';
+  if (md === 'leader') return err + (adm ? 'Choose the next video' : "Waiting for the leader's choice");
+  return err + (adm ? 'Video finished — pick the next one' : 'Video finished — waiting for the leader');
+}
+/* =====================================================================
+   PLAYBACK STATE MACHINE — the server keeps the phase in rooms.play_state.phase (set inside the same locked
+   transaction that changes the video); the browser only adds the short LOADING step. Shown as data-pstate on #rm.
+     IDLE → PLAYING ⇄ PAUSED → VIDEO_ENDED → (VOTING | WAITING_FOR_SELECTION | WAITING_FOR_LEADER | QUEUE_EMPTY | PLAYBACK_ERROR)
+          → NEXT_VIDEO_SELECTED → LOADING_NEXT_VIDEO → PLAYING
+   ===================================================================== */
+function stateName() {
+  if (!R || !R.media) return 'IDLE';
+  const s = R.play_state || {};
+  if (s.ended) {
+    if (s.vote_until) return 'VOTING';
+    return s.phase && !/^(PLAYING|PAUSED|IDLE)$/.test(s.phase) ? s.phase : 'VIDEO_ENDED';
+  }
+  if (!P.started && P.kind !== 'embed') return 'LOADING_NEXT_VIDEO';
+  return s.playing ? 'PLAYING' : 'PAUSED';
+}
+function paintState() {
+  const rm = $('#rm'); if (!rm || !R) return;
+  const st = stateName();
+  if (rm.dataset.pstate !== st) rm.dataset.pstate = st;
+  rm.dataset.nextSelected = R.next_id ? '1' : '';
+}
+function paintCover() {
+  const w = $('#vwrap'); if (!w || !R) return;
+  let c = $('#vcover'), b = $('#vbadge');
+  const m = R.media, s = R.play_state || {};
+  if (!m) { if (c) c.remove(); if (b) b.remove(); return; }
+  const bk = (m.provider || m.kind) + '|' + m.kind;
+  if (!b || b.dataset.k !== bk) { if (b) b.remove(); w.insertAdjacentHTML('beforeend', platBadge(m, 'main').replace('class="pbg', 'id="vbadge" data-k="' + esc(bk) + '" class="pbg')); }
+  const ended = !!s.ended, wait = !ended && !P.started && P.kind !== 'embed';
+  /* paused: YouTube draws its own "More videos" / title panel over a paused frame, so a paused frame is replaced by our own cover */
+  const paused = !ended && !wait && P.kind === 'yt' && s.playing === false;
+  if (!ended && !wait && !paused) { if (c) c.remove(); return; }
+  const msg = ended ? coverMsg() : '', can = canMore(), key = [thumb(m), msg, can, ui.more, paused ? 'p' : ''].join('|');
+  if (!c) { c = document.createElement('div'); c.id = 'vcover'; c.className = 'vcover'; w.appendChild(c); }
+  if (c.dataset.k === key) return;
+  c.dataset.k = key;
+  c.classList.toggle('paused', paused);
+  if (paused) { c.innerHTML = `<div class="cbg" style="background-image:url('${esc(thumb(m))}')"></div><span class="pz" aria-label="Paused">${ic('pause', 26)}</span>`; return; }
+  c.innerHTML = `<div class="cbg" style="background-image:url('${esc(thumb(m))}')"></div>${ended ? `<b>${esc(msg)}</b><div class="cbt">${can ? `<button class="pill" data-r="more">${ic('clap', 18)}More videos</button>` : ''}<button class="pill alt" data-r="add">${ic('searchplay', 18)}Add video</button></div>` : '<i class="spin" aria-hidden="true"></i>'}`;
+  if (R.playback_mode === 'leader' && !isAdmin()) { const a = $('.pill.alt', c); if (a) a.remove(); }
+}
+function fitYT() {
+  const w = $('#vwrap'), b = $('.ytbox'); if (!w || !b) return;
+  const W = w.clientWidth, H = w.clientHeight; if (!W || !H) return;
+  const bw = Math.min(W, Math.round(H * 16 / 9));
+  Object.assign(b.style, { left: Math.round((W - bw) / 2) + 'px', width: bw + 'px', top: '-72px', height: (H + 144) + 'px' });
+}
+let mediaFailT = 0;
+function mediaFailed() {
+  if (!R || !isAdmin() || P.failed || Date.now() - mediaFailT < 3000) return;
+  P.failed = true; mediaFailT = Date.now();
+  rpc('room_media_failed', { p_room: R.id, p_ver: R.media_ver }).catch(() => {});
 }
 
 /* chat feed */
@@ -893,7 +1092,10 @@ function msgHTML(m) {
 function noteNow(m) {
   const key = [m.kind, m.id || '', m.pl || '', m.url || '', R.media_ver || ''].join('|');
   if (ui.nowKeys[key]) return;
+  const first = !Object.keys(ui.nowKeys).length;   // entering a room is not a vote result
   ui.nowKeys[key] = 1;
+  if (!first && ui.voteSeen && R.playback_mode === 'vote') toast('Winner: ' + (m.title || 'Video'));   // the vote closed and its winner is starting
+  ui.voteSeen = false;
   ui.events.push({ t: snow(), title: m.title || 'Video', th: thumb(m), kind: m.kind, media: Object.assign({}, m) });
   if (ui.events.length > 40) ui.events.shift();
   renderFeed();
@@ -961,11 +1163,14 @@ function openPeople(refresh) {
     return `<div class="li">${userAvatar(u, 42, micOf(m.user_id))}<div><b>${esc(nm(u))}</b>${isA ? ' <span class="crownb">' + ic('crown', 15) + '</span>' : ''}${me ? ' (you)' : ''}${micOf(m.user_id) ? ' <span class="micon" data-vu="' + m.user_id + '">' + ic('mic', 14) + '</span>' : ''}<small>@${esc(u.username || '')}</small>${Nova.geo ? Nova.geo.line(u, { cls: 'sm left' }) : ''}</div>
       ${adm && !me ? `${R.privacy !== 'public' ? `<button class="cb${m.mic_allowed ? ' on' : ''}" data-r="member-mic" data-id="${esc(m.user_id)}" data-on="${m.mic_allowed ? 'false' : 'true'}" title="${m.mic_allowed ? 'Disable microphone' : 'Enable microphone'}" aria-label="${m.mic_allowed ? 'Disable microphone' : 'Enable microphone'}">${ic(m.mic_allowed ? 'mic' : 'micoff', 17)}</button>` : ''}<button class="cb crownb" data-r="transfer" data-id="${esc(m.user_id)}" title="Make admin" aria-label="Make admin">${ic('crown', 18)}</button><button class="cb" data-r="kick" data-id="${esc(m.user_id)}" title="Kick from room" aria-label="Kick from room">${ic('x', 18)}</button>` : ''}</div>`;
   }).join('');
-  const sorted = queue.slice().sort((a, b) => (b.votes || []).length - (a.votes || []).length);
-  const que = sorted.length ? sorted.map(q => {
-    const v = (q.votes || []).length, mine = (q.votes || []).includes(ME.id);
-    return `<div class="li"><img class="th" src="${esc(thumb(q.media))}" alt=""><div><b>${esc(q.media.title || 'Video')}</b><small>Added by ${esc(nm(who(q.added_by)))}</small></div>
-      <button class="cb${mine ? ' on' : ''}" data-r="vote" data-id="${q.id}" aria-label="Vote">${ic('heart', 16)} ${v}</button>
+  const vote = R.playback_mode === 'vote', lead = R.playback_mode === 'leader';
+  const sorted = vote ? queue.slice().sort((a, b) => (b.votes || []).length - (a.votes || []).length) : queue.slice();
+  const que = sorted.length ? sorted.map((q, i) => {
+    const v = (q.votes || []).length, mine = (q.votes || []).includes(ME.id), isNext = lead && R.next_id === q.id;
+    return `<div class="li"><img class="th" src="${esc(thumb(q.media))}" alt=""><div><b>${esc(q.media.title || 'Video')}</b><small>${isNext ? 'Next · ' : ''}${q.suggested ? 'Suggested' : 'Added by ' + esc(nm(who(q.added_by)))}</small></div>
+      ${vote ? `<button class="cb${mine ? ' on' : ''}" data-r="vote" data-id="${q.id}" aria-label="Vote">${ic('heart', 16)} ${v}</button>` : ''}
+      ${adm && !vote ? `<button class="cb" data-r="qmove" data-d="-1" data-id="${q.id}" aria-label="Move up" ${i === 0 ? 'disabled' : ''}>${ic('up', 16)}</button><button class="cb" data-r="qmove" data-d="1" data-id="${q.id}" aria-label="Move down" ${i === sorted.length - 1 ? 'disabled' : ''}>${ic('down', 16)}</button>` : ''}
+      ${adm && lead ? `<button class="cb${isNext ? ' on' : ''}" data-r="setnext" data-id="${q.id}" aria-label="Play next">${ic('check', 16)}</button>` : ''}
       ${adm ? `<button class="cb" data-r="playq" data-id="${q.id}" aria-label="Play now">${ic('play', 16)}</button>` : ''}
       ${adm || q.added_by === ME.id ? `<button class="cb" data-r="rmq" data-id="${q.id}" aria-label="Remove">${ic('trash', 16)}</button>` : ''}</div>`;
   }).join('') : '<p class="em">Nothing queued yet. Tap the search button at the top to add videos.</p>';
@@ -1098,6 +1303,7 @@ async function setOpt(v) {
     }
     ui.promptDone = true; try { sessionStorage.setItem('nova_pd_' + R.id, '1'); } catch (e) {}
   } else if (k === 'mode') a.p_mode = val;
+  else if (k === 'votesec') a.p_vote_seconds = +val;
   else if (k === 'voice') a.p_voice = val === 'on';
   try { R = Object.assign({}, R, await rpc('room_update', a)); if (ui.sheet !== 'settings') closeSheet(); renderAll(); voiceSync(); } catch (e) { oops(e); }
 }
@@ -1151,8 +1357,7 @@ function onClick(e) {
   else if (r === 'toggle' && isAdmin()) { if (pl.playing()) { pl.pause(); publish(false, pl.time()); } else { pl.play(); publish(true, pl.time()); } updateTimeUI(); }
   else if ((r === 'back' || r === 'fwd') && isAdmin()) { const t = Math.max(0, pl.time() + (r === 'back' ? -10 : 10)); pl.seek(t); publish(pl.playing(), t); }
   else if (r === 'skip' && isAdmin()) {
-    if (!queue.length) return toast('Nothing in Up next');
-    rpc('room_advance', { p_room: R.id }).catch(oops);
+    rpc('room_skip', { p_room: R.id, p_ver: R.media_ver }).catch(oops);
   }
   else if (r === 'like') {
     const event = d.eventIndex == null ? null : ui.events[Number(d.eventIndex)];
@@ -1163,7 +1368,14 @@ function onClick(e) {
     }
   }
   else if (r === 'vote') rpc('room_vote', { p_queue_id: d.id }).then(refreshQueue).catch(oops);
-  else if (r === 'playq') rpc('room_advance', { p_room: R.id, p_queue_id: d.id }).then(() => closeSheet()).catch(oops);
+  else if (r === 'more') toggleMore();
+  else if (r === 'moreclose') closeMore();
+  else if (r === 'closevote') endVote();
+  else if (r === 'qmove') rpc('room_queue_move', { p_queue_id: d.id, p_dir: Number(d.d) }).then(refreshQueue).catch(oops);
+  else if (r === 'setnext') rpc('room_set_next', { p_room: R.id, p_queue_id: d.id }).then(() => refreshRoom().then(() => { renderSheet(); paintMore(); })).catch(oops);
+  else if (r === 'mv') tapMore(Number(d.i));
+  else if (r === 'mvscroll') { const row = $('#mvrow'); if (row) row.scrollBy({ left: Number(d.d) * Math.max(160, row.clientWidth * .8), behavior: 'smooth' }); }
+  else if (r === 'playq') rpc('room_advance', { p_room: R.id, p_queue_id: d.id, p_ver: R.media_ver }).then(() => closeSheet()).catch(oops);
   else if (r === 'rmq') rpc('room_queue_remove', { p_queue_id: d.id }).then(refreshQueue).catch(oops);
   else if (r === 'transfer') {
     const u = who(d.id);
@@ -1264,7 +1476,7 @@ function card(r) {
   const av = (r.members || []).slice(0, 4).map(u => userAvatar(u, 30, false, u.id === r.admin_id)).join('');
   const more = Math.max(0, (r.count || 0) - 4);
   return `<div class="room${r.invited ? ' inv' : ''}" role="button" tabindex="0" data-code="${esc(r.code)}" data-rid="${esc(r.id)}">
-    <div class="cover">${thumb(m) ? `<img src="${esc(thumb(m))}" alt="" loading="lazy" decoding="async">` : ''}<span class="pv">${ic(pv, 16)}</span></div>
+    <div class="cover">${thumb(m) ? `<img src="${esc(thumb(m))}" alt="" loading="lazy" decoding="async">` : ''}<span class="pv">${ic(pv, 16)}</span>${platBadge(m, 'card')}</div>
     <div class="info"><b class="rt">${esc((m && m.title) || r.title)}</b><div class="avs">${av}${more ? `<em>+${more}</em>` : ''}</div></div>
     ${pct ? `<i class="prog" style="width:${pct * .62}%"></i>` : ''}</div>`;
 }
@@ -1409,13 +1621,15 @@ function livePos(r) {
 }
 const roomApi = {
   rooms: () => homeRooms, byId: id => homeRooms.find(r => r.id === id) || null,
-  previewSource, livePos, now: snow, attachSrc, thumb, fmt, PRIV, ic,
+  previewSource, livePos, now: snow, attachSrc, thumb, fmt, PRIV, ic, platBadge,
   reload: () => loadHome(),
   dismiss: id => rpc('room_dismiss', { p_room: id }),
   reportVideo: (id, reason, details) => rpc('room_report_video', { p_room: id, p_reason: reason, p_details: details || '' }),
   toast, oops, inRoom: () => !!R
 };
-window.NovaRoom = { handle, ctx, renderHome, active: () => !!R, ready: true, api: roomApi };
+/* sync(): re-read the room + Up next and repaint (used by tests and as a manual re-sync) */
+async function sync() { if (!R) return; await refreshRoom(); await refreshQueue(); renderAll(); await mountMedia(); }
+window.NovaRoom = { handle, ctx, renderHome, active: () => !!R, ready: true, api: roomApi, sync, state: stateName };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 

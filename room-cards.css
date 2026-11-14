@@ -3,7 +3,11 @@
 /* ---------- cards: no native callout / text selection while pressing ---------- */
 .room{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;transition:box-shadow .18s ease,border-color .18s ease}
 .room .cover{min-height:86px}
-.room .avs .uav{pointer-events:auto}
+.room .avs .uav{position:relative;display:inline-grid;place-items:center;flex:none;width:34px!important;height:34px!important;padding:2px;margin:0 -6px 0 0;
+ border:0;border-radius:50%;background:transparent;box-shadow:none;line-height:0;-webkit-appearance:none;appearance:none;pointer-events:auto;cursor:pointer}   /* no grey button box behind the avatar */
+.room .avs .uav .avt{display:block;width:30px!important;height:30px!important;margin:0!important;border:2px solid #fff;border-radius:50%;box-sizing:border-box}
+.room .avs .uav.host{background:conic-gradient(from 25deg,#f7c96a,#d641cc,#4f73ff,#54e2c2,#f7c96a)}
+.room .avs .uav .geo-badge{--b:14px;right:-3px;bottom:-3px}   /* flag sits on the avatar's own bottom-right corner */
 @media (hover:hover) and (pointer:fine){
  .room:hover{box-shadow:0 14px 34px #173b5b26;border-color:#b9cfe3}   /* no transform: the video layer is pinned to the card's exact position */
 }
@@ -115,3 +119,16 @@ html.rc-lock,html.rc-lock body{overflow:hidden}
 }
 @media (max-width:380px){.rc-rs{grid-template-columns:1fr}.rc-act{width:44px;height:44px}}
 @media (prefers-reduced-motion:reduce){.rc-ov,.rc-sheet,.rc-vid,.rc-info,.rc-tip,.rc-mute,.room{transition:none!important}}
+
+/* platform icon (YouTube, X, Drive …) — the only platform mark shown on a video */
+.pbg{position:absolute;z-index:4;display:grid;place-items:center;width:26px;height:26px;background:#fff;border-radius:9px;box-shadow:0 1px 6px #0005;pointer-events:none}
+.pbg img{width:18px;height:18px;object-fit:contain}.pbg svg{width:18px;height:18px}
+.room .cover .pbg.card,.rc-vid .pbg.card{right:8px;top:8px}
+.rc-box .pbg.card{left:12px;top:12px;width:30px;height:30px;border-radius:10px}
+.rc-box .pbg.card img,.rc-box .pbg.card svg{width:21px;height:21px}
+
+/* v3: every member row has the same 48px avatar slot, so the host's ring/crown never pushes the name sideways */
+.rc-m .uav{width:48px;height:48px;display:grid;place-items:center;padding:0;border-radius:50%}
+.rc-m .uav.host{padding:0;background:conic-gradient(from 25deg,#f7c96a,#d641cc,#4f73ff,#54e2c2,#f7c96a)}
+.rc-m .uav.host .avt{box-shadow:0 0 0 2px #fff;width:42px!important;height:42px!important}
+.rc-m .uav:not(.host) .avt{width:44px!important;height:44px!important}

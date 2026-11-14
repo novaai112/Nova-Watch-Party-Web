@@ -145,7 +145,7 @@ const center = async (page, sel) => page.evaluate(s => { const r = document.quer
     const c = await box('#pubL .room[data-rid="r1"]'); await page.mouse.click(c.x + 60, c.y + 40, { button: 'right' });
     await page.waitForSelector('.rc-ov.on .rc-sheet', { timeout: 2000 });
     const txt = await page.locator('.rc-sheet').innerText(); assert.ok(/Playing • \d+:\d\d\/2:00/.test(txt), txt); assert.ok(/Public/.test(txt)); assert.ok(/@aviiieee/.test(txt) && /@just.sleepy/.test(txt));
-    assert.ok(await page.$('.rc-act[data-a="dismiss"][aria-label="Delete room"]')); assert.ok(await page.$('.rc-act[data-a="report"]'));
+    assert.ok(!(await page.$(".rc-act[data-a=\"dismiss\"]")), "no delete icon on a PUBLIC room"); assert.ok(await page.$('.rc-act[data-a="report"]'));
     assert.ok(await page.$('.rc-m .geo-flag, .rc-m img[src*="flagcdn"]'), 'flags');
     if (CLIP) await page.waitForFunction(() => { const v = document.querySelector('.rc-sheet video'); return v && v.currentTime > 29 && !v.paused; }, null, { timeout: 8000 });
     await page.screenshot({ path: path.join(OUT, 'sheet-desktop.png') });

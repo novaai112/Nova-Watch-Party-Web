@@ -193,3 +193,17 @@ Turning **Hide Mature Content** off for the first time opens `age-verify.html`: 
 **Honest limits:** the browser checks (movement, quality, frozen/virtual-camera hints) raise the bar but cannot prove the stream is not injected or deep-faked, and the page does not claim ISO/IEC 30107-3 compliance. That assurance must come from the provider. Head-pose/blink thresholds are in `liveness-engine.js` (`CFG`); open `age-verify.html?debug=1` to see live values when tuning on real devices.
 
 **Tests:** `node tests/liveness-engine.test.js`, `node tests/age-api.test.js`, and `node tests/e2e-age-verify.js` (Playwright, stubbed face model).
+
+## Watch-room playback (v3)
+
+**Setup:** re-run the latest `rooms-schema.sql` in the Supabase SQL editor (it is safe to re-run). It adds `room_playback_log`, `rooms.vote_seconds`, `rooms.next_id`, `room_queue.pos` and the functions `room_close_vote`, `room_queue_move`, `room_set_next`; `room_ended`, `room_skip`, `room_media_failed`, `room_advance` and `room_update` get new optional arguments.
+
+**What users see:** the video shows only a platform icon (YouTube etc.); the platform's own title, share, watch-later and "More videos" are cropped/covered (a paused frame is replaced by Nova's cover). The **More videos** button sits after the timeline, below the video, and opens one scrollable row of videos over the video frame with a close ✕. It is active for everyone, except members in Leader's choice. The Delete / Cancel-invite icon exists only for invited rooms and Friends-only / Invite-only rooms (the server refuses it for public rooms).
+
+**Modes** (one at a time, saved on the server, synced live): Let's vote (one vote each, move or withdraw it, voting allowed before the video ends, countdown, leader can *End vote*, tie/no votes → leader picks, 10 s later the earliest-added tied video wins, winner announced and started for everyone; the vote never opens empty); Just play (stops after the video, leader picks next, adding never auto-starts); Autoplay (queue order, items processed once, unavailable items skipped and logged, "No more videos in the queue", resumes when a video is added); Leader's choice (leader selects/changes/clears the next video; it starts when the current one ends, otherwise the room waits). Switching modes never interrupts the playing video and never starts a stale vote winner or suggestion.
+
+**State machine** (server `play_state.phase`, shown as `data-pstate` on `#rm`): IDLE → PLAYING ⇄ PAUSED → VIDEO_ENDED → VOTING | WAITING_FOR_SELECTION | WAITING_FOR_LEADER | QUEUE_EMPTY | PLAYBACK_ERROR → NEXT_VIDEO_SELECTED → LOADING_NEXT_VIDEO → PLAYING. The server steps are atomic, so the browser only observes the waiting phases plus its own LOADING step.
+
+**Safety:** every transition runs under a row lock; `room_playback_log` has a unique `(room, media_ver)` row per finished/skipped/failed video, so duplicate end events, double skips and reconnects start only one next video; stale events carry `p_ver` and are ignored.
+
+**Tests:** `psql -f tests/mock-supabase.sql -f rooms-schema.sql -f tests/rooms-playback-test.sql` (scratch Postgres), `node tests/e2e-watch-room.js`, `node tests/e2e-room-cards.js` (Playwright).

@@ -243,3 +243,61 @@ body.inroom{overflow:hidden}
 .nv-wi small{font-size:12.5px;color:#8bc79b}
 .nv-wi span{font-size:13px;color:#bdbdbd;line-height:1.4}
 @media(prefers-reduced-motion:reduce){.nv-ov,.nv-card,.nv-spin{animation:none!important}}
+
+/* ===== video frame: no platform bars, platform icon only ===== */
+#rm .vwrap .ytbox{position:absolute;inset:auto;left:0;top:-72px;width:100%;height:calc(100% + 144px);overflow:hidden;pointer-events:none}
+#rm .vwrap .ytbox iframe{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#rm .pbg{position:absolute;z-index:3;display:grid;place-items:center;background:#fff;border-radius:9px;box-shadow:0 1px 6px #0005;pointer-events:none}
+#rm .pbg.main{left:8px;top:8px;width:28px;height:28px;z-index:4}
+#rm .pbg.main img{width:19px;height:19px;object-fit:contain}
+#rm .pbg.sm{left:6px;top:6px;width:20px;height:20px;border-radius:7px}
+#rm .pbg.sm img{width:14px;height:14px;object-fit:contain}
+#rm .pbg svg{width:18px;height:18px}
+#rm .pbg.sm svg{width:14px;height:14px}
+
+/* ===== cover (loading / video finished) ===== */
+#rm .vcover{position:absolute;inset:0;z-index:3;display:grid;place-content:center;justify-items:center;gap:12px;padding:16px;text-align:center;color:#fff;background:#0b1220;overflow:hidden}
+#rm .vcover .cbg{position:absolute;inset:-4px;background-size:cover;background-position:center;filter:brightness(.42) blur(2px)}
+#rm .vcover>*:not(.cbg){position:relative}
+#rm .vcover b{font-size:clamp(15px,4.2vw,19px);line-height:1.25;text-shadow:0 1px 8px #000a}
+#rm .vcover .cbt{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+#rm .vcover .pill{display:inline-flex;align-items:center;gap:7px;background:#fff;color:var(--ink);border-radius:999px;padding:9px 16px;font-weight:700;font-size:14px}
+#rm .vcover .pill.alt{background:#ffffff26;color:#fff;border:1px solid #fff6}
+#rm .vcover .spin{width:30px;height:30px;border-radius:50%;border:3px solid #fff4;border-top-color:#fff;animation:vspin .8s linear infinite}
+@keyframes vspin{to{transform:rotate(360deg)}}
+
+/* ===== More videos: one scrollable row over the video ===== */
+#rm .cb.dis{opacity:.4}
+#rm .mv{position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;color:#fff;background:rgba(4,7,13,.88);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+#rm .mvh{flex:none;display:flex;align-items:center;gap:10px;padding:8px 8px 4px 14px;min-height:44px}
+#rm .mvt{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.2}
+#rm .mvt b{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#rm .mvt small{font-size:11.5px;color:#ffffffb3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#rm .mvtm{flex:none;min-width:38px;height:30px;padding:0 10px;border-radius:999px;background:#fff;color:var(--ink);display:grid;place-items:center;font-weight:800;font-size:14px;font-variant-numeric:tabular-nums}
+#rm .mvx{flex:none;width:40px;height:40px;display:grid;place-items:center;color:#fff;border-radius:50%}
+#rm .mvx:active{background:#ffffff26}
+#rm .mvw{position:relative;flex:1;min-height:0;display:flex;align-items:center}
+#rm .mvrow{flex:1;min-width:0;max-height:100%;display:flex;align-items:flex-start;gap:12px;padding:2px 14px 10px;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+#rm .mvrow::-webkit-scrollbar{display:none}
+#rm .mvc{flex:0 0 clamp(128px,42%,230px);display:flex;flex-direction:column;gap:5px;text-align:left;color:#fff;scroll-snap-align:start;min-width:0}
+#rm .mvth{position:relative;display:block;width:100%;aspect-ratio:16/9;border-radius:12px;background:#222 center/cover no-repeat;overflow:hidden}
+#rm .mvc.mine .mvth{outline:3px solid #fff;outline-offset:-3px}
+#rm .mvc.lead .mvth{box-shadow:0 0 0 2px #ffd166}
+#rm .mvc strong{font-size:12.5px;line-height:1.25;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#rm .mvc small{font-size:11px;color:#ffffffa6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#rm .mvv{position:absolute;right:6px;bottom:6px;display:inline-flex;align-items:center;gap:4px;background:#000b;border-radius:999px;padding:2px 9px;font-size:12px}
+#rm .mvth em{position:absolute;left:6px;bottom:6px;font-style:normal;font-size:10.5px;font-weight:700;background:#fff;color:var(--ink);border-radius:999px;padding:2px 8px}
+#rm .mvn{display:none;position:absolute;top:30%;z-index:2;width:34px;height:34px;border-radius:50%;background:#000a;color:#fff;font-size:24px;line-height:1;place-items:center}
+#rm .mvn.l{left:4px}#rm .mvn.r{right:4px}
+@media (hover:hover) and (pointer:fine){#rm .mvn{display:grid}#rm .mvn:hover{background:#000}}
+@media (max-height:520px){#rm .mvc{flex-basis:clamp(110px,30%,170px)}}
+
+/* ===== v3 ===== */
+/* paused frame: our own cover replaces the platform's pause screen (its title / share / "More videos" panel) */
+#rm .vcover.paused{background:#0b1220}
+#rm .vcover.paused .cbg{filter:brightness(.55)}
+#rm .vcover .pz{display:grid;place-items:center;width:58px;height:58px;border-radius:50%;background:#000a;border:2px solid #fff9}
+#rm .mvend{flex:none;height:30px;padding:0 12px;border-radius:999px;background:#ffffff26;border:1px solid #fff6;color:#fff;font-weight:700;font-size:12.5px}
+#rm .mvend:active{background:#ffffff40}
+#rm .li .cb:disabled{opacity:.3}
+#rm[data-pstate="VOTING"] .cd{box-shadow:0 0 0 2px #ffffff80}

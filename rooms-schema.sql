@@ -59,6 +59,32 @@ create table if not exists public.room_queue (
   created_at timestamptz not null default now()
 );
 create index if not exists room_queue_room_idx on public.room_queue(room_id, created_at);
+-- videos Nova suggests so a vote is never empty; they disappear when the next video starts
+alter table public.room_queue add column if not exists suggested boolean not null default false;
+-- queue order. New videos go to the END; only an admin reorder (room_queue_move) changes a position.
+alter table public.room_queue add column if not exists pos double precision not null default (extract(epoch from clock_timestamp()) * 1000);
+create index if not exists room_queue_pos_idx on public.room_queue(room_id, pos);
+-- Let's vote: how long a vote stays open (seconds). Leader's choice: the video the leader has already selected as next.
+alter table public.rooms add column if not exists vote_seconds int not null default 12 check (vote_seconds between 5 and 120);
+alter table public.rooms add column if not exists next_id uuid references public.room_queue(id) on delete set null;
+
+-- Every playback decision is written here: one row per video transition (finished / skipped / failed), plus votes,
+-- winners, picks and mode changes. The unique index below is the event id that makes a transition happen ONCE.
+create table if not exists public.room_playback_log (
+  id         bigint generated always as identity primary key,
+  room_id    uuid not null references public.rooms(id) on delete cascade,
+  user_id    uuid references auth.users(id) on delete set null,
+  event      text not null,
+  ver        int,                       -- rooms.media_ver the event belongs to
+  media      jsonb,
+  detail     jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists room_playback_log_room_idx on public.room_playback_log(room_id, id desc);
+create unique index if not exists room_playback_one_transition
+  on public.room_playback_log(room_id, ver) where event in ('finished','skipped','failed');
+alter table public.room_playback_log enable row level security;
+revoke all on public.room_playback_log from public, anon, authenticated;
 
 create table if not exists public.room_messages (
   id         bigint generated always as identity primary key,
@@ -190,10 +216,20 @@ end $$;
 
 create or replace function public._set_media(rid uuid, m jsonb) returns void
 language sql security definer set search_path = public as $$
+  -- a new video starts a NEW voting session: leftover suggestions go, remaining votes reset
+  delete from public.room_queue where room_id = rid and suggested;
+  update public.room_queue set votes = '{}' where room_id = rid and cardinality(votes) > 0;
   update public.rooms set media = m, media_ver = media_ver + 1,
     play_state = jsonb_build_object('playing', true, 'pos', 0, 'ts', public.room_now(),
-                   'seq', coalesce((play_state->>'seq')::int, 0) + 1, 'idx', 0)
-  where id = rid
+                   'seq', coalesce((play_state->>'seq')::int, 0) + 1, 'idx', 0, 'phase', 'PLAYING')
+  where id = rid;
+$$;
+
+-- one line in the playback log
+create or replace function public._log(rid uuid, uid uuid, ev text, m jsonb default null, d jsonb default null) returns void
+language sql security definer set search_path = public as $$
+  insert into public.room_playback_log(room_id, user_id, event, ver, media, detail)
+  select rid, uid, ev, r.media_ver, m, d from public.rooms r where r.id = rid
 $$;
 
 -- remove a member; hand admin to the longest-staying member; close the room when nobody is left
@@ -240,21 +276,131 @@ begin
   delete from public.rooms where status = 'closed' and closed_at < now() - interval '1 hour';
 end $$;
 
+create or replace function public._media_same(a jsonb, b jsonb) returns boolean
+language sql immutable as $$
+  select a is not null and b is not null and a->>'kind' = b->>'kind'
+     and coalesce(a->>'id','') = coalesce(b->>'id','') and coalesce(a->>'pl','') = coalesce(b->>'pl','')
+     and split_part(coalesce(a->>'url',''), '#', 1) = split_part(coalesce(b->>'url',''), '#', 1)
+$$;
+
+-- default suggestions (keep in sync with DEFAULTS in room.js)
+create or replace function public._room_defaults() returns jsonb
+language sql immutable as $$
+  select '[
+   {"kind":"youtube","provider":"youtube","id":"dQw4w9WgXcQ","title":"Rick Astley - Never Gonna Give You Up"},
+   {"kind":"youtube","provider":"youtube","id":"9bZkp7q19f0","title":"PSY - GANGNAM STYLE"},
+   {"kind":"youtube","provider":"youtube","id":"kJQP7kiw5Fk","title":"Luis Fonsi - Despacito ft. Daddy Yankee"},
+   {"kind":"youtube","provider":"youtube","id":"JGwWNGJdvx8","title":"Ed Sheeran - Shape of You"},
+   {"kind":"youtube","provider":"youtube","id":"fJ9rUzIMcZQ","title":"Queen - Bohemian Rhapsody"},
+   {"kind":"youtube","provider":"youtube","id":"RgKAFK5djSk","title":"Wiz Khalifa - See You Again ft. Charlie Puth"},
+   {"kind":"youtube","provider":"youtube","id":"OPf0YbXqDm0","title":"Mark Ronson - Uptown Funk ft. Bruno Mars"},
+   {"kind":"youtube","provider":"youtube","id":"YQHsXMglC9A","title":"Adele - Hello"}
+  ]'::jsonb
+$$;
+
+-- has this video already failed in this room? (marked unavailable: never offered or auto-played again)
+create or replace function public._unavailable(rid uuid, m jsonb) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists(select 1 from public.room_playback_log l
+                where l.room_id = rid and l.event = 'failed' and public._media_same(l.media, m))
+$$;
+
+-- phase the room is in while it waits for a next video (the playback state machine, see README)
+create or replace function public._wait_phase(md text, q int, failed boolean default false) returns text
+language sql immutable as $$
+  select case when failed and md <> 'vote' then 'PLAYBACK_ERROR'
+              when md = 'vote'     then 'VOTING'
+              when md = 'autoplay' then case when q = 0 then 'QUEUE_EMPTY' else 'VIDEO_ENDED' end
+              when md = 'leader'   then 'WAITING_FOR_LEADER'
+              else 'WAITING_FOR_SELECTION' end
+$$;
+
+-- start a queue item.  qid given = an authorised choice (admin tap / vote tie-break).
+-- qid null: Let's vote = most votes (a tie goes to the earliest added), every other mode = queue order.
+-- Items that already failed in this room are skipped and recorded.  Returns the media that started, or null.
 create or replace function public._room_next(rid uuid, qid uuid) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare it public.room_queue; md text;
+declare it public.room_queue; md text; won int; vo boolean;
 begin
-  select playback_mode into md from public.rooms where id = rid;
-  if qid is not null then
-    select * into it from public.room_queue where id = qid and room_id = rid;
-  else
-    select * into it from public.room_queue where room_id = rid
-      order by case when md = 'vote' then cardinality(votes) else 0 end desc, created_at asc limit 1;
-  end if;
-  if it.id is null then return null; end if;
+  select playback_mode, (play_state->'vote_until') is not null into md, vo from public.rooms where id = rid;
+  loop
+    if qid is not null then
+      select * into it from public.room_queue where id = qid and room_id = rid;
+    else
+      select * into it from public.room_queue where room_id = rid
+        order by case when md = 'vote' then cardinality(votes) else 0 end desc,
+                 case when md = 'vote' then created_at else null end asc,
+                 pos asc, created_at asc
+        limit 1;
+    end if;
+    if it.id is null then return null; end if;
+    exit when qid is not null or not public._unavailable(rid, it.media);
+    perform public._log(rid, null, 'skipped_unavailable', it.media);
+    delete from public.room_queue where id = it.id;
+    it.id := null;
+  end loop;
+  won := cardinality(it.votes);
   delete from public.room_queue where id = it.id;
+  if md = 'vote' and vo then
+    perform public._log(rid, null, 'winner', it.media, jsonb_build_object('votes', won, 'chosen_by_leader', qid is not null));
+  end if;
   perform public._set_media(rid, it.media);
   return it.media;
+end $$;
+
+-- the current video is over (ended / skipped / failed).  ONE transition per video:
+-- the unique log row (room, media_ver) is the event id, so a duplicate end event, a double skip or a reconnect cannot
+-- start a second transition.  p_force = re-enter the waiting step after a mode change.
+--   Autoplay: next eligible item of Up next, or QUEUE_EMPTY.   Let's vote: open the vote (Nova suggestions fill it to 5
+--   candidates, so it is never empty).   Just play / Leader's choice: wait (Leader's choice starts the leader's selected
+--   next video if there is one).
+create or replace function public._room_finish(rid uuid, p_reason text default 'finished', p_user uuid default null, p_force boolean default false) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r public.rooms; q int; m jsonb; vu jsonb := '{}'::jsonb; failed boolean := (p_reason = 'failed'); ok int;
+        sel public.room_queue;
+begin
+  select * into r from public.rooms where id = rid for update;
+  if r.id is null or r.status <> 'open' then return jsonb_build_object('next', false, 'noop', true); end if;
+  if not p_force then
+    insert into public.room_playback_log(room_id, user_id, event, ver, media)
+      values (rid, p_user, p_reason, r.media_ver, r.media) on conflict do nothing;
+    get diagnostics ok = row_count;
+    if ok = 0 then return jsonb_build_object('next', false, 'noop', true); end if;
+  end if;
+  if r.playback_mode = 'leader' and r.next_id is not null then
+    select * into sel from public.room_queue where id = r.next_id and room_id = rid;
+    if sel.id is not null then
+      perform public._room_next(rid, sel.id);
+      return jsonb_build_object('next', true, 'selected', true);
+    end if;
+  end if;
+  select count(*) into q from public.room_queue where room_id = rid;
+  if r.playback_mode = 'autoplay' and q > 0 then
+    if public._room_next(rid, null) is not null then return jsonb_build_object('next', true); end if;
+    q := 0;
+  end if;
+  if r.playback_mode = 'vote' then
+    delete from public.room_queue where room_id = rid and public._unavailable(rid, media);
+    select count(*) into q from public.room_queue where room_id = rid;
+    for m in select value from jsonb_array_elements(public._room_defaults()) loop
+      exit when q >= 5;
+      if not public._media_same(m, r.media) and not public._unavailable(rid, m)
+         and not exists(select 1 from public.room_queue x where x.room_id = rid and public._media_same(x.media, m)) then
+        insert into public.room_queue(room_id, added_by, media, votes, suggested) values (rid, r.admin_id, m, '{}', true);
+        q := q + 1;
+      end if;
+    end loop;
+    if q > 0 then      -- never open an empty vote: with nothing to vote on the room waits for someone to add a video
+      vu := jsonb_build_object('vote_until', public.room_now() + r.vote_seconds * 1000, 'vote_ms', r.vote_seconds * 1000);
+      perform public._log(rid, p_user, 'vote_opened', null, jsonb_build_object('candidates', q));
+    end if;
+  end if;
+  update public.rooms set play_state =
+      jsonb_build_object('playing', false, 'pos', 0, 'ts', public.room_now(),
+        'seq', coalesce((play_state->>'seq')::int, 0) + 1, 'idx', 0, 'ended', true,
+        'phase', public._wait_phase(case when r.playback_mode = 'vote' and q = 0 then 'play' else r.playback_mode end, q, failed), 'error', failed) || vu
+  where id = rid;
+  return jsonb_build_object('next', false, 'voting', vu <> '{}'::jsonb);
 end $$;
 
 -- ---------- public RPCs ----------
@@ -278,7 +424,8 @@ begin
   insert into public.rooms(code, admin_id, title, privacy, media, media_ver, play_state, lat, lng)
   values (c, uid, left(coalesce(nullif(trim(p_title), ''), 'Nova room'), 80), p_privacy, m,
           case when m is null then 0 else 1 end,
-          jsonb_build_object('playing', m is not null, 'pos', 0, 'ts', public.room_now(), 'seq', 1, 'idx', 0),
+          jsonb_build_object('playing', m is not null, 'pos', 0, 'ts', public.room_now(), 'seq', 1, 'idx', 0,
+                             'phase', case when m is null then 'IDLE' else 'PLAYING' end),
           p_lat, p_lng)
   returning id into rid;
   insert into public.room_members(room_id, user_id) values (rid, uid);
@@ -344,107 +491,199 @@ begin
     'admin_id', r.admin_id);
 end $$;
 
--- admin only: play / pause / seek
+-- admin only: play / pause / seek.  Ignored once the video has ended, so a late client event can never wipe an open vote.
 create or replace function public.room_set_state(
   p_room uuid, p_playing boolean, p_pos double precision,
   p_idx int default null, p_duration double precision default null) returns void
 language plpgsql security definer set search_path = public as $$
+declare r public.rooms;
 begin
+  select * into r from public.rooms where id = p_room and admin_id = auth.uid() and status = 'open' for update;
+  if r.id is null then raise exception 'Only the room admin can do this'; end if;
+  if coalesce((r.play_state->>'ended')::boolean, false) then return; end if;
   update public.rooms set
     play_state = jsonb_build_object('playing', p_playing, 'pos', greatest(coalesce(p_pos, 0), 0),
                    'ts', public.room_now(), 'seq', coalesce((play_state->>'seq')::int, 0) + 1,
-                   'idx', coalesce(p_idx, (play_state->>'idx')::int, 0)),
+                   'idx', coalesce(p_idx, (play_state->>'idx')::int, 0),
+                   'phase', case when p_playing then 'PLAYING' else 'PAUSED' end),
     media = case when p_duration is not null and p_duration > 0 and media is not null
                  then media || jsonb_build_object('duration', p_duration) else media end
-  where id = p_room and admin_id = auth.uid() and status = 'open';
-  if not found then raise exception 'Only the room admin can do this'; end if;
+  where id = p_room;
 end $$;
 
--- choose a video. Server decides: play now, or add to the queue, by playback mode + role
+-- choose a video. Server decides: play now, or add to the queue, by playback mode + role.
+--  * nothing playing -> plays (anyone, except Leader's choice = admin only)
+--  * admin "play now"  -> plays
+--  * video finished and nobody is deciding -> plays (Let's vote / Autoplay: queue was empty = autoplay resumes;
+--    Just play / Leader's choice: admin)
+--  * otherwise it is added to the END of Up next (Let's vote: it carries the adder's vote; Leader's choice: it becomes
+--    the leader's selected next video). Adding never starts a video by itself and never interrupts the current one.
 create or replace function public.room_pick(p_room uuid, p_media jsonb, p_now boolean default false) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare uid uuid := auth.uid(); r public.rooms; m jsonb; n int; isadm boolean;
-        ended boolean; voting boolean; direct boolean;
+        ended boolean; voting boolean; direct boolean; qid uuid;
 begin
   if uid is null then raise exception 'Sign in required'; end if;
-  select * into r from public.rooms where id = p_room and status = 'open';
+  select * into r from public.rooms where id = p_room and status = 'open' for update;
   if r.id is null then raise exception 'Room is closed'; end if;
   if not exists(select 1 from public.room_members where room_id = p_room and user_id = uid) then
     raise exception 'Join the room first'; end if;
-  m := public._clean_media(p_media);
+  m := public._clean_media(p_media);                       -- exists + supported
   if m is null then raise exception 'Nothing to play'; end if;
   isadm  := (r.admin_id = uid);
   ended  := (r.media is null) or coalesce((r.play_state->>'ended')::boolean, false);
   voting := (r.play_state->'vote_until') is not null;
   if not isadm and r.playback_mode = 'leader' then raise exception 'Only the room admin can pick videos'; end if;
-  direct := (isadm and (p_now or r.playback_mode in ('leader','play')))
-         or ((not isadm) and r.playback_mode = 'play')
-         or (ended and not voting);
+  if r.media is not null and not ended and public._media_same(m, r.media) then
+    raise exception 'That video is already playing'; end if;
+  direct := (r.media is null)
+         or (isadm and p_now)
+         or (isadm and ended and not voting and r.playback_mode in ('play','leader'))
+         or (ended and not voting and r.playback_mode in ('vote','autoplay'));
   if direct then
+    delete from public.room_queue where room_id = p_room and public._media_same(media, m);
+    perform public._log(p_room, uid, 'picked', m, jsonb_build_object('now', true));
     perform public._set_media(p_room, m);
     return jsonb_build_object('action', 'played');
   end if;
+  if exists(select 1 from public.room_queue where room_id = p_room and public._media_same(media, m)) then
+    raise exception 'Already in Up next'; end if;
   select count(*) into n from public.room_queue where room_id = p_room;
   if n >= 30 then raise exception 'The queue is full'; end if;
-  select count(*) into n from public.room_queue where room_id = p_room and added_by = uid;
+  select count(*) into n from public.room_queue where room_id = p_room and added_by = uid and not suggested;
   if n >= 6 and not isadm then raise exception 'You already have 6 videos in the queue'; end if;
-  insert into public.room_queue(room_id, added_by, media, votes) values (p_room, uid, m, array[uid]);
-  return jsonb_build_object('action', 'queued');
-end $$;
-
--- admin only: the current video finished
-create or replace function public.room_ended(p_room uuid) returns jsonb
-language plpgsql security definer set search_path = public as $$
-declare uid uuid := auth.uid(); r public.rooms; q int;
-begin
-  select * into r from public.rooms where id = p_room and admin_id = uid and status = 'open';
-  if r.id is null then raise exception 'Only the room admin can do this'; end if;
-  if coalesce((r.play_state->>'ended')::boolean, false) then return jsonb_build_object('next', false); end if;
-  select count(*) into q from public.room_queue where room_id = p_room;
-  if q > 0 and r.playback_mode = 'autoplay' then
-    perform public._room_next(p_room, null);
-    return jsonb_build_object('next', true);
+  if r.playback_mode = 'vote' then
+    update public.room_queue set votes = array_remove(votes, uid) where room_id = p_room;   -- one active vote each
+    insert into public.room_queue(room_id, added_by, media, votes) values (p_room, uid, m, array[uid]) returning id into qid;
+  else
+    insert into public.room_queue(room_id, added_by, media, votes) values (p_room, uid, m, '{}') returning id into qid;
   end if;
-  update public.rooms set play_state =
-      jsonb_build_object('playing', false, 'pos', 0, 'ts', public.room_now(),
-        'seq', coalesce((play_state->>'seq')::int, 0) + 1, 'idx', 0, 'ended', true)
-      || case when q > 0 and r.playback_mode = 'vote'
-              then jsonb_build_object('vote_until', public.room_now() + 12000) else '{}'::jsonb end
-  where id = p_room;
-  return jsonb_build_object('next', false);
+  if r.playback_mode = 'leader' and isadm then update public.rooms set next_id = qid where id = p_room; end if;
+  perform public._log(p_room, uid, 'queued', m);
+  return jsonb_build_object('action', 'queued', 'id', qid);
 end $$;
 
--- admin: skip / play a queued item. Anyone: pick the winner once the vote timer has expired (admin offline)
-create or replace function public.room_advance(p_room uuid, p_queue_id uuid default null) returns jsonb
+-- admin only: the current video finished.  p_ver = the media_ver the client was playing; an event for a video that is
+-- already gone is ignored, and a repeat for the same video is ignored (one transition per video).
+drop function if exists public.room_ended(uuid);
+create or replace function public.room_ended(p_room uuid, p_ver int default null) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare uid uuid := auth.uid(); r public.rooms; vu bigint; nx jsonb;
+declare uid uuid := auth.uid(); r public.rooms;
 begin
-  select * into r from public.rooms where id = p_room and status = 'open';
+  select * into r from public.rooms where id = p_room and admin_id = uid and status = 'open' for update;
+  if r.id is null then raise exception 'Only the room admin can do this'; end if;
+  if r.media is null or (p_ver is not null and p_ver <> r.media_ver)
+     or coalesce((r.play_state->>'ended')::boolean, false) then
+    return jsonb_build_object('next', false, 'noop', true); end if;
+  return public._room_finish(p_room, 'finished', uid);
+end $$;
+
+-- admin only: Skip. Ends the current video the same way finishing it would, so every mode applies its own rule.
+-- Several skip taps at once make ONE transition.
+drop function if exists public.room_skip(uuid);
+create or replace function public.room_skip(p_room uuid, p_ver int default null) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := auth.uid(); r public.rooms;
+begin
+  select * into r from public.rooms where id = p_room and admin_id = uid and status = 'open' for update;
+  if r.id is null then raise exception 'Only the room admin can do this'; end if;
+  if r.media is null or (p_ver is not null and p_ver <> r.media_ver)
+     or coalesce((r.play_state->>'ended')::boolean, false) then
+    return jsonb_build_object('next', false, 'noop', true); end if;
+  return public._room_finish(p_room, 'skipped', uid);
+end $$;
+
+-- admin only: the video cannot be played (deleted, private, blocked). The item is marked unavailable, the mode's rule
+-- moves on, and nothing retries it.
+drop function if exists public.room_media_failed(uuid);
+create or replace function public.room_media_failed(p_room uuid, p_ver int default null) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := auth.uid(); r public.rooms;
+begin
+  select * into r from public.rooms where id = p_room and admin_id = uid and status = 'open' for update;
+  if r.id is null then raise exception 'Only the room admin can do this'; end if;
+  if r.media is null or (p_ver is not null and p_ver <> r.media_ver)
+     or coalesce((r.play_state->>'ended')::boolean, false) then
+    return jsonb_build_object('next', false, 'noop', true); end if;
+  return public._room_finish(p_room, 'failed', uid);
+end $$;
+
+-- admin: play a chosen queue item / close a vote. Anyone: close an expired vote when the admin is away.
+-- A tie or an empty vote waits 10 s for the admin; after that the earliest-added of the leaders wins.
+drop function if exists public.room_advance(uuid, uuid);
+create or replace function public.room_advance(p_room uuid, p_queue_id uuid default null, p_ver int default null) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := auth.uid(); r public.rooms; vu bigint; nx jsonb; mx int; ties int; wait_ms int; need_leader boolean;
+begin
+  select * into r from public.rooms where id = p_room and status = 'open' for update;
   if r.id is null then raise exception 'Room is closed'; end if;
   if not exists(select 1 from public.room_members where room_id = p_room and user_id = uid) then
     raise exception 'Join the room first'; end if;
+  if p_ver is not null and p_ver <> r.media_ver then return jsonb_build_object('played', false, 'noop', true); end if;
   vu := (r.play_state->>'vote_until')::bigint;
-  if r.admin_id <> uid then
-    if p_queue_id is not null or vu is null or public.room_now() < vu + 3000 then
-      raise exception 'Only the room admin can do this';
+  if p_queue_id is not null then
+    if r.admin_id <> uid then raise exception 'Only the room admin can do this'; end if;
+  elsif vu is null then
+    if r.admin_id <> uid then raise exception 'Only the room admin can do this'; end if;
+    return public.room_skip(p_room, p_ver);
+  else
+    select coalesce(max(cardinality(votes)), 0) into mx from public.room_queue where room_id = p_room;
+    select count(*) into ties from public.room_queue where room_id = p_room and cardinality(votes) = mx;
+    need_leader := (mx = 0 or ties > 1);
+    wait_ms := case when need_leader then 10000 else 0 end;
+    if r.admin_id = uid then
+      if public.room_now() < vu + wait_ms then
+        return jsonb_build_object('played', false, 'waiting', true, 'need_leader', need_leader);
+      end if;
+    elsif public.room_now() < vu + 3000 + wait_ms then
+      raise exception 'Voting is still open';
     end if;
   end if;
   nx := public._room_next(p_room, p_queue_id);
   if nx is null then
-    update public.rooms set play_state = (play_state - 'vote_until')
+    update public.rooms set play_state = (play_state - 'vote_until' - 'vote_ms')
       || jsonb_build_object('seq', coalesce((play_state->>'seq')::int, 0) + 1,
-                            'ended', true, 'playing', false, 'ts', public.room_now())
+                            'ended', true, 'playing', false, 'ts', public.room_now(),
+                            'phase', public._wait_phase(r.playback_mode, 0))
     where id = p_room;
   end if;
   return jsonb_build_object('played', nx is not null);
 end $$;
 
+-- admin only: close the vote now (early close). A clear winner starts right away; a tie / no votes waits for the leader.
+create or replace function public.room_close_vote(p_room uuid, p_ver int default null) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := auth.uid(); r public.rooms;
+begin
+  select * into r from public.rooms where id = p_room and admin_id = uid and status = 'open' for update;
+  if r.id is null then raise exception 'Only the room admin can do this'; end if;
+  if (r.play_state->'vote_until') is null then return jsonb_build_object('played', false, 'noop', true); end if;
+  update public.rooms set play_state = jsonb_set(play_state, '{vote_until}', to_jsonb(public.room_now() - 1)) where id = p_room;
+  perform public._log(p_room, uid, 'vote_closed_early');
+  return public.room_advance(p_room, null, p_ver);
+end $$;
+
+-- ONE active vote per member (Let's vote only): tap another video to move the vote, tap yours again to withdraw it.
+-- Allowed while the video plays and during the voting window; refused once the window closed.
 create or replace function public.room_vote(p_queue_id uuid) returns void
 language plpgsql security definer set search_path = public as $$
+declare uid uuid := auth.uid(); q public.room_queue; r public.rooms; vu bigint;
 begin
-  update public.room_queue set votes =
-    case when auth.uid() = any(votes) then array_remove(votes, auth.uid()) else votes || auth.uid() end
-  where id = p_queue_id and public.is_room_member(room_id);
+  select * into q from public.room_queue where id = p_queue_id;
+  if q.id is null then raise exception 'That video is no longer in the queue'; end if;
+  select * into r from public.rooms where id = q.room_id and status = 'open' for update;
+  if r.id is null then raise exception 'Room is closed'; end if;
+  if not exists(select 1 from public.room_members where room_id = r.id and user_id = uid) then
+    raise exception 'Join the room first'; end if;
+  if r.playback_mode <> 'vote' then raise exception 'Voting is only open in Let''s vote mode'; end if;
+  vu := (r.play_state->>'vote_until')::bigint;
+  if vu is not null and public.room_now() > vu then raise exception 'Voting is closed'; end if;
+  if uid = any(q.votes) then
+    update public.room_queue set votes = array_remove(votes, uid) where id = q.id;
+  else
+    update public.room_queue set votes = array_remove(votes, uid) where room_id = r.id;
+    update public.room_queue set votes = votes || uid where id = q.id;
+  end if;
 end $$;
 
 create or replace function public.room_queue_remove(p_queue_id uuid) returns void
@@ -456,24 +695,84 @@ begin
          or exists(select 1 from public.rooms r where r.id = q.room_id and r.admin_id = auth.uid()));
 end $$;
 
+-- admin only: move an Up next item one place up (-1) or down (+1). The only way a position changes.
+create or replace function public.room_queue_move(p_queue_id uuid, p_dir int) returns void
+language plpgsql security definer set search_path = public as $$
+declare q public.room_queue; o public.room_queue;
+begin
+  select * into q from public.room_queue where id = p_queue_id;
+  if q.id is null then raise exception 'That video is no longer in the queue'; end if;
+  perform 1 from public.rooms where id = q.room_id and admin_id = auth.uid() and status = 'open' for update;
+  if not found then raise exception 'Only the room admin can do this'; end if;
+  if p_dir < 0 then
+    select * into o from public.room_queue where room_id = q.room_id and pos < q.pos order by pos desc limit 1;
+  else
+    select * into o from public.room_queue where room_id = q.room_id and pos > q.pos order by pos asc limit 1;
+  end if;
+  if o.id is null then return; end if;
+  update public.room_queue set pos = o.pos where id = q.id;
+  update public.room_queue set pos = q.pos where id = o.id;
+end $$;
+
+-- admin only, Leader's choice: select (or change / clear) the video that plays next. Tap the same one again to clear.
+create or replace function public.room_set_next(p_room uuid, p_queue_id uuid default null) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := auth.uid(); r public.rooms; q public.room_queue;
+begin
+  select * into r from public.rooms where id = p_room and admin_id = uid and status = 'open' for update;
+  if r.id is null then raise exception 'Only the room admin can do this'; end if;
+  if r.playback_mode <> 'leader' then raise exception 'Selecting the next video is a Leader''s choice feature'; end if;
+  if p_queue_id is null or p_queue_id = r.next_id then
+    update public.rooms set next_id = null where id = p_room;
+    return jsonb_build_object('next_id', null);
+  end if;
+  select * into q from public.room_queue where id = p_queue_id and room_id = p_room;
+  if q.id is null then raise exception 'That video is no longer in the queue'; end if;
+  update public.rooms set next_id = q.id where id = p_room;
+  perform public._log(p_room, uid, 'next_selected', q.media);
+  return jsonb_build_object('next_id', q.id);
+end $$;
+
+drop function if exists public.room_update(uuid, text, text, text, boolean, double precision, double precision);
 create or replace function public.room_update(
   p_room uuid, p_title text default null, p_privacy text default null, p_mode text default null,
-  p_voice boolean default null, p_lat double precision default null, p_lng double precision default null) returns jsonb
+  p_voice boolean default null, p_lat double precision default null, p_lng double precision default null,
+  p_vote_seconds int default null) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare uid uuid := auth.uid(); r public.rooms;
+declare uid uuid := auth.uid(); r public.rooms; q int;
 begin
-  select * into r from public.rooms where id = p_room and admin_id = uid and status = 'open';
+  select * into r from public.rooms where id = p_room and admin_id = uid and status = 'open' for update;
   if r.id is null then raise exception 'Only the room admin can do this'; end if;
   if p_privacy is not null and p_privacy not in ('public','nearby','friends','invite') then raise exception 'Bad privacy'; end if;
   if p_mode is not null and p_mode not in ('vote','play','autoplay','leader') then raise exception 'Bad mode'; end if;
+  if p_vote_seconds is not null and p_vote_seconds not between 5 and 120 then raise exception 'Voting time must be 5 to 120 seconds'; end if;
   update public.rooms set
     title         = left(coalesce(nullif(trim(p_title), ''), title), 80),
     privacy       = coalesce(p_privacy, privacy),
     playback_mode = coalesce(p_mode, playback_mode),
     voice_enabled = coalesce(p_voice, voice_enabled),
+    vote_seconds  = coalesce(p_vote_seconds, vote_seconds),
     lat = case when coalesce(p_privacy, privacy) = 'nearby' and p_lat is not null then p_lat else lat end,
     lng = case when coalesce(p_privacy, privacy) = 'nearby' and p_lng is not null then p_lng else lng end
   where id = p_room;
+  -- switching playback mode never interrupts the video that is playing; it only decides the NEXT step
+  if p_mode is not null and p_mode <> r.playback_mode then
+    perform public._log(p_room, uid, 'mode_changed', null, jsonb_build_object('from', r.playback_mode, 'to', p_mode));
+    delete from public.room_queue where room_id = p_room and suggested;                     -- Nova suggestions belong to a vote
+    update public.room_queue set votes = '{}' where room_id = p_room;                       -- votes belong to the old mode
+    if p_mode <> 'leader' then update public.rooms set next_id = null where id = p_room; end if;
+    update public.rooms set play_state = play_state - 'vote_until' - 'vote_ms' where id = p_room;   -- an open vote is cancelled
+    if coalesce((r.play_state->>'ended')::boolean, false) then                             -- already waiting for a next video
+      select count(*) into q from public.room_queue where room_id = p_room;
+      if p_mode = 'vote' then
+        perform public._room_finish(p_room, 'finished', uid, true);
+      elsif p_mode = 'autoplay' and q > 0 then
+        perform public._room_next(p_room, null);
+      else
+        update public.rooms set play_state = play_state || jsonb_build_object('phase', public._wait_phase(p_mode, q)) where id = p_room;
+      end if;
+    end if;
+  end if;
   return (select to_jsonb(x) from public.rooms x where x.id = p_room);
 end $$;
 
@@ -572,10 +871,17 @@ end $$;
 -- room stays hidden until I am invited again.
 create or replace function public.room_dismiss(p_room uuid) returns void
 language plpgsql security definer set search_path = public as $$
-declare uid uuid := auth.uid();
+declare uid uuid := auth.uid(); r public.rooms;
 begin
   if uid is null then raise exception 'Sign in required'; end if;
-  if not exists(select 1 from public.rooms where id = p_room) then raise exception 'Room not found'; end if;
+  select * into r from public.rooms where id = p_room;
+  if r.id is null then raise exception 'Room not found'; end if;
+  -- Delete / Cancel invite exists only for rooms I was invited to and for Friends-only / Invite-only rooms.
+  -- A public (or nearby) room I was not invited to cannot be deleted.
+  if not (exists(select 1 from public.room_invites where room_id = p_room and user_id = uid)
+          or r.privacy in ('friends','invite')) then
+    raise exception 'Public rooms cannot be deleted';
+  end if;
   delete from public.room_invites where room_id = p_room and user_id = uid;
   insert into public.room_dismissed(room_id, user_id) values (p_room, uid) on conflict do nothing;
 end $$;
@@ -676,7 +982,7 @@ begin
            from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public'
              and p.proname in ('room_now','is_room_member','create_room','join_room','leave_room','room_heartbeat',
-                               'room_set_state','room_pick','room_ended','room_advance','room_vote','room_queue_remove',
+                               'room_set_state','room_pick','room_ended','room_skip','room_media_failed','room_advance','room_close_vote','room_vote','room_queue_remove','room_queue_move','room_set_next',
                                'room_update','room_transfer','room_kick','room_invite','room_can_mic',
                                'room_set_member_mic','room_report_user','room_dismiss','room_report_video','public_room_for_user','list_rooms') loop
     execute format('revoke all on function %s from public, anon', f.sig);
@@ -686,7 +992,7 @@ begin
            from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public'
              and p.proname in ('_is_friend','_sys','_clean_media','_set_media','_room_drop_member',
-                               '_room_sweep','_room_sweep_all','_room_next') loop
+                               '_room_sweep','_room_sweep_all','_room_next','_room_finish','_media_same','_room_defaults','_log','_unavailable','_wait_phase') loop
     execute format('revoke all on function %s from public, anon, authenticated', f.sig);
   end loop;
 end $$;
@@ -709,3 +1015,6 @@ end $$;
 -- ---------- OPTIONAL: close empty/abandoned rooms even when nobody is online ----------
 -- Supabase → Database → Extensions → enable pg_cron, then run:
 --   select cron.schedule('nova-room-sweep', '* * * * *', $$select public._room_sweep_all()$$);
+
+-- make the API pick up the new / changed functions immediately
+notify pgrst, 'reload schema';

@@ -89,6 +89,8 @@ function mountMedia(host, r, opts) {
       let d; try { d = JSON.parse(ev.data); } catch (e) { return; }
       const info = d && d.info; if (!info) return;
       if (info.duration > 0) { h.dur = info.duration; opts && opts.onDur && opts.onDur(info.duration); }
+      /* an ended / paused frame would show YouTube's own "More videos" panel — keep the card's thumbnail instead */
+      if (typeof info.playerState === 'number') f.style.visibility = (info.playerState === 0 || info.playerState === 2 || info.playerState === 5) ? 'hidden' : '';
       /* correct the start offset once the player really runs (load time makes it lag a little) */
       if (info.playerState === 1 && typeof info.currentTime === 'number' && fixes < 2) {
         const cur = api().byId(r.id), t = cur ? api().livePos(cur) : lp;
@@ -123,8 +125,10 @@ function mountMedia(host, r, opts) {
 function fitFrame(box, media) {
   if (!media || !media.el || !media.el.classList.contains('rc-yt')) return;
   const w = box.clientWidth, hgt = box.clientHeight; if (!w || !hgt) return;
-  const H = Math.max(hgt, w * 9 / 16), W = H * 16 / 9;
-  Object.assign(media.el.style, { width: W + 'px', height: H + 'px', left: (w - W) / 2 + 'px', top: (hgt - H) / 2 + 'px' });
+  /* the frame is taller than the picture on purpose: YouTube's title bar, share / watch-later buttons, logo and
+     "More videos" strip sit on the frame's top and bottom edges and are cropped away by the box */
+  const CROP = 72, H = Math.max(hgt, w * 9 / 16), W = H * 16 / 9;
+  Object.assign(media.el.style, { width: W + 'px', height: H + CROP * 2 + 'px', left: (w - W) / 2 + 'px', top: (hgt - H) / 2 - CROP + 'px' });
 }
 
 /* =====================================================================
@@ -147,7 +151,7 @@ function activate(card) {
   deactivate();
   getLayer();
   const vid = document.createElement('div'); vid.className = 'rc-vid'; vid.hidden = true;
-  vid.innerHTML = '<div class="rc-media"></div><button type="button" class="rc-mute" aria-label="Unmute" tabindex="-1"></button>';
+  vid.innerHTML = '<div class="rc-media"></div>' + (api().platBadge ? api().platBadge(r.media, 'card') : '') + '<button type="button" class="rc-mute" aria-label="Unmute" tabindex="-1"></button>';
   const panel = document.createElement('div'); panel.className = 'rc-info';
   panel.innerHTML = '<h4 class="rc-pt"></h4><div class="rc-time"><span class="rc-ico"></span><b class="rc-now"></b><span class="rc-sep"> / </span><span class="rc-tot"></span></div><div class="rc-bar"><i></i></div><div class="rc-meta rc-w"></div><div class="rc-meta rc-o"></div>';
   const tip = document.createElement('div'); tip.className = 'rc-tip';
@@ -328,14 +332,16 @@ function closeMenu(silent) {
 function buildSheet() {
   const a = api(), r = a.byId(sheet.id); if (!r) return closeMenu();
   const invited = !!r.invited, hasMedia = !!r.media;
+  /* Delete / Cancel invite only exists for Invited and Friends (or invite-only) rooms — never for public or nearby rooms */
+  const canDelete = invited || r.privacy === 'friends' || r.privacy === 'invite';
   const members = r.members || [], more = Math.max(0, (Number(r.count) || 0) - members.length);
   const pv = ((a.PRIV || []).find(x => x[0] === r.privacy) || [])[2] || 'Public';
   sheet.body.innerHTML = `
-    <div class="rc-box"><div class="rc-bg">${a.thumb(r.media) ? `<img src="${esc(a.thumb(r.media))}" alt="">` : ''}</div><div class="rc-media"></div><button type="button" class="rc-mute rc-mute-s" data-a="mute" aria-label="Unmute"></button></div>
+    <div class="rc-box"><div class="rc-bg">${a.thumb(r.media) ? `<img src="${esc(a.thumb(r.media))}" alt="">` : ''}</div><div class="rc-media"></div>${a.platBadge ? a.platBadge(r.media, 'card') : ''}<button type="button" class="rc-mute rc-mute-s" data-a="mute" aria-label="Unmute"></button></div>
     <div class="rc-head">
       <div class="rc-tx"><div class="rc-t">${esc(roomTitle(r))}</div><div class="rc-s">${esc(provider(r))}</div><div class="rc-st"><span class="rc-state"></span><span class="rc-priv">${privSvg(r.privacy, 15)}<span>${esc(pv)}</span></span></div></div>
       <div class="rc-acts">
-        <button type="button" class="rc-act" data-a="dismiss" aria-label="${invited ? 'Cancel invite' : 'Delete room'}" title="${invited ? 'Cancel invite' : 'Delete'}">${ic(invited ? 'uncancel' : 'trash', 22)}</button>
+        ${canDelete ? `<button type="button" class="rc-act" data-a="dismiss" aria-label="${invited ? 'Cancel invite' : 'Delete room'}" title="${invited ? 'Cancel invite' : 'Delete'}">${ic(invited ? 'uncancel' : 'trash', 22)}</button>` : ''}
         <button type="button" class="rc-act" data-a="report" aria-label="Report video" title="Report video"${hasMedia ? '' : ' disabled'}>${ic('flag', 22)}</button>
       </div>
     </div>
