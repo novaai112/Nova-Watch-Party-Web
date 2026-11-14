@@ -5,7 +5,7 @@
    Server: room-pqueue-schema.sql (pq_list / pq_add / pq_remove / pq_clear / pq_reorder / pq_submit). Private per member. */
 (function () {
 'use strict';
-var st = { room: null, items: [], active: null, mode: '', busy: false, loaded: false, error: '', drag: null }, poll = 0, imp = null;
+var st = { room: null, items: [], active: null, mode: '', busy: false, loaded: false, error: '', drag: null, hold: 0, holdMsg: '' }, poll = 0, imp = null;
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
 var NR = function () { return window.NovaRoom; };
@@ -27,11 +27,11 @@ var ICON = {
 function active() { return !!(NR() && NR().ready && NR().active() && st.room); }
 function apply(d) {
   d = d || {}; st.items = d.items || []; st.active = d.active || null; st.mode = d.mode || ''; st.loaded = true; st.error = '';
-  clearTimeout(poll); if (st.active && st.room) poll = setTimeout(load, 7000);   /* notices when my vote round is over */
+  clearTimeout(poll); if (st.room && (st.active || st.items.length)) poll = setTimeout(load, 7000);   /* notices when my vote round is over */
 }
 function load() {
   var rid = st.room; if (!rid) return Promise.resolve();
-  return rpc('pq_list', { p_room: rid }).then(function (d) { if (st.room !== rid) return; apply(d); paint(); refreshImport(); })
+  return rpc('pq_list', { p_room: rid }).then(function (d) { if (st.room !== rid) return; apply(d); paint(); refreshImport(); autoSubmit(); })
     .catch(function (e) { if (st.room !== rid) return; st.loaded = true; st.error = fail(e); paint(); });
 }
 function fail(e) {
@@ -50,10 +50,21 @@ function addMany(list) {
     return load().then(function () { return r; });
   }).catch(function (e) { toast(fail(e), 'err'); return null; });
 }
-function submitNext() {
-  return run(function () { return rpc('pq_submit', { p_room: st.room }); }, function (r) {
-    return r && r.action === 'played' ? 'Playing now' : 'Submitted to the vote: ' + (r && r.title ? r.title : 'your video');
-  }).then(function () { try { NR().refreshQueue && NR().refreshQueue(); } catch (e) {} });
+/* AUTOMATIC: when I have nothing in the room vote, my first pending video is sent (one at a time, in my order).
+   The server refuses a second one while the first is still in the vote, so two tabs / quick reloads cannot double-submit. */
+function autoSubmit() {
+  var rid = st.room;
+  if (!rid || !st.loaded || st.busy || st.active || !st.items.length || Date.now() < st.hold || !active()) return;
+  st.busy = true; paint();
+  rpc('pq_submit', { p_room: rid }).then(function (r) {
+    if (st.room !== rid) return; st.busy = false; st.holdMsg = '';
+    toast(r && r.action === 'played' ? 'Playing now: ' + (r.title || 'your video') : 'Sent to the vote: ' + (r && r.title ? r.title : 'your video'));
+    try { NR().refreshQueue && NR().refreshQueue(); } catch (e) {}
+    return load();
+  }).catch(function (e) {
+    if (st.room !== rid) return; st.busy = false; st.hold = Date.now() + 30000; st.holdMsg = fail(e);   /* try again in 30 s, no toast spam */
+    clearTimeout(poll); poll = setTimeout(load, 30500); paint();
+  });
 }
 
 /* ---------------- panel ---------------- */
@@ -65,13 +76,13 @@ function paint() {
   var n = st.items.length, a = st.active, first = st.items[0];
   var h = '<div class="pq-card" role="region" aria-label="My queue"><div class="pq-head"><h2>My queue <span class="pq-n" aria-live="polite">' + n + '</span></h2>' +
     '<button class="pq-ic" type="button" data-a="clear" aria-label="Clear all" title="Clear all"' + (n && !st.busy ? '' : ' disabled') + '>' + ICON.trash + '<span>Clear all</span></button></div>' +
-    '<p class="pq-sub">Only you can see this list. Your videos go to the room vote one at a time, in this order.</p>';
+    '<p class="pq-sub">Only you can see this list. Your videos go to the room vote one at a time, in this order, automatically.</p>';
   if (a) h += '<div class="pq-live" role="status"><i></i><span>In the room vote: <b>' + esc((a.media || {}).title || 'your video') + '</b>. Your next video can go in when this round ends.</span></div>';
-  if (st.error) h += '<p class="pq-err" role="alert">' + esc(st.error) + '</p>';
+  var em = st.error || (Date.now() < st.hold ? st.holdMsg : ''); if (em) h += '<p class="pq-err" role="alert">' + esc(em) + '</p>';
   if (!st.loaded) h += '<div class="pq-skel"><i></i><i></i><i></i></div>';
   else if (!n) h += '<div class="pq-empty"><p>Your queue is empty.</p><p>Pick <b>Playlist</b> to import a whole YouTube playlist, or add single videos from any search.</p></div>';
   else {
-    h += '<div class="pq-bar"><button class="pq-go" type="button" data-a="submit"' + (a || st.busy ? ' disabled' : '') + '>' + ICON.vote + '<span>Submit next to vote</span></button><span class="pq-hint">' + (a ? 'Waiting for your current vote to finish' : 'Next: ' + esc((first.media || {}).title || '')) + '</span></div>';
+    h += '<div class="pq-bar"><span class="pq-hint">' + (a ? 'Your next video is sent to the vote automatically when this round ends.' : st.busy ? 'Sending your next video to the vote…' : 'Next: ' + esc((first.media || {}).title || '')) + '</span></div>';
     h += '<ul class="pq-list" id="pqList">' + st.items.map(function (it, i) { return row(it, i); }).join('') + '</ul>';
   }
   h += '</div>';
@@ -85,7 +96,6 @@ function row(it, i) {
     '<span class="pq-pos">' + (i + 1) + '</span>' +
     '<span class="pq-th"' + (t ? ' style="background-image:url(' + esc(t) + ')"' : '') + '>' + (m.d ? '<em>' + esc(m.d) + '</em>' : '') + '</span>' +
     '<span class="pq-tx"><b>' + esc(m.title || 'Video') + '</b>' + (meta ? '<small>' + meta + '</small>' : '') + '</span>' +
-    (i === 0 ? '<button class="pq-sub1" type="button" data-a="submit"' + (st.active || st.busy ? ' disabled' : '') + ' title="Submit to vote">Vote</button>' : '') +
     '<button class="pq-rm" type="button" data-a="rm" data-id="' + esc(it.id) + '" aria-label="Remove ' + esc(m.title) + '" title="Remove">' + ICON.x + '</button></li>';
 }
 function persist(ids) {
@@ -136,8 +146,7 @@ function dragEnd(ev) {
 function onClick(ev) {
   var b = ev.target.closest('[data-a]'); if (!b || !panel() || !panel().contains(b) || b.disabled) return;
   var a = b.dataset.a;
-  if (a === 'submit') submitNext();
-  else if (a === 'rm') run(function () { return rpc('pq_remove', { p_room: st.room, p_id: b.dataset.id }); });
+  if (a === 'rm') run(function () { return rpc('pq_remove', { p_room: st.room, p_id: b.dataset.id }); });
   else if (a === 'clear') {
     if (!st.items.length) return;
     if (window.confirm('Remove all ' + st.items.length + ' videos from your queue?')) run(function () { return rpc('pq_clear', { p_room: st.room }); }, 'Queue cleared');
@@ -246,7 +255,7 @@ function onRoom(ev) {
   var id = ev && ev.detail && ev.detail.id || null;
   clearTimeout(poll); closeImport();
   if (id === st.room && id) { load(); return; }
-  st = { room: id, items: [], active: null, mode: '', busy: false, loaded: false, error: '', drag: null };
+  st = { room: id, items: [], active: null, mode: '', busy: false, loaded: false, error: '', drag: null, hold: 0, holdMsg: '' };
   paint(); if (id) load();
 }
 function init() {

@@ -276,8 +276,8 @@ Every room member has a **private** queue (only they can see or change it) shown
 
 * **Setup:** run `room-pqueue-schema.sql` in the Supabase SQL editor after `rooms-schema.sql`. No new env vars (it uses the existing `YOUTUBE_API_KEY`).
 * **Import:** Playlist (or paste a playlist link) while in a room opens the import screen: every playable video with thumbnail, title, channel and duration, **Add all** or add one by one. Duplicates are never added twice. Single YouTube videos offer *Add to my queue* next to *Play / Add to room vote*.
-* **Queue panel:** drag handle (or focus it and use the up/down arrow keys), remove icon, **Clear all**, total count, **Submit next to vote**.
-* **Voting:** a member can have ONE video in the room vote at a time. *Submit next to vote* sends the first video in their order through the existing `room_pick` rules (Let's vote / Autoplay / Just play / Leader's choice). The next one is refused until that round ends, and nothing is ever submitted automatically.
+* **Queue panel:** drag handle (or focus it and use the up/down arrow keys), remove icon, **Clear all**, total count.
+* **Voting:** a member can have ONE video in the room vote at a time. The panel sends the first video in their order **automatically** through the existing `room_pick` rules (Let's vote / Autoplay / Just play / Leader's choice). The next one goes only after that round ends (a new video has started or the item left Up next). A refused send (e.g. Leader's choice for non-admins, full queue) is retried every 30 s.
 * **Leave / rejoin:** leaving clears the panel as before; rejoining the same room restores the pending queue. Rows are deleted with the room (closed rooms are removed an hour after closing).
 * **Files:** `room-pqueue-schema.sql`, `room-queue.js`, `room-queue.css`, `api/youtube.js` (`?plitems=`), hooks in `room.js` (`nova:room` event, `NovaRoom.rpc/roomId`) and `nova-home.html`.
 * **Tests:** `node tests/pqueue-api.test.js`, `node tests/e2e-room-queue.js` (Playwright), `tests/room-pqueue-test.sql` (psql, see header).

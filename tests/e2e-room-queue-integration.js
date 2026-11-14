@@ -102,9 +102,9 @@ const patch = (page, room, queue) => page.evaluate(([r, q]) => { if (r) Object.a
       await page.evaluate(() => document.dispatchEvent(new CustomEvent('nova:platform', { detail: 'youtube' })));
       await page.fill('#scr .sb input', 'https://www.youtube.com/playlist?list=PLabcdefghijk'); await page.press('#scr .sb input', 'Enter');
       await page.waitForSelector('#pqi'); await page.waitForFunction(() => document.querySelectorAll('.pqi-row').length === 120, null, { timeout: 5000 }); });
-    await t('add all puts all 120 videos in MY queue list', async () => {
-      await page.click('.pqi-all'); await page.waitForFunction(() => document.querySelector('.pq-n') && document.querySelector('.pq-n').textContent === '120', null, { timeout: 5000 });
-      assert.strictEqual(await page.$$eval('.pq-item', e => e.length), 120); });
+    await t('add all: first video auto-sent to the vote, the other 119 wait in MY queue', async () => {
+      await page.click('.pqi-all'); await page.waitForFunction(() => document.querySelector('.pq-n') && document.querySelector('.pq-n').textContent === '119', null, { timeout: 5000 });
+      assert.strictEqual(await page.$$eval('.pq-item', e => e.length), 119); assert.ok(await page.$('.pq-live'), 'first video auto-submitted'); });
     await t('queue list can scroll to the last video', async () => { const r = await page.evaluate(() => { const u = document.querySelector('.pq-list'); u.scrollTop = 1e6; return { sh: u.scrollHeight, ch: u.clientHeight, last: u.lastElementChild.querySelector('b').textContent }; }); assert.strictEqual(r.last, 'Song 120'); assert.ok(r.sh > r.ch); });
     console.log('  errors:', page.errs.length ? page.errs : 'none'); await page.screenshot({ path: path.join(OUT, name + '.png') });
     await ctx.close();
