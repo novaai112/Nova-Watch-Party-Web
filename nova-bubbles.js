@@ -263,11 +263,12 @@
         tip: it => '<b>' + esc(it.label) + '</b><small>' + it.n + (it.n === 1 ? ' watch' : ' watches') + '</small>'
       });
     } else if (kind === 'friends') {
+      const visitor = el.hasAttribute('data-nb-visitor');
       const items = data.map((u, i) => ({ id: u.id, label: u.name, username: u.username, img: u.avatar, w: Math.max(0.1, 1 - i * 0.085), aria: u.name }));
       mount(el, items, {
         inner: friendInner, fill: 0.56, tipOn: 'tap', maxFrac: 0.3, minR: 22,
         tip: it => '<b>' + esc(it.label) + '</b>' + (it.username ? '<small>@' + esc(it.username) + '</small>' : '') +
-          '<span class="nb-tip-acts"><button type="button" class="nb-tip-btn pri" data-open-friend="' + esc(it.id) + '">Message</button><button type="button" class="nb-tip-btn" data-go="user/' + esc(it.id) + '">Profile</button></span>'
+          '<span class="nb-tip-acts">' + (visitor ? '' : '<button type="button" class="nb-tip-btn pri" data-open-friend="' + esc(it.id) + '">Message</button>') + '<button type="button" class="nb-tip-btn" data-go="user/' + esc(it.id) + '"' + (visitor ? '' : '') + '>Profile</button></span>'
       });
     }
   }

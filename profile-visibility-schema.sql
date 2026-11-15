@@ -48,7 +48,7 @@ begin
   if new.visibility is null or jsonb_typeof(new.visibility) <> 'object' then
     new.visibility := '{}'::jsonb;
   end if;
-  foreach k in array array['bio','gallery','stats','socials','top','history','likes','keywords','channels','interests'] loop
+  foreach k in array array['bio','gallery','stats','friends','socials','top','history','likes','keywords','channels','interests'] loop
     res := res || jsonb_build_object(k, public._vis_mode(new.visibility, k));
   end loop;
   new.visibility := res;
@@ -164,7 +164,7 @@ begin
   incl := p_nsfw and coalesce((select (not coalesce((settings ->> 'hideMature')::boolean, true)) and maturity_verified from public.profiles where id = auth.uid()), false);
 
   s := '{}'::jsonb; vis := '{}'::jsonb;
-  foreach k in array array['bio','gallery','stats','socials','top','history','likes','keywords','channels','interests'] loop
+  foreach k in array array['bio','gallery','stats','friends','socials','top','history','likes','keywords','channels','interests'] loop
     s   := s   || jsonb_build_object(k, public._can_see(p.visibility, k, own, fr));
     vis := vis || jsonb_build_object(k, public._vis_mode(p.visibility, k));
   end loop;
@@ -197,6 +197,14 @@ begin
                  'videos', (select count(*) from public.watch_history where user_id = p_uid and watch_count > 0),
                  'hours',  round(coalesce((select sum(seconds) from public.watch_history where user_id = p_uid),0) / 3600.0, 1),
                  'friends',(select count(*) from public.friendships where status='accepted' and p_uid in (user_id, friend_id))) end,
+    -- friends list (floating bubbles), only when the Friends mode allows this viewer; most active first
+    'friends', case when (s->>'friends')::boolean then (select coalesce(jsonb_agg(to_jsonb(f)),'[]') from (
+                 select pp.id, pp.full_name, pp.username, pp.avatar_url,
+                        (select count(*) from public.watch_history w where w.user_id = pp.id) as score
+                 from public.friendships fr2
+                 join public.profiles pp on pp.id = case when fr2.user_id = p_uid then fr2.friend_id else fr2.user_id end
+                 where fr2.status = 'accepted' and p_uid in (fr2.user_id, fr2.friend_id)
+                 order by score desc limit 30) f) end,
     -- each list only when its own mode allows it (null = not shared with this viewer)
     'videos',  case when (s->>'videos')::boolean then jsonb_build_object(
                  'top',     case when (s->>'top')::boolean     then vids->'top' end,

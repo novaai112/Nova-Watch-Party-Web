@@ -156,6 +156,10 @@ ${gRow(gridItems(g, true), true, add)}${g.length ? '' : `<p class=ghint>Tap + to
     const html = ringBlock('Genres', genreList(d.titles), 176) + ringBlock('Sites', sites, 168);
     return html ? `<div class="nbx nbx-rings">${html}</div>` : '<span class=mu>Nothing here yet</span>';
   };
+  /* Friends: floating bubbles (own profile) */
+  const friendsBubbles = (f, visitor) => (f && f.length)
+    ? `<div class=nbx><div class=nbx-head><span>${ic('users', 18)} Friends</span><span class=nbx-pill>Top</span></div><div class=nbx-stage data-nb=friends ${visitor ? 'data-nb-visitor=1 ' : ''}data-nb-items="${esc(JSON.stringify(f.map(u => ({ id: u.id, name: u.full_name || u.username || 'User', username: u.username || '', avatar: u.avatar_url || u.avatar || '' }))))}"></div></div>`
+    : `<div class=empty>${ic('users', 30)}<p>No friends yet. Add someone by username.</p></div>`;
   const vidHTML = list => list && list.length ? `<div class=vrow>${list.map(v => `<a class=vid href="${okUrl(v.video_url)}" target=_blank rel=noopener><img src="${okUrl(v.thumb)}" alt="" onerror="this.style.visibility='hidden'"><b>${esc(v.title)}</b><small>${v.watch_count} views</small></a>`).join('')}</div>` : '<span class=mu>Nothing here yet</span>';
   const socChips = (s, own) => {
     const chips = Object.entries(s || {}).filter(([k, v]) => (SOC[k] || k === 'website') && v).map(([k, v]) => {
@@ -229,7 +233,7 @@ ${REQ.length ? `<div class=pbody style="border-top:1px solid var(--line)">${REQ.
     return shell('activity', mbar(t('activity')) + panel(t('activity'), 'What you watch on Nova',
       `<div class=actg><label class=nsfw style="${can ? '' : 'opacity:.5'}" title="${can ? '' : 'Turn off Hide Mature Content in Settings first'}">Include 🔞 NSFW <input type=checkbox class=sw data-nsfw ${NSFW && can ? 'checked' : ''} ${can ? '' : 'disabled'}></label></div>`,
       `<div class=pbody>${window.NovaWatch ? `<div class=subh><h3>Videos</h3></div><p class="vhint">Choose who can see Most watched, History and Likes on your profile. Use the eye icon on each list: Public, Friends or Hidden.</p>${NovaWatch.html(k => eye(k))}` : sh('history', 'Videos', `<div class=tabs>${['top', 'history', 'liked'].map(k => `<button class="tab${TAB === k ? ' on' : ''}" data-tab=${k}>${k[0].toUpperCase() + k.slice(1)}</button>`).join('')}${TAB === 'history' ? '<button class=tab data-clear>Clear</button>' : ''}</div><div style="margin-top:12px">${vidHTML(v[TAB])}</div>`)}
-${sh('keywords', 'Keywords', kwHTML(d.titles))}${sh('channels', 'Channels', chHTML(d.channels))}${sh('interests', 'Interests', interestsHTML(d))}</div>`));
+${sh('keywords', 'Keywords', kwHTML(d.titles))}${sh('channels', 'Channels', chHTML(d.channels))}${sh('interests', 'Interests', interestsHTML(d))}${sh('friends', 'Friends', friendsBubbles(PD.friends))}</div>`));
   };
 
   /* ---------- VISITOR / PREVIEW ---------- */
@@ -317,6 +321,7 @@ ${s ? sec('stats', 'chart', t('accstats'), `<div class="tiles profile-stat-tiles
 ${d.gallery && d.gallery.length ? sec('gallery', 'image', `${t('gallery')} (${d.gallery.length})`, gridG(d.gallery, false)) : ''}
 ${d.socials ? sec('socials', 'link', t('social'), socChips(d.socials, false)) : ''}
 ${d.videos ? sec('videos', 'play', 'Videos', visitorVideos(d.videos)) : ''}
+${d.friends && d.friends.length ? sec('friends', 'users', t('friends'), friendsBubbles(d.friends, true)) : ''}
 ${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.channels ? sec('channels', 'play', 'Channels', chHTML(d.channels)) : ''}${d.interests ? sec('interests', 'chart', 'Interests', interestsHTML(d)) : ''}</div>${bnav('')}`;
   }
   V.user = () => visitor(false);
