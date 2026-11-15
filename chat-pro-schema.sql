@@ -328,7 +328,7 @@ create policy "chat messages send" on public.chat_messages
 -- ============================================================================
 create or replace function public.chat_message_before_insert()
 returns trigger language plpgsql security definer set search_path = '' as $$
-declare v_group boolean; v_sent integer;
+declare v_group boolean; v_sent integer; v_other uuid; v_other_status text;
 begin
   select is_group into v_group from public.conversations where id = new.conversation_id;
   if not coalesce(v_group, true) then
@@ -336,6 +336,18 @@ begin
                where m.conversation_id = new.conversation_id and m.user_id <> new.sender_id
                  and m.request_status = 'rejected') then
       raise exception 'You cannot send messages to this user';
+    end if;
+    -- A non-friend writing into an old/open direct chat is a MESSAGE REQUEST for the recipient,
+    -- unless the recipient has already written in this chat themselves.
+    select m.user_id, m.request_status into v_other, v_other_status
+      from public.conversation_members m
+      where m.conversation_id = new.conversation_id and m.user_id <> new.sender_id limit 1;
+    if v_other is not null and v_other_status = 'accepted'
+       and not public.chat_are_friends(new.sender_id, v_other)
+       and not exists (select 1 from public.chat_messages x
+                       where x.conversation_id = new.conversation_id and x.sender_id = v_other) then
+      update public.conversation_members set request_status = 'pending', hidden_at = null
+        where conversation_id = new.conversation_id and user_id = v_other and request_status = 'accepted';
     end if;
     if exists (select 1 from public.conversation_members m
                where m.conversation_id = new.conversation_id and m.user_id <> new.sender_id

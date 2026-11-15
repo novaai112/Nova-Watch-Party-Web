@@ -357,3 +357,6 @@ Files: `profile-visibility-schema.sql`, `nova-profile.js` (menu, visitor view), 
 
 ## Recent tab (replaces Friends in People)
 Run `recent-people-schema.sql` once in Supabase (after `rooms-schema.sql`). It keeps a small `recent_people` table filled by triggers whenever someone joins a watch room, so the People > Recent tab lists everyone you shared a room with (newest first) with Add / Accept / Requested / Friend actions. Friend bubbles (profile page) now stay still until moved, scrolled or touched.
+
+## Message requests from non-friends
+Run `chat-requests-fix.sql` once in Supabase. A message from someone who is not your friend now lands in Chats > Requests (even if an old chat with them exists) until you reply or accept their friend request. Existing chats in that situation are moved to Requests by the same script.
