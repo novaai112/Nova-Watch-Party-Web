@@ -147,15 +147,15 @@ const VIEWS = [['desktop 1440x900', { viewport: { width: 1440, height: 900 }, ha
   for (const [who, adminId] of [['admin', 'me'], ['member', 'u1']]) {
     const d = db(); d.rooms[0].admin_id = adminId;
     const { ctx, page } = await open(browser, port, d, { ctx: { viewport: { width: 390, height: 844 } } }); await ready(page); await openGames(page);
-    await t(who + ': library — bare game cards, no tabs / filters / descriptions; Select Game ' + (who === 'admin' ? 'visible' : 'absent'), async () => {
-      assert.strictEqual(await page.locator('#gpb .gcard').count(), 7);
-      assert.strictEqual(await page.locator('#gpb [data-g=pick]').count(), who === 'admin' ? 7 : 0);
-      for (const sel of ['.gtabs', '.gcats', '.gmeta', '.ginfo p', '[data-g=tab]', '[data-g=cat]']) assert.strictEqual(await page.locator('#gpb ' + sel).count(), 0, sel + ' must be gone');
-      const tx = await page.innerText('#gpb'); for (const w of ['Daily', 'History', 'My stats', 'Trivia', 'Movies', 'Music', 'Social', 'Easy', 'players', 'Everyone gets the same question']) assert.ok(!tx.includes(w) || w === 'Trivia' && /Quick Trivia/.test(tx), 'still shows ' + w);
-      if (who === 'member') assert.ok(/Only the room admin can start a game/.test(await page.innerText('#gpb'))); });
+    await t(who + ': library — no game cards, tabs, filters or descriptions; ' + (who === 'admin' ? 'only a + button' : 'no + button'), async () => {
+      assert.strictEqual(await page.locator('#gpb .gcard, #gpb [data-g=pick]').count(), 0);
+      assert.strictEqual(await page.locator('#gph [data-g=plus]').count(), who === 'admin' ? 1 : 0);
+      for (const sel of ['.gtabs', '.gcats', '.gmeta', '.ginfo', '[data-g=tab]', '[data-g=cat]']) assert.strictEqual(await page.locator('#gpb ' + sel).count(), 0, sel + ' must be gone');
+      const tx = await page.innerText('#gpb'); for (const w of ['Daily', 'History', 'My stats', 'Trivia', 'Movie', 'Music', 'Social', 'Easy', 'players', 'Select Game']) assert.ok(!tx.includes(w), 'still shows ' + w);
+      if (who === 'member') assert.ok(/Only the room admin can start a game/.test(tx)); });
     if (who === 'admin') {
       await t('admin: Start is disabled until one complete question exists', async () => {
-        await page.click('#gpb [data-g=pick][data-v=trivia]'); await page.waitForSelector('#gps .gsh');
+        await page.click('#gph [data-g=plus]'); await page.waitForSelector('#gps .gsh');
         assert.ok(await page.locator('#gps [data-g=start]').isDisabled()); });
       await t('admin: background refreshes never redraw (blink) the open editor', async () => {
         await page.evaluate(() => { window.__shNode = document.querySelector('#gps .gsh'); NovaGames.refresh(); }); await page.waitForTimeout(800);
@@ -164,7 +164,7 @@ const VIEWS = [['desktop 1440x900', { viewport: { width: 1440, height: 900 }, ha
       await t('admin: editor offers question, emoji, picture, options (+ typed answer); no bank settings', async () => {
         const tx = (await page.innerText('#gps')).toLowerCase();
         for (const sel of ['[data-f=prompt]', '[data-f=emoji]', '[data-g=qimg]', '[data-f=opt][data-j="0"]', '[data-g=qtype][data-v=text]']) assert.strictEqual(await page.locator('#gps ' + sel).count(), 1, 'missing ' + sel);
-        for (const w of ['picture', 'answer time', 'gameplay', 'participation', 'question order', 'show correct answer', 'allow answer changes', 'spectator mode', 'sound effects', 'summary']) assert.ok(tx.includes(w), 'missing ' + w);
+        for (const w of ['picture', 'answer time', 'gameplay', 'participation', 'question order', 'show correct answer', 'allow answer changes', 'spectator mode', 'sound effects']) assert.ok(tx.includes(w), 'missing ' + w);
         for (const w of ['category', 'difficulty', 'number of questions', 'game language', 'built-in']) assert.ok(!tx.includes(w), 'old setting still shown: ' + w); });
       await t('admin: write a question with emoji + picture + options; Start sends it with the uploaded picture path', async () => {
         await page.fill('#gps [data-f=prompt]', 'Which movie is this?'); await page.fill('#gps [data-f=emoji]', '🦁👑');
@@ -173,7 +173,7 @@ const VIEWS = [['desktop 1440x900', { viewport: { width: 1440, height: 900 }, ha
         await page.waitForSelector('#gps .gcq-img img'); await page.waitForFunction(() => !document.querySelector('#gps .gcq-up'), null, { timeout: 4000 });
         const up = await page.evaluate(() => window.__up || []); assert.strictEqual(up.length, 1); assert.ok(/^r1\/me\/[0-9a-f-]+\.png$/.test(up[0]), up[0]);
         await page.click('#gps [data-g=set][data-k=seconds][data-v="30"]'); await page.click('#gps [data-g=set][data-k=mode][data-v=team]');
-        const t2 = (await page.innerText('#gps')).toLowerCase(); assert.ok(/team assignment/.test(t2) && /team names/.test(t2) && /team battle/.test(t2) && /1 question/.test(t2));
+        const t2 = (await page.innerText('#gps')).toLowerCase(); assert.ok(/team assignment/.test(t2) && /team names/.test(t2) && /team battle/.test(t2));
         await page.click('#gps [data-g=cq-add]'); await page.click('#gps [data-g=qtype][data-w=c][data-i="1"][data-v=text]');
         await page.fill('#gps [data-w=c][data-i="1"][data-f=emoji]', '🎬🧊'); await page.fill('#gps [data-w=c][data-i="1"][data-f=answer]', 'Frozen'); await page.fill('#gps [data-w=c][data-i="1"][data-f=accept]', 'Frozen 2, frozen');
         await page.click('#gps [data-g=cq-add]'); await page.fill('#gps [data-w=c][data-i="2"][data-f=prompt]', 'Incomplete one');   /* no options → dropped, hint shown */
@@ -184,9 +184,14 @@ const VIEWS = [['desktop 1440x900', { viewport: { width: 1440, height: 900 }, ha
         assert.deepStrictEqual([c[0].type, c[0].prompt, c[0].emoji, c[0].options, c[0].correct], ['options', 'Which movie is this?', '🦁👑', ['Frozen', 'The Lion King'], 1]);
         assert.ok(/^r1\/me\/[0-9a-f-]+\.png$/.test(c[0].image));
         assert.deepStrictEqual([c[1].type, c[1].answer, c[1].accept, c[1].image], ['text', 'Frozen', ['Frozen 2', 'frozen'], '']); });
-      await t('admin: cancelling the editor removes the draft picture again', async () => {
-        await show(page, state(null)); await page.click('#gpb [data-g=pick][data-v=wyr]'); await page.waitForSelector('#gps .gsh');
-        assert.strictEqual(await page.locator('#gps [data-g=qtype]').count(), 0, 'Would You Rather has no typed answers'); assert.strictEqual(await page.locator('#gps [data-g=qcor]').count(), 0, 'no correct option in Would You Rather');
+      await t('admin: Game Type dropdown has only Guessing / Predicting; Predicting has no typed answer or correct option; no Summary', async () => {
+        await show(page, state(null)); await page.click('#gph [data-g=plus]'); await page.waitForSelector('#gps .gsh');
+        assert.deepStrictEqual(await page.locator('#gps #gtype option').allInnerTexts(), ['Guessing', 'Predicting']); assert.strictEqual(await page.inputValue('#gps #gtype'), 'trivia');
+        assert.ok(!/summary/i.test(await page.innerText('#gps')), 'Summary must be gone');
+        await page.selectOption('#gps #gtype', 'predict'); await page.waitForTimeout(150);
+        assert.ok(/Predict What Happens Next/.test(await page.innerText('#gps .gsh-h')));
+        assert.strictEqual(await page.locator('#gps [data-g=qtype]').count(), 0); assert.strictEqual(await page.locator('#gps [data-g=qcor]').count(), 0);
+        assert.ok(!(await page.locator('#gps [data-g=start]').isDisabled()), 'Predicting may start with no questions');
         await page.click('#gps [data-g=close]'); await page.waitForSelector('#gps', { state: 'hidden' }); });
       await show(page, state('question'));
       await t('admin: footer has Pause / Skip / Players / End (+ reactions)', async () => { const tx = await page.innerText('#gpf'); for (const w of ['Pause', 'Skip', 'Players', 'End']) assert.ok(tx.includes(w), w); assert.strictEqual(await page.locator('#gpf .gre button').count(), 5); });
@@ -237,7 +242,7 @@ const VIEWS = [['desktop 1440x900', { viewport: { width: 1440, height: 900 }, ha
     await t('question (member)', async () => { assert.strictEqual(await page.locator('#gpf .gadm').count(), 0, 'must be the member view'); await fit('member question', true); });
     await show(page, state('question')); await swapAdmin(page, 'me'); await page.waitForTimeout(300);
     await t('config sheet fits; its buttons stay reachable', async () => {
-      await show(page, state(null)); await page.click('#gpb [data-g=pick][data-v=trivia]'); await page.waitForSelector('#gps .gsh'); await page.waitForTimeout(450); const g = await page.evaluate(() => { const s = document.querySelector('#gps .gsh').getBoundingClientRect(), f = document.querySelector('#gps .gsh-f').getBoundingClientRect(), vw = innerWidth, vh = innerHeight; return { sl: s.left, sr: s.right, st: s.top, fb: f.bottom, vw, vh, doc: document.documentElement.scrollWidth }; });
+      await show(page, state(null)); await page.click('#gph [data-g=plus]'); await page.waitForSelector('#gps .gsh'); await page.waitForTimeout(450); const g = await page.evaluate(() => { const s = document.querySelector('#gps .gsh').getBoundingClientRect(), f = document.querySelector('#gps .gsh-f').getBoundingClientRect(), vw = innerWidth, vh = innerHeight; return { sl: s.left, sr: s.right, st: s.top, fb: f.bottom, vw, vh, doc: document.documentElement.scrollWidth }; });
       assert.ok(g.sl >= -.5 && g.sr <= g.vw + .5 && g.fb <= g.vh + .5 && g.st >= -.5 && g.doc <= g.vw, JSON.stringify(g));
       assert.ok(await vis(page, '#gps [data-g=start]')); await page.screenshot({ path: path.join(OUT, 'cfg-' + name.replace(/[ x]/g, '-') + '.png') }); await page.click('#gps [data-g=close]'); });
     await show(page, state('question')); await page.screenshot({ path: path.join(OUT, 'question-' + name.replace(/[ x]/g, '-') + '.png') });

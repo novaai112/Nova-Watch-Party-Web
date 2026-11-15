@@ -21,6 +21,8 @@ const GAMES = [
   { id: 'wyr', name: 'Would You Rather?', emoji: '🤔', g: ['#14b8a6', '#3b82f6'] }
 ];
 const gameOf = id => GAMES.find(g => g.id === id) || { id, name: id, emoji: '🎮', g: ['#444', '#222'] };
+/* the two game types offered in the + popup: Guessing = a question with a correct answer, Predicting = what happens next */
+const TYPES = [['trivia', 'Guessing'], ['predict', 'Predicting']];
 const BUCKET = 'room-media';                       /* question pictures live in the existing private room-media bucket */
 const TEXT_OK = g => g !== 'wyr' && g !== 'predict';      /* games that may use a typed answer */
 const NEEDS_COR = g => g !== 'wyr' && g !== 'predict';    /* games where the admin marks the correct option */
@@ -234,6 +236,7 @@ function paintHead() {
   h.innerHTML = `<div class="gp-t"><i class="gp-ico" aria-hidden="true"></i><div><b>Nova Play</b><small>${esc(subtitle())}</small></div></div>
     <div class="gp-hb">
       ${s && live() ? `<span class="gp-time" id="gtime" aria-hidden="true"></span>` : ''}
+      ${admin() && inLibrary() ? `<button type="button" class="gb gb-plus" data-g="plus" aria-label="New game" title="New game">${ic('plus', 20)}</button>` : ''}
       <button type="button" class="gb" data-g="sound" aria-label="${G.sound ? 'Mute game sounds' : 'Unmute game sounds'}" title="Sound">${ic(G.sound ? 'vol' : 'mute', 18)}</button>
       ${s ? `<button type="button" class="gb" data-g="board" aria-label="Leaderboard" title="Leaderboard">${ic('trophy', 18)}</button>` : ''}
       ${inGame ? `<button type="button" class="gb gb-quit" data-g="quit" aria-label="Quit game" title="Quit game">${ic('exit', 18)}</button>` : ''}
@@ -269,16 +272,10 @@ function updateLive() {
   const m = $('#gmini'); if (m) m.innerHTML = miniHTML();
 }
 
+/* the library is empty on purpose: the admin starts a game with the + button in the header */
+const inLibrary = () => !G.S || (G.S.status === 'ended' && !!G.dismissed[G.S.id]);
 function libraryHTML() {
-  return (admin() ? '' : `<p class="gnote">${ic('lock', 14)}Only the room admin can start a game.</p>`)
-    + '<div class="ggrid">' + GAMES.map(cardHTML).join('') + '</div>';
-}
-function cardHTML(g) {
-  return `<article class="gcard" style="--g1:${g.g[0]};--g2:${g.g[1]}">
-    <div class="gthumb" aria-hidden="true"><span>${g.emoji}</span></div>
-    <div class="ginfo"><h3>${esc(g.name)}</h3>
-      ${admin() ? `<button type="button" class="gbtn" data-g="pick" data-v="${g.id}">Select Game</button>` : ''}
-    </div></article>`;
+  return admin() ? '' : `<p class="gnote">${ic('lock', 14)}Only the room admin can start a game.</p>`;
 }
 
 /* ----- question pictures (signed links for the private bucket; the picture is swapped in without repainting the question) ----- */
@@ -532,7 +529,7 @@ const chip = (k, v, label, on) => `<button type="button" class="chp${on ? ' on' 
 const swt = (k, label, on, sub) => `<label class="gsw"><span><b>${label}</b>${sub ? `<small>${sub}</small>` : ''}</span><input type="checkbox" data-g="tog" data-k="${k}"${on ? ' checked' : ''}><i></i></label>`;
 function cfgHTML() {
   const c = G.cfg, F = FIELDS[G.game], has = k => F.includes(k), grp = (t, inner) => `<div class="gfg"><label>${t}</label><div class="chips">${inner}</div></div>`;
-  let h = '';
+  let h = `<div class="gfg"><label for="gtype">Game Type</label><select id="gtype" class="gsel" data-g="gtype">${TYPES.map(x => `<option value="${x[0]}"${G.game === x[0] ? ' selected' : ''}>${x[1]}</option>`).join('')}</select></div>`;
   if (has('custom')) h += customHTML();
   if (has('seconds')) h += grp('Answer time', [5, 10, 15, 30, 60].map(x => chip('seconds', x, x + 's', c.seconds === x)).join(''));
   if (has('mode')) h += grp('Gameplay', [['individual', 'Individual'], ['team', 'Team Battle']].map(x => chip('mode', x[0], x[1], c.mode === x[0])).join(''));
@@ -548,7 +545,7 @@ function cfgHTML() {
   if (has('spectator')) h += swt('spectator', 'Spectator mode', c.spectator, 'Late joiners watch instead of waiting for the next round');
   if (has('sound')) h += swt('sound', 'Sound effects', c.sound);
   h += '</div>';
-  return h + summaryHTML();
+  return h;
 }
 
 /* ----- the question editor (used when starting a game and when adding a question live) ----- */
@@ -606,11 +603,6 @@ function cfgPayload() {
   out.custom = validCustom().map(q => qPayload(q, G.game));
   return out;
 }
-function summaryHTML() {
-  const c = G.cfg, F = FIELDS[G.game], n = validCustom().length, bits = [];
-  bits.push(n + (n === 1 ? ' question' : ' questions'), c.seconds + 's per round', F.includes('mode') && c.mode === 'team' ? 'Team Battle' : 'Individual', c.participation === 'optional' ? 'Join button' : 'Open to all');
-  return `<div class="gsum"><small>Summary</small><b>${bits.map(esc).join(' · ')}</b></div>`;
-}
 function cfgFoot() {
   const busy = G.cfg.custom.some(q => q.busy), need = G.game !== 'predict' && !validCustom().length;
   return `<button type="button" class="gbtn ghost" data-g="close">Cancel</button><button type="button" class="gbtn" data-g="start"${need || busy ? ' disabled' : ''}>${busy ? 'Uploading picture…' : need ? 'Add a question to start' : 'Start Game'}</button>`;
@@ -664,6 +656,11 @@ function submitText() {
 }
 function onInput(e) {
   const t = e.target, d = t.dataset.g; if (!d) return;
+  if (d === 'gtype') {
+    if (!G.cfg || !FIELDS[t.value] || t.value === G.game) return;
+    G.game = t.value; G.cfg.seconds = t.value === 'predict' ? 30 : 15; if (!G.cfg.custom.length) G.cfg.custom.push(newQ());
+    paintSheet(); refreshFoot(); return;
+  }
   const i = +t.dataset.i, j = +t.dataset.j;
   if (d === 'qf' || d === 'qcor' || d === 'qimg') {
     if (d === 'qimg') { if (e.type === 'change') pickImage(t); return; }
@@ -675,7 +672,7 @@ function onInput(e) {
   else if (d === 'tn') G.cfg.team_names[t.dataset.k] = t.value.slice(0, 20);
   else if (d === 'tog') G.cfg[t.dataset.k] = t.checked;
   if (d === 'qf' || d === 'qcor') refreshHint(t);
-  if (G.sheet === 'cfg') { const sm = $('.gsum'); if (sm) sm.outerHTML = summaryHTML(); refreshFoot(); }
+  if (G.sheet === 'cfg') refreshFoot();
 }
 /* keep the small "what is missing" line under a question current while typing (no repaint, so focus is never lost) */
 function refreshHint(t) {
@@ -708,7 +705,7 @@ function onClick(e) {
     case 'resume': act('game_resume', { p_session: s.id }); break;
     case 'skip': act('game_skip', { p_session: s.id }); break;
     case 'next': act('game_next', { p_session: s.id }); break;
-    case 'pick': openConfig(v); break;
+    case 'plus': openConfig('trivia'); break;
     case 'set': { const k = el.dataset.k; G.cfg[k] = /^\d+$/.test(v) ? +v : v; paintSheet(); break; }
     case 'cq-add': G.cfg.custom.push(newQ()); paintSheet(); break;
     case 'cq-del': { const q = G.cfg.custom[+el.dataset.i]; if (q && q.image) H.sb.storage.from(BUCKET).remove([q.image]).then(() => {}, () => {}); if (q) q.up = null; G.cfg.custom.splice(+el.dataset.i, 1); if (!G.cfg.custom.length) G.cfg.custom.push(newQ()); paintSheet(); break; }

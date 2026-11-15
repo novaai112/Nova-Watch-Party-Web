@@ -59,7 +59,7 @@
 
 /* body / footer */
 #rm .gp-m{position:relative;flex:1;min-height:0;display:flex;flex-direction:column}
-#rm .gp-b{--pad:14px;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:var(--pad) var(--pad) 18px;scrollbar-width:thin;scrollbar-color:#0b122033 transparent}
+#rm .gp-b{--pad:14px;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:var(--pad) var(--pad) 18px;scrollbar-width:none}
 #rm .gp-f{flex:none;border-top:1px solid var(--bd);background:#fff;padding:8px 10px max(10px,env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px}
 #rm .gp-f[hidden]{display:none}
 #rm .gre{display:flex;justify-content:center;gap:6px}
@@ -110,14 +110,6 @@
 #rm .gtag.ok{background:#dcfce7;color:#15803d}
 
 /* ---------- library ---------- */
-#rm .ggrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,270px),1fr));gap:10px}
-#rm .gcard{align-items:center;display:grid;grid-template-columns:78px minmax(0,1fr);gap:12px;padding:10px;border-radius:18px;background:var(--sf);border:1px solid var(--bd);transition:border-color .15s,transform .15s}
-#rm .gcard:hover{border-color:#cfd8e3;box-shadow:0 4px 14px #0b12200d}
-#rm .gthumb{align-self:start;width:78px;height:78px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(135deg,var(--g1),var(--g2));box-shadow:inset 0 0 0 1px #0000000f}
-#rm .gthumb span{font-size:36px;line-height:1;filter:drop-shadow(0 2px 6px #0006)}
-#rm .ginfo{min-width:0;display:flex;flex-direction:column;gap:6px}
-#rm .ginfo h3{margin:0;font-size:15px;font-weight:800;line-height:1.25}
-#rm .ginfo .gbtn{margin-top:4px;align-self:flex-start;min-height:38px;padding:0 18px;font-size:13.5px}
 
 /* daily / history / stats */
 #rm .gstats{grid-template-columns:repeat(2,1fr)}
@@ -281,7 +273,7 @@
 @keyframes gslide{from{transform:translateY(40px);opacity:.4}}
 #rm .gsh-h{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 12px 8px 18px}
 #rm .gsh-h h3{margin:0;font-size:17px;font-weight:800}
-#rm .gsh-b{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:4px 18px 14px;scrollbar-width:thin;scrollbar-color:#0b122033 transparent}
+#rm .gsh-b{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:4px 18px 14px;scrollbar-width:none}
 #rm .gsh-f{flex:none;display:flex;gap:8px;padding:10px 18px max(14px,env(safe-area-inset-bottom));border-top:1px solid var(--bd)}
 #rm .gsh-f .gbtn{flex:1}
 #rm .gp-p{margin:0 0 6px;font-size:14.5px;line-height:1.5;color:#475467}
@@ -309,9 +301,6 @@
 #rm .gsw input:checked+i{background:var(--ga)}
 #rm .gsw input:checked+i::after{transform:translateX(18px)}
 #rm .gsw input:focus-visible+i{outline:2px solid var(--ga);outline-offset:2px}
-#rm .gsum{margin:0;padding:12px 14px;border-radius:14px;background:var(--sf2);border:1px solid var(--bd)}
-#rm .gsum small{display:block;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#667085}
-#rm .gsum b{display:block;margin-top:3px;font-size:13.5px;line-height:1.5;font-weight:700}
 #rm .gcq{margin:0 0 10px;padding:12px;border-radius:16px;background:var(--sf);border:1px solid var(--bd);display:grid;gap:8px}
 #rm .gcq-h{display:flex;align-items:center;justify-content:space-between}
 #rm .gcq-h b{font-size:13px}
@@ -337,9 +326,6 @@
 /* ---------- layout fits ---------- */
 @media(max-width:380px){
  #rm .gp-b{--pad:12px;padding-bottom:16px}
- #rm .gcard{align-items:center;grid-template-columns:62px minmax(0,1fr);gap:10px}
- #rm .gthumb{width:62px;height:62px;border-radius:14px}
- #rm .gthumb span{font-size:30px}
  #rm .lbr{grid-template-columns:22px 30px minmax(0,1fr) auto;gap:8px;padding:8px 10px}
  #rm .lbc{display:none}
  #rm .gm-top{display:none}
@@ -365,7 +351,6 @@
 #rm{--ga:#0b1220;--ga2:#344054}
 #rm .gsh-h .gb{background:var(--sf2)}
 #rm .gsh-h .gb:hover{background:#e8eef5}
-#rm .gsum{margin-top:2px}
 
 /* ---------- admin question editor: emoji, picture, typed answer ---------- */
 #rm .gcq-type{margin:0 0 2px}
@@ -388,3 +373,11 @@
 @keyframes gshim{to{background-position:-200% 0}}
 @media(prefers-reduced-motion:reduce){#rm .gq-img.ph{animation:none}}
 #rm .gp-sheet.still .gsh{animation:none}
+
+/* no visible scrollbars anywhere in the games panel (scrolling still works) */
+#rm .gpanel *{scrollbar-width:none;-ms-overflow-style:none}
+#rm .gpanel *::-webkit-scrollbar{display:none;width:0;height:0}
+/* + (new game) button and the Game Type dropdown */
+#rm .gb-plus{background:#0b1220;color:#fff}
+#rm .gb-plus:hover{background:#1d2a44;color:#fff}
+#rm .gsel{width:100%;min-height:46px;padding:0 14px;border-radius:12px;border:1px solid var(--bd);background:#f8fafc;color:#0b1220;font:inherit;font-weight:700;font-size:14px}
