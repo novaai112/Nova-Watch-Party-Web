@@ -35,7 +35,7 @@ const STUB = `window.supabase={createClient:()=>{
     if(n==='game_join'){ const g=window.__gstate; if(g) g.me={team:null,spectator:false,left:false,from_idx:0}; return Promise.resolve(ok(null)); }
     if(n==='game_start'){ window.__started=a; return Promise.resolve(ok({})); }
     return Promise.resolve(ok(null)); },
-  channel:()=>{const g=generic();const c=new Proxy({},{get:(_,k)=>k==='on'?(t,f,cb)=>{(window.__rt=window.__rt||[]).push({t,f,cb:cb||f});return c}:k==='then'?undefined:g[k]});return c},removeChannel(){},storage:generic()};}};`;
+  channel:()=>{const g=generic();const c=new Proxy({},{get:(_,k)=>k==='on'?(t,f,cb)=>{(window.__rt=window.__rt||[]).push({t,f,cb:cb||f});return c}:k==='then'?undefined:g[k]});return c},removeChannel(){},storage:{from:()=>({upload:async(p)=>{(window.__up=window.__up||[]).push(p);return{data:{path:p},error:null}},remove:async()=>({data:[],error:null}),createSignedUrl:async()=>({data:{signedUrl:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'},error:null})})}};}};`;
 /* fake YouTube iframe API: a tiny player whose state the test can drive */
 const FAKE_YT = `window.YT={Player:function(id,o){const s=this;s._s=-1;s.getCurrentTime=()=>window.__ytt||0;s.getDuration=()=>300;s.getPlayerState=()=>s._s;
  const set=v=>{s._s=v;o.events&&o.events.onStateChange&&o.events.onStateChange({data:v});};s.__set=set;
@@ -86,7 +86,7 @@ const patch = (page, room, queue) => page.evaluate(([r, q]) => { if (r) Object.a
 /* ---- game fixtures (what game_state returns) ---- */
 const PL = [['me', 'Me', 250, 3, 3], ['u1', 'Suhani', 400, 4, 4], ['u2', 'Karan', 100, 1, 0]];
 const players = () => PL.map(p => ({ user_id: p[0], team: null, spectator: false, left: false, from_idx: 0, score: p[2], correct: p[3], answered: 4, streak: p[4], best: p[4], ms: 5000 }));
-const Q = { n: 2, total: 10, cat: 'Science', kind: 'mcq', prompt: 'Which planet is known as the Red Planet?', options: ['Venus', 'Mars', 'Jupiter', 'Mercury'] };
+const Q = { n: 2, total: 10, kind: 'mcq', prompt: 'Which planet is known as the Red Planet?', options: ['Venus', 'Mars', 'Jupiter', 'Mercury'] };
 function sess(status, extra, adminId) {
   const now = Date.now();
   return Object.assign({ id: 's1', room_id: 'r1', game: 'trivia', status, q_idx: 1, total: 10, seq: 5, admin_id: adminId || 'me', started_by: adminId || 'me', created_at: new Date(now - 60000).toISOString(),
@@ -147,17 +147,43 @@ const VIEWS = [['desktop 1440x900', { viewport: { width: 1440, height: 900 }, ha
   for (const [who, adminId] of [['admin', 'me'], ['member', 'u1']]) {
     const d = db(); d.rooms[0].admin_id = adminId;
     const { ctx, page } = await open(browser, port, d, { ctx: { viewport: { width: 390, height: 844 } } }); await ready(page); await openGames(page);
-    await t(who + ': library — Select Game ' + (who === 'admin' ? 'visible' : 'absent') + ', 7 games listed', async () => {
+    await t(who + ': library — bare game cards, no tabs / filters / descriptions; Select Game ' + (who === 'admin' ? 'visible' : 'absent'), async () => {
       assert.strictEqual(await page.locator('#gpb .gcard').count(), 7);
       assert.strictEqual(await page.locator('#gpb [data-g=pick]').count(), who === 'admin' ? 7 : 0);
+      for (const sel of ['.gtabs', '.gcats', '.gmeta', '.ginfo p', '[data-g=tab]', '[data-g=cat]']) assert.strictEqual(await page.locator('#gpb ' + sel).count(), 0, sel + ' must be gone');
+      const tx = await page.innerText('#gpb'); for (const w of ['Daily', 'History', 'My stats', 'Trivia', 'Movies', 'Music', 'Social', 'Easy', 'players', 'Everyone gets the same question']) assert.ok(!tx.includes(w) || w === 'Trivia' && /Quick Trivia/.test(tx), 'still shows ' + w);
       if (who === 'member') assert.ok(/Only the room admin can start a game/.test(await page.innerText('#gpb'))); });
     if (who === 'admin') {
-      await t('admin: configuration popup has every setting and a summary; Start Game sends the config', async () => {
-        await page.click('#gpb [data-g=pick][data-v=trivia]'); await page.waitForSelector('#gps .gsh'); const tx = await page.innerText('#gps');
-        for (const w of ['category', 'difficulty', 'number of questions', 'answer time', 'gameplay', 'participation', 'question order', 'show correct answer', 'allow answer changes', 'spectator mode', 'sound effects', 'game language', 'summary']) assert.ok(tx.toLowerCase().includes(w), 'missing ' + w);
-        await page.click('#gps [data-g=set][data-k=count][data-v="5"]'); await page.click('#gps [data-g=set][data-k=seconds][data-v="30"]'); await page.click('#gps [data-g=set][data-k=mode][data-v=team]');
-        const t2 = (await page.innerText('#gps')).toLowerCase(); assert.ok(/team assignment/.test(t2) && /team names/.test(t2) && /team battle/.test(t2));
-        await page.click('#gps [data-g=start]'); await page.waitForTimeout(300); const s = await page.evaluate(() => window.__started); assert.ok(s && s.p_game === 'trivia' && s.p_cfg.count === 5 && s.p_cfg.seconds === 30 && s.p_cfg.mode === 'team' && s.p_cfg.team_names.red, JSON.stringify(s)); });
+      await t('admin: Start is disabled until one complete question exists', async () => {
+        await page.click('#gpb [data-g=pick][data-v=trivia]'); await page.waitForSelector('#gps .gsh');
+        assert.ok(await page.locator('#gps [data-g=start]').isDisabled()); });
+      await t('admin: editor offers question, emoji, picture, options (+ typed answer); no bank settings', async () => {
+        const tx = (await page.innerText('#gps')).toLowerCase();
+        for (const sel of ['[data-f=prompt]', '[data-f=emoji]', '[data-g=qimg]', '[data-f=opt][data-j="0"]', '[data-g=qtype][data-v=text]']) assert.strictEqual(await page.locator('#gps ' + sel).count(), 1, 'missing ' + sel);
+        for (const w of ['picture', 'answer time', 'gameplay', 'participation', 'question order', 'show correct answer', 'allow answer changes', 'spectator mode', 'sound effects', 'summary']) assert.ok(tx.includes(w), 'missing ' + w);
+        for (const w of ['category', 'difficulty', 'number of questions', 'game language', 'built-in']) assert.ok(!tx.includes(w), 'old setting still shown: ' + w); });
+      await t('admin: write a question with emoji + picture + options; Start sends it with the uploaded picture path', async () => {
+        await page.fill('#gps [data-f=prompt]', 'Which movie is this?'); await page.fill('#gps [data-f=emoji]', '🦁👑');
+        await page.fill('#gps [data-f=opt][data-j="0"]', 'Frozen'); await page.fill('#gps [data-f=opt][data-j="1"]', 'The Lion King'); await page.check('#gps [data-g=qcor][data-j="1"]');
+        await page.setInputFiles('#gps [data-g=qimg]', { name: 'clue.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') });
+        await page.waitForSelector('#gps .gcq-img img'); await page.waitForFunction(() => !document.querySelector('#gps .gcq-up'), null, { timeout: 4000 });
+        const up = await page.evaluate(() => window.__up || []); assert.strictEqual(up.length, 1); assert.ok(/^r1\/me\/[0-9a-f-]+\.png$/.test(up[0]), up[0]);
+        await page.click('#gps [data-g=set][data-k=seconds][data-v="30"]'); await page.click('#gps [data-g=set][data-k=mode][data-v=team]');
+        const t2 = (await page.innerText('#gps')).toLowerCase(); assert.ok(/team assignment/.test(t2) && /team names/.test(t2) && /team battle/.test(t2) && /1 question/.test(t2));
+        await page.click('#gps [data-g=cq-add]'); await page.click('#gps [data-g=qtype][data-w=c][data-i="1"][data-v=text]');
+        await page.fill('#gps [data-w=c][data-i="1"][data-f=emoji]', '🎬🧊'); await page.fill('#gps [data-w=c][data-i="1"][data-f=answer]', 'Frozen'); await page.fill('#gps [data-w=c][data-i="1"][data-f=accept]', 'Frozen 2, frozen');
+        await page.click('#gps [data-g=cq-add]'); await page.fill('#gps [data-w=c][data-i="2"][data-f=prompt]', 'Incomplete one');   /* no options → dropped, hint shown */
+        assert.ok(/at least two options/i.test(await page.innerText('#gps')));
+        await page.click('#gps [data-g=start]'); await page.waitForTimeout(300); const s = await page.evaluate(() => window.__started);
+        assert.ok(s && s.p_game === 'trivia' && s.p_cfg.seconds === 30 && s.p_cfg.mode === 'team' && s.p_cfg.team_names.red, JSON.stringify(s));
+        const c = s.p_cfg.custom; assert.strictEqual(c.length, 2, JSON.stringify(c));
+        assert.deepStrictEqual([c[0].type, c[0].prompt, c[0].emoji, c[0].options, c[0].correct], ['options', 'Which movie is this?', '🦁👑', ['Frozen', 'The Lion King'], 1]);
+        assert.ok(/^r1\/me\/[0-9a-f-]+\.png$/.test(c[0].image));
+        assert.deepStrictEqual([c[1].type, c[1].answer, c[1].accept, c[1].image], ['text', 'Frozen', ['Frozen 2', 'frozen'], '']); });
+      await t('admin: cancelling the editor removes the draft picture again', async () => {
+        await show(page, state(null)); await page.click('#gpb [data-g=pick][data-v=wyr]'); await page.waitForSelector('#gps .gsh');
+        assert.strictEqual(await page.locator('#gps [data-g=qtype]').count(), 0, 'Would You Rather has no typed answers'); assert.strictEqual(await page.locator('#gps [data-g=qcor]').count(), 0, 'no correct option in Would You Rather');
+        await page.click('#gps [data-g=close]'); await page.waitForSelector('#gps', { state: 'hidden' }); });
       await show(page, state('question'));
       await t('admin: footer has Pause / Skip / Players / End (+ reactions)', async () => { const tx = await page.innerText('#gpf'); for (const w of ['Pause', 'Skip', 'Players', 'End']) assert.ok(tx.includes(w), w); assert.strictEqual(await page.locator('#gpf .gre button').count(), 5); });
       await t('admin: pause then resume buttons call the server', async () => { await page.click('#gpf [data-g=pause]'); await page.waitForTimeout(250); assert.strictEqual((await calls(page, 'game_pause')).length, 1); });

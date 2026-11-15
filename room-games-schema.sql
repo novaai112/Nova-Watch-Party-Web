@@ -1,26 +1,35 @@
 -- ============================================================================
 -- Nova Play — interactive watch-room games   (run AFTER rooms-schema.sql; safe to re-run)
--- Then run room-games-bank.sql once to load the question bank.
 --
+--  * EVERY question is written by the room admin: question text, an optional emoji clue, an optional image,
+--    and either 2-4 answer options (one marked correct) or a typed answer. There is NO built-in question bank
+--    and NO history / statistics / daily-reward tables.
 --  * ONLY the current room admin (rooms.admin_id, read live on every call) can start / configure / pause /
 --    resume / skip / end / reveal / rematch. Every member can join, answer and view results.
 --  * The SERVER decides time: room_now() is the only clock; clients tick overdue rounds through game_state().
 --  * Correct answers live in game_questions (no client access). Answers live in game_answers (no client access)
 --    and are only summarised after the reveal.
 --  * Scores are computed once, inside the reveal transaction that moves question -> reveal (row-locked).
+--  * Question images live in the existing private bucket "room-media" (path <room id>/<user id>/<file>): no extra bucket.
+--  Tables kept: game_sessions, game_questions, game_players, game_answers.
 -- ============================================================================
 create extension if not exists pgcrypto;
 
--- ---------- tables ----------
-create table if not exists public.game_bank (
-  id         bigint generated always as identity primary key,
-  game       text not null check (game in ('trivia','movie','emoji','song','wyr')),
-  category   text not null,
-  difficulty text not null check (difficulty in ('easy','medium','hard')),
-  q          jsonb not null
-);
-create unique index if not exists game_bank_uq on public.game_bank (game, (q->>'prompt'), (coalesce(q->>'emoji','')));
+-- ---------- clean-up of the old bank / history / stats / daily-reward objects (no-op on a fresh database) ----------
+drop function if exists public.game_history(uuid, int);
+drop function if exists public.game_my_stats();
+drop function if exists public.game_daily();
+drop function if exists public.game_claim(text);
+drop function if exists public._game_daily_rows(uuid);
+drop function if exists public._game_label(text);
+drop function if exists public._game_cfg(text, jsonb);
+drop function if exists public._game_add_q(uuid, int, jsonb, boolean, int, int);
+drop table if exists public.game_rewards cascade;
+drop table if exists public.game_profile cascade;
+drop table if exists public.game_results  cascade;
+drop table if exists public.game_bank     cascade;
 
+-- ---------- tables ----------
 create table if not exists public.game_sessions (
   id           uuid primary key default gen_random_uuid(),
   room_id      uuid not null references public.rooms(id) on delete cascade,
@@ -58,9 +67,11 @@ create table if not exists public.game_questions (
   answer_text text,
   accept     jsonb,
   seconds    int,
-  cat        text,
+  image      text,                -- storage path inside the room-media bucket (optional)
   primary key (session_id, idx)
 );
+alter table public.game_questions add column if not exists image text;
+alter table public.game_questions drop column if exists cat;
 
 create table if not exists public.game_players (
   session_id uuid not null references public.game_sessions(id) on delete cascade,
@@ -86,61 +97,21 @@ create table if not exists public.game_answers (
   primary key (session_id, idx, user_id)
 );
 
-create table if not exists public.game_results (
-  session_id uuid not null references public.game_sessions(id) on delete cascade,
-  user_id    uuid not null references auth.users(id) on delete cascade,
-  room_id    uuid not null,
-  game       text not null,
-  score int not null default 0, correct int not null default 0, answered int not null default 0,
-  rank int not null default 0, players int not null default 1, best_streak int not null default 0,
-  team text, won boolean not null default false,
-  created_at timestamptz not null default now(),
-  primary key (session_id, user_id)
-);
-create index if not exists game_results_user_idx on public.game_results(user_id, created_at desc);
-
-create table if not exists public.game_profile (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  xp bigint not null default 0,
-  badges text[] not null default '{}',
-  daily_streak int not null default 0,
-  last_daily date
-);
-create table if not exists public.game_rewards (       -- one row per claimed daily challenge
-  user_id uuid not null references auth.users(id) on delete cascade,
-  day date not null, key text not null, xp int not null,
-  primary key (user_id, day, key)
-);
-
 -- ---------- row level security: reads only, ALL writes go through the functions below ----------
-alter table public.game_bank      enable row level security;
 alter table public.game_sessions  enable row level security;
 alter table public.game_questions enable row level security;
 alter table public.game_players   enable row level security;
 alter table public.game_answers   enable row level security;
-alter table public.game_results   enable row level security;
-alter table public.game_profile   enable row level security;
-alter table public.game_rewards   enable row level security;
-revoke all on public.game_bank, public.game_questions, public.game_answers, public.game_rewards from public, anon, authenticated;
-revoke all on public.game_sessions, public.game_players, public.game_results, public.game_profile from public, anon, authenticated;
+revoke all on public.game_questions, public.game_answers from public, anon, authenticated;
+revoke all on public.game_sessions, public.game_players from public, anon, authenticated;
 
 drop policy if exists game_sessions_member_select on public.game_sessions;
 drop policy if exists game_players_member_select  on public.game_players;
-drop policy if exists game_results_select         on public.game_results;
-drop policy if exists game_profile_own_select     on public.game_profile;
 create policy game_sessions_member_select on public.game_sessions for select to authenticated using (public.is_room_member(room_id));
 create policy game_players_member_select  on public.game_players  for select to authenticated using (public.is_room_member(room_id));
-create policy game_results_select         on public.game_results  for select to authenticated using (user_id = auth.uid() or public.is_room_member(room_id));
-create policy game_profile_own_select     on public.game_profile  for select to authenticated using (user_id = auth.uid());
-grant select on public.game_sessions, public.game_players, public.game_results, public.game_profile to authenticated;
+grant select on public.game_sessions, public.game_players to authenticated;
 
 -- ---------- internal helpers ----------
-create or replace function public._game_label(g text) returns text language sql immutable as $$
-  select case g when 'trivia' then 'Quick Trivia' when 'movie' then 'Guess the Movie' when 'emoji' then 'Emoji Challenge'
-    when 'song' then 'Guess the Song' when 'predict' then 'Predict What Happens Next' when 'wyr' then 'Would You Rather?'
-    when 'video' then 'Video Knowledge Challenge' else g end
-$$;
-
 create or replace function public._game_name(uid uuid) returns text
 language sql stable security definer set search_path = public as $$
   select coalesce((select coalesce(nullif(full_name, ''), nullif(username, '')) from public.public_profiles where id = uid), 'Someone')
@@ -156,74 +127,84 @@ create or replace function public._game_int(t text, lo int, hi int) returns int 
 $$;
 
 -- clean + clamp the admin's configuration (never trust the client)
-create or replace function public._game_cfg(p_game text, p jsonb) returns jsonb
+-- clean + clamp the admin's configuration AND every admin-written question (never trust the client).
+-- A usable question has: some content (text, emoji or image) AND either 2-4 options with the right one marked, or a typed answer.
+create or replace function public._game_cfg(p_game text, p jsonb, p_room uuid default null) returns jsonb
 language plpgsql stable as $$
 declare
   c jsonb := case when jsonb_typeof(p) = 'object' then p else '{}'::jsonb end;
-  v_cnt int := coalesce(public._game_int(c->>'count', 1, 20), 10);
   v_sec int := coalesce(public._game_int(c->>'seconds', 3, 120), 15);
-  v_cust jsonb := '[]'::jsonb; e jsonb; o jsonb; v_opts jsonb; v_cor int; v_s int;
+  v_cust jsonb := '[]'::jsonb; e jsonb; v_opts jsonb; v_acc jsonb; v_cor int; v_s int; v_txt boolean; v_pr text; v_em text; v_img text; v_ans text;
   v_red text := left(coalesce(nullif(btrim(c#>>'{team_names,red}'), ''), 'Red Team'), 20);
   v_blue text := left(coalesce(nullif(btrim(c#>>'{team_names,blue}'), ''), 'Blue Team'), 20);
+  v_needs_cor boolean := p_game not in ('wyr', 'predict');
+  v_can_text boolean := p_game not in ('wyr', 'predict');
 begin
-  if v_cnt not in (5, 10, 15, 20) then v_cnt := 10; end if;
   if v_sec not in (5, 10, 15, 30, 60) then v_sec := 15; end if;
   if jsonb_typeof(c->'custom') = 'array' then
-    for e in select * from jsonb_array_elements(c->'custom') limit 30 loop
-      continue when jsonb_typeof(e) <> 'object' or length(btrim(coalesce(e->>'prompt', ''))) = 0;
-      select coalesce(jsonb_agg(left(btrim(x), 80)), '[]'::jsonb) into v_opts
-        from (select x from jsonb_array_elements_text(case when jsonb_typeof(e->'options') = 'array' then e->'options' else '[]'::jsonb end) x
-              where length(btrim(x)) > 0 limit 4) z;
-      continue when jsonb_array_length(v_opts) < 2;
-      v_cor := public._game_int(e->>'correct', 0, jsonb_array_length(v_opts) - 1);
+    for e in select * from jsonb_array_elements(c->'custom') limit 60 loop
+      continue when jsonb_typeof(e) <> 'object';
+      v_pr  := left(btrim(coalesce(e->>'prompt', '')), 200);
+      v_em  := left(btrim(coalesce(e->>'emoji', '')), 40);
+      v_img := btrim(coalesce(e->>'image', ''));
+      -- the image must be a picture inside THIS room's folder of the room-media bucket (no path tricks)
+      if v_img <> '' and not (p_room is not null and v_img ~* ('^' || p_room::text || '/[0-9a-f-]{36}/[A-Za-z0-9._-]{1,120}\.(jpe?g|png|webp|gif|avif)$') and position('..' in v_img) = 0) then
+        v_img := '';
+      end if;
+      continue when v_pr = '' and v_em = '' and v_img = '';        -- nothing to show
+      if v_pr = '' then v_pr := case when v_em <> '' then 'Guess it from the emojis' else 'Look at the picture and answer' end; end if;
       v_s := public._game_int(e->>'seconds', 3, 120);
       if v_s is not null and v_s not in (5, 10, 15, 30, 60) then v_s := null; end if;
-      v_cust := v_cust || jsonb_build_array(jsonb_build_object('prompt', left(btrim(e->>'prompt'), 200), 'options', v_opts,
-                                                               'correct', v_cor, 'seconds', v_s));
+      v_txt := v_can_text and e->>'type' = 'text';
+      if v_txt then
+        v_ans := left(btrim(coalesce(e->>'answer', '')), 80);
+        continue when v_ans = '';                                  -- typed question without an answer
+        select coalesce(jsonb_agg(z.v order by z.ord), '[]'::jsonb) into v_acc
+          from (select left(btrim(t.x), 80) as v, t.ord from jsonb_array_elements_text(case when jsonb_typeof(e->'accept') = 'array' then e->'accept' else '[]'::jsonb end) with ordinality as t(x, ord)
+                 where length(btrim(t.x)) > 0 order by t.ord limit 5) z;
+        v_cust := v_cust || jsonb_build_array(jsonb_build_object('type', 'text', 'prompt', v_pr, 'emoji', nullif(v_em, ''), 'image', nullif(v_img, ''),
+                                                                 'answer', v_ans, 'accept', v_acc, 'seconds', v_s));
+      else
+        select coalesce(jsonb_agg(z.v order by z.ord), '[]'::jsonb) into v_opts
+          from (select left(btrim(t.x), 80) as v, t.ord from jsonb_array_elements_text(case when jsonb_typeof(e->'options') = 'array' then e->'options' else '[]'::jsonb end) with ordinality as t(x, ord)
+                 where length(btrim(t.x)) > 0 order by t.ord limit 4) z;
+        continue when jsonb_array_length(v_opts) < 2;
+        v_cor := case when v_needs_cor then public._game_int(e->>'correct', 0, jsonb_array_length(v_opts) - 1) end;
+        continue when v_needs_cor and v_cor is null;               -- the correct option was not marked
+        v_cust := v_cust || jsonb_build_array(jsonb_build_object('type', 'options', 'prompt', v_pr, 'emoji', nullif(v_em, ''), 'image', nullif(v_img, ''),
+                                                                 'options', v_opts, 'correct', v_cor, 'seconds', v_s));
+      end if;
     end loop;
   end if;
   return jsonb_build_object(
-    'difficulty',    case when c->>'difficulty' in ('easy','medium','hard','mix') then c->>'difficulty' else 'medium' end,
-    'count',         v_cnt,
     'seconds',       v_sec,
-    'mode',          case when c->>'mode' = 'team' and p_game not in ('wyr') then 'team' else 'individual' end,
+    'mode',          case when c->>'mode' = 'team' and p_game <> 'wyr' then 'team' else 'individual' end,
     'team_pick',     case when c->>'team_pick' = 'choose' then 'choose' else 'auto' end,
     'team_names',    jsonb_build_object('red', v_red, 'blue', v_blue),
     'participation', case when c->>'participation' = 'optional' then 'optional' else 'open' end,
-    'order',         case when c->>'order' = 'fixed' then 'fixed' else 'random' end,
+    'order',         case when c->>'order' = 'random' then 'random' else 'fixed' end,
     'show',          case when c->>'show' = 'end' then 'end' else 'each' end,
     'changes',       coalesce((c->>'changes')::boolean, true),
     'spectator',     coalesce((c->>'spectator')::boolean, true),
     'sound',         coalesce((c->>'sound')::boolean, true),
-    'lang',          left(coalesce(nullif(btrim(c->>'lang'), ''), 'en'), 8),
-    'category',      left(coalesce(nullif(btrim(c->>'category'), ''), 'Random Mix'), 40),
-    'movie_cat',     case when c->>'movie_cat' in ('any','description','actor','scene','emoji','mcq') then c->>'movie_cat' else 'any' end,
-    'emoji_cat',     case when c->>'emoji_cat' in ('any','movie','character','song','phrase') then c->>'emoji_cat' else 'any' end,
-    'emoji_mc',      coalesce((c->>'emoji_mc')::boolean, false),
-    'song_mode',     case when c->>'song_mode' in ('title','artist','mix') then c->>'song_mode' else 'mix' end,
     'manual',        p_game in ('video', 'predict'),
     'custom',        v_cust);
 exception when invalid_text_representation then
-  return public._game_cfg(p_game, null);
+  return public._game_cfg(p_game, null, p_room);
 end $$;
 
 -- add one question to a session (shuffles MCQ options; custom questions keep the admin's order)
-create or replace function public._game_add_q(p_sid uuid, p_idx int, p_q jsonb, p_shuffle boolean, p_cor int default null, p_secs int default null)
-returns void language plpgsql security definer set search_path = public as $$
-declare
-  v_kind text := p_q->>'kind'; v_ans text := p_q->>'answer'; v_opts jsonb := null; v_cor int := p_cor;
+-- store ONE cleaned question (kind: mcq | text | poll | predict). Options keep the admin's order.
+create or replace function public._game_add_q(p_sid uuid, p_idx int, p_kind text, p_q jsonb) returns void
+language plpgsql security definer set search_path = public as $$
 begin
-  if v_kind in ('mcq', 'poll', 'predict') or jsonb_typeof(p_q->'options') = 'array' and v_kind = 'text' and coalesce((p_q->>'as_mcq')::boolean, false) then
-    select case when p_shuffle and v_kind <> 'poll' then jsonb_agg(o order by random()) else jsonb_agg(o order by ord) end into v_opts
-      from jsonb_array_elements_text(p_q->'options') with ordinality t(o, ord);
-    if v_ans is not null then
-      select (ord - 1)::int into v_cor from jsonb_array_elements_text(v_opts) with ordinality t(o, ord) where o = v_ans limit 1;
-    end if;
-    if coalesce((p_q->>'as_mcq')::boolean, false) then v_kind := 'mcq'; end if;
-  end if;
-  insert into public.game_questions(session_id, idx, kind, prompt, emoji, options, correct, answer_text, accept, seconds, cat)
-  values (p_sid, p_idx, v_kind, p_q->>'prompt', nullif(p_q->>'emoji', ''), v_opts, v_cor, v_ans,
-          case when v_kind = 'text' then coalesce(p_q->'accept', '[]'::jsonb) end, p_secs, p_q->>'cat');
+  insert into public.game_questions(session_id, idx, kind, prompt, emoji, image, options, correct, answer_text, accept, seconds)
+  values (p_sid, p_idx, p_kind, p_q->>'prompt', nullif(p_q->>'emoji', ''), nullif(p_q->>'image', ''),
+          case when p_kind <> 'text' then p_q->'options' end,
+          case when p_kind in ('mcq') then (p_q->>'correct')::int end,
+          case when p_kind = 'text' then p_q->>'answer' end,
+          case when p_kind = 'text' then coalesce(p_q->'accept', '[]'::jsonb) end,
+          (p_q->>'seconds')::int);
 end $$;
 
 -- smaller team gets the next player (random on a tie)
@@ -257,7 +238,7 @@ begin
   update public.game_sessions set status = 'question', q_idx = p_idx, phase_start = p_anchor, phase_end = p_anchor + v_sec * 1000,
          phase_ms = v_sec * 1000, reveal = null, seq = seq + 1,
          current = jsonb_build_object('idx', q.idx, 'n', q.idx + 1, 'total', s.total, 'kind', q.kind, 'prompt', q.prompt,
-                                      'emoji', q.emoji, 'options', q.options, 'cat', q.cat, 'seconds', v_sec)
+                                      'emoji', q.emoji, 'image', q.image, 'options', q.options, 'seconds', v_sec)
    where id = p_sid;
 end $$;
 
@@ -326,7 +307,7 @@ create or replace function public._game_finish(p_sid uuid, p_reason text default
 language plpgsql security definer set search_path = public as $$
 declare
   s public.game_sessions; v_rank jsonb; v_teams jsonb := null; v_winner uuid := null; v_wteam text := null; v_review jsonb; v_pts boolean; v_cnt int;
-  v_rs int; v_bs int; v_dur bigint; r record; v_first boolean; v_badges text[]; v_wname text;
+  v_rs int; v_bs int; v_dur bigint; v_wname text;
 begin
   select * into s from public.game_sessions where id = p_sid;
   if not found or s.status = 'ended' then return; end if;
@@ -357,24 +338,6 @@ begin
          summary = jsonb_build_object('reason', p_reason, 'winner', v_winner, 'ranking', v_rank, 'teams', v_teams, 'review', v_review,
                                       'participants', jsonb_array_length(v_rank), 'duration_ms', v_dur)
    where id = p_sid;
-  -- history + rewards: only people who actually answered (no rewards for idle time)
-  for r in select (x->>'user_id')::uuid uid, (x->>'score')::int sc, (x->>'correct')::int co, (x->>'answered')::int an,
-                  (x->>'rank')::int rk, (x->>'streak')::int bst, x->>'team' tm from jsonb_array_elements(v_rank) x loop
-    insert into public.game_results(session_id, user_id, room_id, game, score, correct, answered, rank, players, best_streak, team, won)
-    values (p_sid, r.uid, s.room_id, s.game, r.sc, r.co, r.an, r.rk, jsonb_array_length(v_rank), r.bst, r.tm,
-            case when s.cfg->>'mode' = 'team' then v_wteam is not null and r.tm = v_wteam
-                 else v_pts and r.rk = 1 and jsonb_array_length(v_rank) >= 2 and r.sc > 0 end)
-    on conflict do nothing;
-    select not exists(select 1 from public.game_results g where g.user_id = r.uid and g.won and g.session_id <> p_sid) into v_first;
-    v_badges := '{}';
-    if r.bst >= 5 then v_badges := array_append(v_badges, 'streak5'::text); end if;
-    if s.cfg->>'mode' = 'team' then v_badges := array_append(v_badges, 'team_player'::text); end if;
-    if v_first and exists(select 1 from public.game_results g where g.session_id = p_sid and g.user_id = r.uid and g.won) then v_badges := array_append(v_badges, 'first_win'::text); end if;
-    insert into public.game_profile(user_id, xp, badges)
-    values (r.uid, 10 + r.sc / 20 + case when exists(select 1 from public.game_results g where g.session_id = p_sid and g.user_id = r.uid and g.won) then 25 else 0 end, v_badges)
-    on conflict (user_id) do update set xp = public.game_profile.xp + excluded.xp,
-      badges = (select coalesce(array_agg(distinct b), '{}') from unnest(public.game_profile.badges || excluded.badges) b);
-  end loop;
   if v_winner is not null then v_wname := public._game_name(v_winner); end if;
   perform public._notice(s.room_id, s.admin_id, case
     when s.cfg->>'mode' = 'team' and v_wteam is not null then 'Game ended · ' || (s.cfg#>>array['team_names', v_wteam]) || ' wins'
@@ -524,64 +487,39 @@ create trigger trg_game_room_change after update of admin_id, status on public.r
 create or replace function public._game_start(p_room uuid, p_game text, p_cfg jsonb, p_uid uuid) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
-  v_cfg jsonb; sid uuid; v_now bigint := public.room_now(); n int := 0; v_want int; r record; e jsonb; v_q jsonb; v_manual boolean; v_opt boolean;
+  v_cfg jsonb; sid uuid; v_now bigint := public.room_now(); n int := 0; e record; v_manual boolean; v_opt boolean;
 begin
   if p_game not in ('trivia','movie','emoji','song','predict','wyr','video') then raise exception 'Unknown game'; end if;
-  v_cfg := public._game_cfg(p_game, p_cfg);
+  v_cfg := public._game_cfg(p_game, p_cfg, p_room);
   v_manual := v_cfg->>'manual' = 'true';
   v_opt := v_cfg->>'participation' = 'optional';
-  v_want := (v_cfg->>'count')::int;
-  if p_game = 'video' and jsonb_array_length(v_cfg->'custom') < 1 then raise exception 'Add at least one question about the video.'; end if;
+  if jsonb_array_length(v_cfg->'custom') < 1 and not (p_game = 'predict') then
+    raise exception 'Add at least one complete question to start (question, then answer options with the correct one marked, or a typed answer).';
+  end if;
   if exists(select 1 from public.game_sessions where room_id = p_room and status <> 'ended') then
     raise exception 'A game is already running. End it before starting another.';
   end if;
-  -- the stored (member-readable) config never carries the admin's custom questions or their correct answers
+  -- the stored (member-readable) config never carries the admin's questions or their correct answers
   insert into public.game_sessions(room_id, game, status, cfg, admin_id, started_by, phase_start, phase_end, phase_ms)
   values (p_room, p_game, case when v_opt then 'lobby' else 'countdown' end,
           v_cfg - 'custom' || jsonb_build_object('custom_n', jsonb_array_length(v_cfg->'custom')), p_uid, p_uid, v_now,
           v_now + case when v_opt then 10000 else 3000 end, case when v_opt then 10000 else 3000 end)
   returning id into sid;
-  -- the admin's own questions first (their order), then the bank
-  for e in select * from jsonb_array_elements(v_cfg->'custom') loop
-    perform public._game_add_q(sid, n, jsonb_build_object('kind', case when p_game = 'wyr' then 'poll' when p_game = 'predict' then 'predict' else 'mcq' end,
-      'prompt', e->>'prompt', 'options', e->'options', 'answer', case when e->>'correct' is not null and p_game <> 'predict' then e->'options'->>((e->>'correct')::int) end, 'cat', 'Custom'),
-      false, case when p_game = 'predict' then null else (e->>'correct')::int end, (e->>'seconds')::int);
+  -- the admin's questions, in their order (or shuffled when "Random order" is on; live-hosted games always keep the admin's order)
+  for e in select q, ord from jsonb_array_elements(v_cfg->'custom') with ordinality t(q, ord)
+           order by case when v_cfg->>'order' = 'random' and not v_manual then random() else ord::double precision end loop
+    perform public._game_add_q(sid, n,
+      case when p_game = 'wyr' then 'poll' when p_game = 'predict' then 'predict' when e.q->>'type' = 'text' then 'text' else 'mcq' end, e.q);
     n := n + 1;
   end loop;
-  if p_game in ('trivia','movie','emoji','song','wyr') then
-    for r in
-      select b.q, b.category from public.game_bank b
-       where b.game = p_game
-         and (p_game <> 'trivia' or v_cfg->>'category' in ('Random Mix', '') or b.category = v_cfg->>'category')
-         and (p_game <> 'movie' or v_cfg->>'movie_cat' = 'any' or b.category = v_cfg->>'movie_cat')
-         and (p_game <> 'emoji' or v_cfg->>'emoji_cat' = 'any' or b.category = v_cfg->>'emoji_cat')
-       order by case when v_cfg->>'difficulty' = 'mix' or b.difficulty = v_cfg->>'difficulty' then 0 else 1 end,
-                case when v_cfg->>'order' = 'fixed' then b.id::double precision else random() end
-       limit greatest(v_want - n, case when n = 0 then v_want else 0 end)
-    loop
-      exit when n >= v_want and n > 0;
-      v_q := r.q || jsonb_build_object('cat', r.category);
-      if p_game = 'song' then
-        if v_cfg->>'song_mode' = 'title' or (v_cfg->>'song_mode' = 'mix' and n % 2 = 0) then
-          v_q := jsonb_build_object('kind', 'mcq', 'prompt', 'Which song is this? ' || (r.q->>'prompt'), 'options', r.q->'titleOptions', 'answer', r.q->>'title', 'cat', 'Song');
-        else
-          v_q := jsonb_build_object('kind', 'mcq', 'prompt', 'Who sings it? ' || (r.q->>'prompt'), 'options', r.q->'artistOptions', 'answer', r.q->>'artist', 'cat', 'Artist');
-        end if;
-      elsif p_game = 'emoji' then
-        v_q := v_q || jsonb_build_object('as_mcq', v_cfg->>'emoji_mc' = 'true');
-        v_q := v_q || jsonb_build_object('kind', 'text');
-      end if;
-      perform public._game_add_q(sid, n, v_q, true);
-      n := n + 1;
-    end loop;
-  end if;
-  if n = 0 and not v_manual then raise exception 'No questions available for these settings.'; end if;
   update public.game_sessions set total = n where id = sid;
   -- players: everyone in the room (open) or just the admin until others press Join (optional)
   insert into public.game_players(session_id, room_id, user_id)
     select sid, p_room, m.user_id from public.room_members m where m.room_id = p_room and (not v_opt or m.user_id = p_uid);
   if v_cfg->>'mode' = 'team' and v_cfg->>'team_pick' = 'auto' then perform public._game_assign_teams(sid); end if;
-  perform public._notice(p_room, p_uid, public._game_name(p_uid) || ' started ' || public._game_label(p_game));
+  perform public._notice(p_room, p_uid, public._game_name(p_uid) || ' started ' || (select case p_game when 'trivia' then 'Quick Trivia' when 'movie' then 'Guess the Movie'
+    when 'emoji' then 'Emoji Challenge' when 'song' then 'Guess the Song' when 'predict' then 'Predict What Happens Next' when 'wyr' then 'Would You Rather?'
+    else 'Video Knowledge Challenge' end));
   return jsonb_build_object('id', sid);
 end $$;
 
@@ -655,14 +593,10 @@ declare s public.game_sessions; v_c jsonb;
 begin
   s := public._game_lock(p_session);
   if s.game not in ('video', 'predict') then raise exception 'Questions can only be added live to video and prediction games.'; end if;
-  v_c := (public._game_cfg(s.game, jsonb_build_object('custom', jsonb_build_array(p_q))))->'custom'->0;
-  if v_c is null then raise exception 'Write a question and at least two options.'; end if;
-  if s.game = 'video' and v_c->>'correct' is null then raise exception 'Mark the correct answer.'; end if;
+  v_c := (public._game_cfg(s.game, jsonb_build_object('custom', jsonb_build_array(p_q)), s.room_id))->'custom'->0;
+  if v_c is null then raise exception '%', case when s.game = 'video' then 'Write a question (or add an emoji / picture), at least two options, and mark the correct one.' else 'Write a question (or add an emoji / picture) and at least two options.' end; end if;
   if s.total >= 60 then raise exception 'That is plenty of questions for one game.'; end if;
-  perform public._game_add_q(p_session, s.total,
-    jsonb_build_object('kind', case when s.game = 'predict' then 'predict' else 'mcq' end, 'prompt', v_c->>'prompt', 'options', v_c->'options',
-      'answer', case when s.game = 'video' then v_c->'options'->>((v_c->>'correct')::int) end, 'cat', 'Custom'),
-    false, case when s.game = 'video' then (v_c->>'correct')::int end, (v_c->>'seconds')::int);
+  perform public._game_add_q(p_session, s.total, case when s.game = 'predict' then 'predict' when v_c->>'type' = 'text' then 'text' else 'mcq' end, v_c);
   update public.game_sessions set total = total + 1, seq = seq + 1,
          current = case when current is not null then jsonb_set(current, '{total}', to_jsonb(total + 1)) end where id = p_session;
 end $$;
@@ -676,8 +610,9 @@ begin
   perform public._game_admin(s.room_id);
   if s.status <> 'ended' then raise exception 'End the current game first.'; end if;
   return public._game_start(s.room_id, s.game, s.cfg || jsonb_build_object('custom', coalesce((
-      select jsonb_agg(jsonb_build_object('prompt', prompt, 'options', options, 'correct', correct, 'seconds', seconds) order by idx)
-        from public.game_questions where session_id = p_session and cat = 'Custom'), '[]'::jsonb)), auth.uid());
+      select jsonb_agg(jsonb_build_object('type', case when kind = 'text' then 'text' else 'options' end, 'prompt', prompt, 'emoji', emoji, 'image', image,
+                                          'options', options, 'correct', correct, 'answer', answer_text, 'accept', accept, 'seconds', seconds) order by idx)
+        from public.game_questions where session_id = p_session), '[]'::jsonb)), auth.uid());
 exception when unique_violation then raise exception 'A game is already running. End it before starting another.';
 end $$;
 
@@ -784,96 +719,20 @@ begin
   if found then perform public._game_tick(p_session); end if;
 end $$;
 
--- ---------- history, statistics, daily challenges ----------
-create or replace function public.game_history(p_room uuid, p_limit int default 20) returns jsonb
-language plpgsql security definer set search_path = public as $$
-begin
-  if auth.uid() is null then raise exception 'Sign in required'; end if;
-  if not public.is_room_member(p_room) then raise exception 'Not in this room'; end if;
-  return coalesce((select jsonb_agg(h order by (h->>'ended_at') desc) from (
-    select jsonb_build_object('id', id, 'game', game, 'started_by', started_by, 'created_at', created_at, 'ended_at', ended_at,
-             'duration_ms', summary->'duration_ms', 'participants', summary->'participants', 'winner', summary->'winner',
-             'mode', cfg->>'mode', 'teams', summary->'teams', 'ranking', summary->'ranking', 'names', cfg->'team_names') h
-      from public.game_sessions where room_id = p_room and status = 'ended' and summary is not null
-      order by ended_at desc limit least(greatest(coalesce(p_limit, 20), 1), 50)) z), '[]'::jsonb);
-end $$;
-
-create or replace function public.game_my_stats() returns jsonb
-language plpgsql security definer set search_path = public as $$
-declare uid uuid := auth.uid(); v_p public.game_profile; v_xp bigint;
-begin
-  if uid is null then raise exception 'Sign in required'; end if;
-  select * into v_p from public.game_profile where user_id = uid;
-  v_xp := coalesce(v_p.xp, 0);
-  return jsonb_build_object(
-    'played', (select count(*) from public.game_results where user_id = uid),
-    'wins', (select count(*) from public.game_results where user_id = uid and won),
-    'correct', (select coalesce(sum(correct), 0) from public.game_results where user_id = uid),
-    'points', (select coalesce(sum(score), 0) from public.game_results where user_id = uid),
-    'best_rank', (select min(rank) from public.game_results where user_id = uid),
-    'best_streak', (select coalesce(max(best_streak), 0) from public.game_results where user_id = uid),
-    'favourite', (select game from public.game_results where user_id = uid group by game order by count(*) desc, max(created_at) desc limit 1),
-    'recent', coalesce((select jsonb_agg(jsonb_build_object('game', game, 'score', score, 'rank', rank, 'players', players, 'won', won, 'at', created_at) order by created_at desc)
-                          from (select * from public.game_results where user_id = uid order by created_at desc limit 5) r), '[]'::jsonb),
-    'xp', v_xp, 'badges', to_jsonb(coalesce(v_p.badges, '{}'::text[])), 'streak', coalesce(v_p.daily_streak, 0),
-    'title', case when v_xp >= 4000 then 'Legend' when v_xp >= 1500 then 'Champion' when v_xp >= 600 then 'Challenger' when v_xp >= 200 then 'Player' else 'Rookie' end,
-    'frame', case when v_xp >= 4000 then 'gold' when v_xp >= 1500 then 'silver' when v_xp >= 500 then 'bronze' end);
-end $$;
-
-create or replace function public._game_daily_rows(uid uuid) returns table(key text, title text, goal int, progress int, xp int)
-language sql stable security definer set search_path = public as $$
-  with t as (select * from public.game_results where user_id = uid and (created_at at time zone 'utc')::date = (now() at time zone 'utc')::date)
-  select 'trivia1', 'Complete one Quick Trivia game', 1, (select count(*)::int from t where game = 'trivia'), 30
-  union all select 'correct5', 'Answer five questions correctly', 5, (select coalesce(sum(correct), 0)::int from t), 40
-  union all select 'emoji_win', 'Win one Emoji Challenge', 1, (select count(*)::int from t where game = 'emoji' and won), 50
-  union all select 'team1', 'Participate in a team battle', 1, (select count(*)::int from t where team is not null), 40
-$$;
-
-create or replace function public.game_daily() returns jsonb
-language plpgsql security definer set search_path = public as $$
-declare uid uuid := auth.uid(); v_day date := (now() at time zone 'utc')::date;
-begin
-  if uid is null then raise exception 'Sign in required'; end if;
-  return coalesce((select jsonb_agg(jsonb_build_object('key', d.key, 'title', d.title, 'goal', d.goal, 'progress', least(d.progress, d.goal), 'xp', d.xp,
-            'done', d.progress >= d.goal, 'claimed', exists(select 1 from public.game_rewards w where w.user_id = uid and w.day = v_day and w.key = d.key)))
-          from public._game_daily_rows(uid) d), '[]'::jsonb);
-end $$;
-
-create or replace function public.game_claim(p_key text) returns jsonb
-language plpgsql security definer set search_path = public as $$
-declare uid uuid := auth.uid(); v_day date := (now() at time zone 'utc')::date; d record; v_p public.game_profile; v_streak int; v_badges text[] := '{}';
-begin
-  if uid is null then raise exception 'Sign in required'; end if;
-  select * into d from public._game_daily_rows(uid) x where x.key = p_key;
-  if not found then raise exception 'Unknown challenge'; end if;
-  if d.progress < d.goal then raise exception 'Challenge not finished yet'; end if;
-  insert into public.game_rewards(user_id, day, key, xp) values (uid, v_day, d.key, d.xp) on conflict do nothing;
-  if not found then raise exception 'Already claimed'; end if;
-  select * into v_p from public.game_profile where user_id = uid;
-  v_streak := case when v_p.last_daily = v_day then coalesce(v_p.daily_streak, 1)
-                   when v_p.last_daily = v_day - 1 then coalesce(v_p.daily_streak, 0) + 1 else 1 end;
-  if v_streak >= 3 then v_badges := array_append(v_badges, 'streak3'::text); end if;
-  if v_streak >= 7 then v_badges := array_append(v_badges, 'streak7'::text); end if;
-  insert into public.game_profile(user_id, xp, badges, daily_streak, last_daily) values (uid, d.xp + case when v_streak in (3, 7) and v_p.last_daily is distinct from v_day then 50 else 0 end, v_badges, v_streak, v_day)
-  on conflict (user_id) do update set xp = public.game_profile.xp + excluded.xp, daily_streak = excluded.daily_streak, last_daily = excluded.last_daily,
-    badges = (select coalesce(array_agg(distinct b), '{}') from unnest(public.game_profile.badges || excluded.badges) b);
-  return jsonb_build_object('xp', d.xp, 'streak', v_streak);
-end $$;
-
 -- ---------- permissions ----------
 do $$
 declare f record;
 begin
   for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public' and p.proname in ('game_start','game_pause','game_resume','game_skip','game_next','game_end','game_reveal','game_add_question',
-             'game_rematch','game_join','game_leave','game_answer','game_state','game_tick','game_history','game_my_stats','game_daily','game_claim') loop
+             'game_rematch','game_join','game_leave','game_answer','game_state','game_tick') loop
     execute format('revoke all on function %s from public, anon', f.sig);
     execute format('grant execute on function %s to authenticated', f.sig);
   end loop;
   for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-           where n.nspname = 'public' and p.proname in ('_game_label','_game_name','_game_norm','_game_int','_game_cfg','_game_add_q','_game_small_team','_game_assign_teams',
+           where n.nspname = 'public' and p.proname in ('_game_name','_game_norm','_game_int','_game_cfg','_game_add_q','_game_small_team','_game_assign_teams',
              '_game_open_question','_game_reveal','_game_finish','_game_advance','_game_pause','_game_resume','_game_tick_locked','_game_tick','_game_admin','_game_lock',
-             '_game_on_room_change','_game_start','_game_force','_game_daily_rows') loop
+             '_game_on_room_change','_game_start','_game_force') loop
     execute format('revoke all on function %s from public, anon, authenticated', f.sig);
   end loop;
 end $$;

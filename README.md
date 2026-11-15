@@ -284,17 +284,19 @@ Every room member has a **private** queue (only they can see or change it) shown
 
 ## Nova Play (interactive watch-room games)
 
-Files: `room-games.js`, `room-games.css`, `room-games-schema.sql`, `room-games-bank.sql`, `game-icon.png`, `chat-icon.png`, `tools/game-bank.js`.
+Files: `room-games.js`, `room-games.css`, `room-games-schema.sql`, `room-games-cleanup.sql`, `game-icon.png`, `chat-icon.png`.
 
-Setup (Supabase SQL editor, in this order, after `rooms-schema.sql`): `room-games-schema.sql` then `room-games-bank.sql`.
+Setup (Supabase SQL editor, after `rooms-schema.sql`): run `room-games-cleanup.sql` once on an existing database (drops the old question bank, history, stats and daily-reward objects), then `room-games-schema.sql`. A fresh database only needs `room-games-schema.sql`. Database tables left: `game_sessions`, `game_questions`, `game_players`, `game_answers`.
 
 How it behaves
 - The **gamepad icon** in the room toolbar opens the Games panel in place of the chat column (the video keeps playing).
 - While the panel is open the same button shows the **chat icon**; tapping it returns to chat **without leaving the game** (a "game is live" banner and a green dot bring you back).
 - Only the **Quit icon inside the panel** leaves a game (confirmation first). A quitter can rejoin while it runs.
 - Only the current room admin sees Select Game / configuration / Start / Pause / Resume / Skip / Next / End / Rematch / custom questions. Every one of those is re-checked on the server; admin changes pause the game and the old admin loses control instantly.
+- The game library is just the seven game cards (name + **Select Game**): no tabs, category filters, descriptions or stats.
+- **Every question is written by the admin**: question text, optional emoji clue, optional picture (uploaded to the private `room-media` bucket as `<room>/<user>/<file>`, validated on the server), and either 2-4 answer options with the correct one marked or a typed answer (with optional extra accepted answers). There is no built-in question bank.
 - Server clock decides rounds; answers are hidden until reveal; scoring is server-side and idempotent.
 
 Tests
-- Server: `psql -f tests/mock-supabase.sql -f rooms-schema.sql -f room-pqueue-schema.sql -f room-games-schema.sql -f room-games-bank.sql -f tests/room-games-test.sql`
+- Server: `psql -f tests/mock-supabase.sql -f rooms-schema.sql -f room-pqueue-schema.sql -f room-games-schema.sql -f tests/room-games-test.sql`
 - Browser (phone, small phone, landscape, tablet, laptop, desktop): `E2E_OUT=/tmp/shots node tests/e2e-room-games.js`
