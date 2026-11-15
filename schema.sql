@@ -356,7 +356,7 @@ begin
     'top',     (select coalesce(jsonb_agg(to_jsonb(t)),'[]') from (select video_url,title,thumb,source,channel,watch_count from h order by watch_count desc, last_watched desc limit 20) t),
     'history', (select coalesce(jsonb_agg(to_jsonb(t)),'[]') from (select video_url,title,thumb,source,channel,watch_count from h order by last_watched desc limit 30) t),
     'liked',   (select coalesce(jsonb_agg(to_jsonb(t)),'[]') from (select video_url,title,thumb,source,channel,watch_count from h where liked order by last_watched desc limit 30) t),
-    'channels',(select coalesce(jsonb_agg(to_jsonb(t)),'[]') from (select channel as name, sum(watch_count)::int as n from h where channel is not null and channel <> '' group by 1 order by 2 desc limit 12) t),
+    'channels',(select coalesce(jsonb_agg(to_jsonb(t)),'[]') from (select channel as name, sum(watch_count)::int as n, (array_agg(thumb order by watch_count desc) filter (where thumb is not null and thumb <> ''))[1] as thumb from h where channel is not null and channel <> '' group by 1 order by 2 desc limit 40) t),
     'interests',(select coalesce(jsonb_agg(to_jsonb(t)),'[]') from (select source as name, sum(watch_count)::int as n from h group by 1 order by 2 desc limit 8) t),
     'titles',  (select coalesce(jsonb_agg(title),'[]') from (select title from h order by last_watched desc limit 100) t)
   ) into vids;

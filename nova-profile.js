@@ -124,12 +124,37 @@ ${gRow(gridItems(g, true), true, add)}${g.length ? '' : `<p class=ghint>Tap + to
     const kw = Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 15);
     return kw.length ? `<div class=chips>${kw.map(([w, n]) => `<span class=chip>${esc(w)} <small>${n}</small></span>`).join('')}</div>` : '<span class=mu>Nothing here yet</span>';
   };
-  const chHTML = ch => (ch && ch.length) ? `<div class=chips>${ch.map(c => `<span class=chip>${esc(c.name)} <small>${c.n}</small></span>`).join('')}</div>` : '<span class=mu>Nothing here yet</span>';
-  const donutHTML = it => {
-    if (!it || !it.length) return '<span class=mu>Nothing here yet</span>';
-    const tot = it.reduce((a, b) => a + b.n, 0) || 1; let acc = 0;
-    const stops = it.map((x, i) => { const a = acc / tot * 100; acc += x.n; return `${COL[i % 8]} ${a}% ${acc / tot * 100}%`; }).join(',');
-    return `<div class=donutw><div class=donut style="background:conic-gradient(${stops})"><div>Sites</div></div><div class=legend>${it.map((x, i) => `<div><i style="background:${COL[i % 8]}"></i>${esc(x.name)}<b>${Math.round(x.n / tot * 100)}%</b></div>`).join('')}</div></div>`;
+  /* Channels: floating, draggable bubbles (see nova-bubbles.js) */
+  const chHTML = ch => (ch && ch.length)
+    ? `<div class=nbx><div class=nbx-stage data-nb=channels data-nb-items="${esc(JSON.stringify(ch.map(c => ({ name: c.name, n: c.n, thumb: c.thumb || '' }))))}"></div></div>`
+    : '<span class=mu>Nothing here yet</span>';
+  /* Genres are estimated from the titles of the videos watched (the database stores no genre) */
+  const GENRES = [
+    ['Music', /\b(official (music )?video|lyrics?|lyrical|song|songs|audio|remix|feat\.?|ft\.?|album|concert|mashup|lofi|lo-fi|beats?|karaoke|jukebox|music|single|acoustic|cover)\b/i],
+    ['Romance', /\b(romantic|romance|love story|pyaar|ishq|heartbreak|couple)\b/i],
+    ['Comedy', /\b(comedy|funny|prank|meme|memes|roast|stand-?up|hilarious|laugh)\b/i],
+    ['Drama', /\b(drama|serial|web series|season|episode|ep\.? ?\d+|tv series)\b/i],
+    ['Thriller', /\b(thriller|mystery|suspense)\b/i],
+    ['Horror', /\b(horror|haunted|ghost|scary|zombie)\b/i],
+    ['Action', /\b(action|fight|battle|war|gun|mission)\b/i],
+    ['Fantasy', /\b(fantasy|magic|dragon|wizard|kingdom)\b/i],
+    ['Animation', /\b(animation|animated|cartoon|anime|3d)\b/i],
+    ['Sci-Fi', /\b(sci-?fi|space|alien|robot|future|galaxy)\b/i],
+    ['Crime', /\b(crime|murder|detective|police|heist|mafia)\b/i],
+    ['People & Blogs', /\b(vlog|vlogs|daily|my life|challenge|reaction|podcast|interview|review|day in)\b/i],
+    ['Entertainment', /\b(show|awards?|reality|highlights?|trailer|teaser|movie|film|scene|clip)\b/i]
+  ];
+  const genreList = titles => {
+    const c = {}; (titles || []).forEach(t => GENRES.forEach(([g, re]) => { if (re.test(t || '')) c[g] = (c[g] || 0) + 1; }));
+    return Object.entries(c).map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n).slice(0, 12);
+  };
+  const SITE = { youtube: 'YouTube', netflix: 'Netflix', prime: 'Prime Video', primevideo: 'Prime Video', drive: 'Google Drive', gdrive: 'Google Drive', twitch: 'Twitch', x: 'X', web: 'Web' };
+  const ringBlock = (title, list, hue) => list && list.length ? `<div class=nbx-ringcard>${NovaBubbles.ringHTML(title, list, { hue })}</div>` : '';
+  /* Interests: Genres ring + Sites ring with leader-line labels */
+  const interestsHTML = d => {
+    const sites = (d.interests || []).map(x => ({ name: SITE[String(x.name).toLowerCase()] || (String(x.name)[0] || '').toUpperCase() + String(x.name).slice(1), n: x.n }));
+    const html = ringBlock('Genres', genreList(d.titles), 176) + ringBlock('Sites', sites, 168);
+    return html ? `<div class="nbx nbx-rings">${html}</div>` : '<span class=mu>Nothing here yet</span>';
   };
   const vidHTML = list => list && list.length ? `<div class=vrow>${list.map(v => `<a class=vid href="${okUrl(v.video_url)}" target=_blank rel=noopener><img src="${okUrl(v.thumb)}" alt="" onerror="this.style.visibility='hidden'"><b>${esc(v.title)}</b><small>${v.watch_count} views</small></a>`).join('')}</div>` : '<span class=mu>Nothing here yet</span>';
   const socChips = (s, own) => {
@@ -204,7 +229,7 @@ ${REQ.length ? `<div class=pbody style="border-top:1px solid var(--line)">${REQ.
     return shell('activity', mbar(t('activity')) + panel(t('activity'), 'What you watch on Nova',
       `<div class=actg><label class=nsfw style="${can ? '' : 'opacity:.5'}" title="${can ? '' : 'Turn off Hide Mature Content in Settings first'}">Include 🔞 NSFW <input type=checkbox class=sw data-nsfw ${NSFW && can ? 'checked' : ''} ${can ? '' : 'disabled'}></label></div>`,
       `<div class=pbody>${window.NovaWatch ? `<div class=subh><h3>Videos</h3></div><p class="vhint">Choose who can see Most watched, History and Likes on your profile. Use the eye icon on each list: Public, Friends or Hidden.</p>${NovaWatch.html(k => eye(k))}` : sh('history', 'Videos', `<div class=tabs>${['top', 'history', 'liked'].map(k => `<button class="tab${TAB === k ? ' on' : ''}" data-tab=${k}>${k[0].toUpperCase() + k.slice(1)}</button>`).join('')}${TAB === 'history' ? '<button class=tab data-clear>Clear</button>' : ''}</div><div style="margin-top:12px">${vidHTML(v[TAB])}</div>`)}
-${sh('keywords', 'Keywords', kwHTML(d.titles))}${sh('channels', 'Channels', chHTML(d.channels))}${sh('interests', 'Interests', donutHTML(d.interests))}</div>`));
+${sh('keywords', 'Keywords', kwHTML(d.titles))}${sh('channels', 'Channels', chHTML(d.channels))}${sh('interests', 'Interests', interestsHTML(d))}</div>`));
   };
 
   /* ---------- VISITOR / PREVIEW ---------- */
@@ -292,7 +317,7 @@ ${s ? sec('stats', 'chart', t('accstats'), `<div class="tiles profile-stat-tiles
 ${d.gallery && d.gallery.length ? sec('gallery', 'image', `${t('gallery')} (${d.gallery.length})`, gridG(d.gallery, false)) : ''}
 ${d.socials ? sec('socials', 'link', t('social'), socChips(d.socials, false)) : ''}
 ${d.videos ? sec('videos', 'play', 'Videos', visitorVideos(d.videos)) : ''}
-${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.channels ? sec('channels', 'play', 'Channels', chHTML(d.channels)) : ''}${d.interests ? sec('interests', 'chart', 'Interests', donutHTML(d.interests)) : ''}</div>${bnav('')}`;
+${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.channels ? sec('channels', 'play', 'Channels', chHTML(d.channels)) : ''}${d.interests ? sec('interests', 'chart', 'Interests', interestsHTML(d)) : ''}</div>${bnav('')}`;
   }
   V.user = () => visitor(false);
   V.preview = () => visitor(true);

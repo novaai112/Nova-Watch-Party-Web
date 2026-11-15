@@ -1,0 +1,45 @@
+/* Nova floating bubbles + interest rings */
+.nbx{--nb-bg:radial-gradient(120% 90% at 8% 0%,#dbe8ff 0%,transparent 55%),radial-gradient(110% 90% at 100% 100%,#bdf1e6 0%,transparent 60%),linear-gradient(180deg,#f4f8ff,#eefaf7);--nb-line:rgba(15,23,42,.08);--nb-ring-gap:#f7fbff}
+[data-theme=dark] .nbx{--nb-bg:radial-gradient(120% 90% at 8% 0%,#3b2a63 0%,transparent 55%),radial-gradient(110% 90% at 100% 100%,#7a4a2a 0%,transparent 60%),linear-gradient(180deg,#1a1633,#241a3a);--nb-line:rgba(255,255,255,.1);--nb-ring-gap:#241a3a}
+
+.nbx-stage{position:relative;width:100%;min-height:260px;border-radius:20px;overflow:hidden;background:var(--nb-bg);border:1px solid var(--nb-line);touch-action:pan-y;-webkit-user-select:none;user-select:none;contain:layout paint;-webkit-tap-highlight-color:transparent}
+.nbx-stage.nbx-grabbing{cursor:grabbing}
+.nbx-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px;font-weight:700}
+.nbx-pill{padding:5px 14px;border-radius:999px;background:var(--card,#fff);color:var(--tx,#0f172a);font-size:13px;font-weight:700;box-shadow:0 1px 3px #0f172a22}
+
+.nb-b{position:absolute;left:0;top:0;padding:0;border:0;border-radius:50%;background:none;cursor:grab;will-change:transform;touch-action:pan-y;outline:none}
+.nb-b:focus-visible .nb-i{box-shadow:0 0 0 3px var(--ac,#2563eb)}
+.nb-i{position:absolute;inset:0;border-radius:50%;overflow:hidden;display:block;box-shadow:0 0 0 1.5px rgba(255,255,255,.7),0 8px 20px rgba(15,23,42,.22);animation:nbpop .6s cubic-bezier(.2,1.35,.4,1) both;animation-delay:var(--d,0ms);transition:box-shadow .18s}
+.nb-b.sel .nb-i{box-shadow:0 0 0 3px var(--ac,#2563eb),0 10px 26px rgba(15,23,42,.3)}
+.nb-b:hover .nb-i{box-shadow:0 0 0 2px #fff,0 10px 24px rgba(15,23,42,.3)}
+.nb-fill{position:absolute;inset:0;display:grid;place-items:center;color:#fff;text-align:center}
+.nb-fill img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;-webkit-user-drag:none}
+.nb-shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.55))}
+.nb-name{position:relative;z-index:1;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;max-width:82%;font-weight:800;line-height:1.12;letter-spacing:-.01em;text-shadow:0 1px 4px rgba(0,0,0,.55);overflow-wrap:anywhere;pointer-events:none}
+.nb-ini{position:relative;z-index:1;font-weight:800;text-shadow:0 1px 3px rgba(0,0,0,.45);pointer-events:none}
+@keyframes nbpop{0%{transform:scale(.15);opacity:0}100%{transform:scale(1);opacity:1}}
+
+.nb-tip{position:absolute;left:0;top:0;z-index:5;display:grid;gap:2px;padding:8px 12px;border-radius:12px;background:var(--card,#fff);color:var(--tx,#0f172a);box-shadow:0 8px 24px rgba(15,23,42,.25);font-size:13px;white-space:nowrap;max-width:min(260px,90%);will-change:transform}
+.nb-tip[hidden]{display:none}
+.nb-tip b{font-weight:700;overflow:hidden;text-overflow:ellipsis}
+.nb-tip small{color:var(--mu,#64748b);font-size:11.5px}
+.nb-tip-acts{display:flex;gap:6px;margin-top:6px}
+.nb-tip-btn{padding:6px 12px;border-radius:999px;background:var(--chip,#0f172a0f);color:var(--tx,#0f172a);font-weight:700;font-size:12px;cursor:pointer}
+.nb-tip-btn.pri{background:var(--ac,#2563eb);color:var(--onac,#fff)}
+
+/* rings */
+.nbx-rings{display:grid;gap:16px}
+.nbx-ringcard{border-radius:20px;background:var(--nb-bg);border:1px solid var(--nb-line);padding:10px 6px 6px;overflow:hidden}
+.nb-ring{display:block;width:100%;max-width:560px;height:auto;margin:0 auto;overflow:visible}
+.nb-seg{stroke:var(--nb-ring-gap);stroke-width:2.5;animation:nbseg .7s cubic-bezier(.2,.9,.3,1.1) both;animation-delay:var(--d,0ms);transition:transform .2s,filter .2s;cursor:pointer}
+.nb-seg:hover{transform:scale(1.045);filter:brightness(1.07)}
+@keyframes nbseg{0%{opacity:0;transform:scale(.7) rotate(-25deg)}100%{opacity:1;transform:none}}
+.nb-lab{animation:nbfade .5s ease both;animation-delay:var(--d,0ms)}
+.nb-lab polyline{fill:none;stroke:var(--mu,#64748b);stroke-width:1;opacity:.7}
+.nb-lab text{fill:var(--tx,#0f172a);font-size:13.5px;font-weight:500}
+.nb-ico{font-size:17px;pointer-events:none}
+.nb-ring-title{fill:var(--tx,#0f172a);font-size:21px;font-weight:700}
+@keyframes nbfade{from{opacity:0}to{opacity:1}}
+[data-theme=dark] .nb-lab text,[data-theme=dark] .nb-ring-title{fill:#fff}
+
+@media(prefers-reduced-motion:reduce){.nb-i,.nb-seg,.nb-lab{animation:none}}

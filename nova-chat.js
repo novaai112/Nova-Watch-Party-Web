@@ -619,7 +619,7 @@
       let content = '';
       if (peopleTab === 'friends') {
         const ids = accepted.filter(id => !q || usernameMatches(id));
-        content = ids.length ? ids.map(id => friendRow(person(id))).join('')
+        content = ids.length ? `<div class="nbx nbx-friends"><div class=nbx-head><span>${ic('users',18)} Friends</span><span class=nbx-pill>Top</span></div><div class=nbx-stage data-nb=friends data-nb-items="${esc(JSON.stringify(ids.map(id => { const u = person(id); return { id, name: u.full_name || u.username || 'User', username: u.username || '', avatar: u.avatar_url || '' }; })))}"></div></div>`
           : empty(q.length >= 2 ? 'No users found for that username.' : 'No friends yet. Search for a username to find people.');
       } else if (peopleTab === 'requests') {
         const ins = incoming.filter(row => !q || usernameMatches(row.user_id));
