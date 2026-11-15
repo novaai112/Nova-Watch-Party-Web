@@ -78,9 +78,10 @@ const YT_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="tru
 /* only the platform icon is shown on the video — never the platform's own title / share / watch-later bars */
 function platBadge(m, cls) {
   if (!m) return '';
-  const key = m.kind === 'youtube' ? 'youtube' : (m.provider || m.kind || 'web'), src = (window.ICON || {})[key];
+  const key = m.kind === 'youtube' ? 'youtube' : (m.provider || m.kind || 'web');
+  const src = (window.PLAT_ICON || {})[key] || (window.ICON || {})[key] || (window.PLAT_ICON || {}).web;
   const name = PLAT[key] || (key.charAt(0).toUpperCase() + key.slice(1));
-  return `<span class="pbg ${cls || ''}" title="${esc(name)}" aria-label="${esc(name)}">${src ? `<img src="${src}" alt="">` : key === 'youtube' ? YT_SVG : ic('globe', 16)}</span>`;
+  return `<span class="pbg ${cls || ''}" title="${esc(name)}" aria-label="${esc(name)}">${src ? `<img src="${src}" alt="" draggable="false">` : key === 'youtube' ? YT_SVG : ic('globe', 16)}</span>`;
 }
 
 /* ---------- state ---------- */
@@ -2000,7 +2001,7 @@ function card(r) {
   const av = (r.members || []).slice(0, 4).map(u => userAvatar(u, 30, false, u.id === r.admin_id)).join('');
   const more = Math.max(0, (r.count || 0) - 4);
   return `<div class="room${r.invited ? ' inv' : ''}" role="button" tabindex="0" data-code="${esc(r.code)}" data-rid="${esc(r.id)}">
-    <div class="cover">${thumb(m) ? `<img src="${esc(thumb(m))}" alt="" loading="lazy" decoding="async">` : ''}<span class="pv">${ic(pv, 16)}</span>${platBadge(m, 'card')}</div>
+    <div class="cover">${thumb(m) ? `<img src="${esc(thumb(m))}" alt="" loading="lazy" decoding="async">` : ''}${platBadge(m, 'card')}</div>
     <div class="info"><b class="rt">${esc((m && m.title) || r.title)}</b><div class="avs">${av}${more ? `<em>+${more}</em>` : ''}</div></div>
     ${pct ? `<i class="prog" style="width:${pct * .62}%"></i>` : ''}</div>`;
 }

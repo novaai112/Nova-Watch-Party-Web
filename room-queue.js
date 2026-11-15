@@ -78,11 +78,11 @@ function paint() {
   var n = st.items.length, a = st.active, first = st.items[0];
   var h = '<div class="pq-card" role="region" aria-label="My queue"><div class="pq-head"><h2>My queue <span class="pq-n" aria-live="polite">' + n + '</span></h2>' +
     '<button class="pq-ic" type="button" data-a="clear" aria-label="Clear all" title="Clear all"' + (n && !st.busy ? '' : ' disabled') + '>' + ICON.trash + '<span>Clear all</span></button></div>' +
-    '<p class="pq-sub">Only you can see this list. Your videos go to the room vote one at a time, in this order, automatically.</p>';
+    '';
   if (a) h += '<div class="pq-live" role="status"><i></i><span>In the room vote: <b>' + esc((a.media || {}).title || 'your video') + '</b>. Your next video can go in when this round ends.</span></div>';
   var em = st.error || (Date.now() < st.hold ? st.holdMsg : ''); if (em) h += '<p class="pq-err" role="alert">' + esc(em) + '</p>';
   if (n) {
-    h += '<div class="pq-bar"><span class="pq-hint">' + (a ? 'Your next video is sent to the vote automatically when this round ends.' : st.busy ? 'Sending your next video to the vote…' : 'Next: ' + esc((first.media || {}).title || '')) + '</span></div>';
+    if (!a) h += '<div class="pq-bar"><span class="pq-hint">' + (st.busy ? 'Sending your next video to the vote…' : 'Next: ' + esc((first.media || {}).title || '')) + '</span></div>';
     h += '<ul class="pq-list" id="pqList">' + st.items.map(function (it, i) { return row(it, i); }).join('') + '</ul>';
   }
   h += '</div>';
