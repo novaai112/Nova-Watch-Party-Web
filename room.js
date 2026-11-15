@@ -25,6 +25,7 @@ const PATH = {
   phone: '<path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6A19.8 19.8 0 012.1 4.2 2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 1.9.7 2.8a2 2 0 01-.5 2.1L8.1 9.9a16 16 0 006 6l1.3-1.3a2 2 0 012.1-.4c.9.3 1.8.6 2.8.7a2 2 0 011.7 2z"/>',
   share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/>',
   x: '<path d="M18 6L6 18M6 6l12 12"/>',
+  game: '<path d="M6 12h4M8 10v4"/><circle cx="15" cy="13" r="1"/><circle cx="18" cy="11" r="1"/><rect x="2" y="6" width="20" height="12" rx="4"/>',
   dock: '<rect x="3" y="3" width="18" height="18" rx="4.5"/><path d="M10 3v18M7.4 9.2 5.4 12l2 2.8"/>',
   searchplay: '<circle cx="10.5" cy="10.5" r="7.5"/><path d="M21 21l-5.2-5.2"/><polygon points="9 7.5 13.5 10.5 9 13.5 9 7.5"/>',
   heart: '<path d="M12 21s-8-5.2-8-11a4.5 4.5 0 018-2.8A4.5 4.5 0 0120 10c0 5.8-8 11-8 11z"/>',
@@ -228,6 +229,7 @@ async function enter(row) {
   hbT = setInterval(beat, 15000);
   tickT = setInterval(onTick, 1000);
   renderAll();
+  if (window.NovaGames) NovaGames.attach(gameHost());
   await mountMedia();
   skelShell(false);
   afterPick();
@@ -243,6 +245,7 @@ function skelShell(on) {
   if (f && !f.children.length) f.innerHTML = NovaSk.msgs(5);
 }
 function cleanup(keepShell) {
+  if (window.NovaGames) NovaGames.detach();
   clearTimeout(net.timer); net.down = false; net.n = 0; net.busy = false;
   clearInterval(hbT); clearInterval(tickT); hbT = tickT = null;
   if (ch) { try { sb.removeChannel(ch); } catch (e) {} ch = null; }
@@ -431,6 +434,7 @@ function onRoom(p) {
   const prevAdmin = R.admin_id;
   R = Object.assign({}, R, p.new);
   if (R.status === 'closed') return gone('Room closed');
+  if (prevAdmin !== R.admin_id && window.NovaGames) NovaGames.adminChanged();   // game controls follow the CURRENT admin immediately
   if (prevAdmin !== R.admin_id) toast(R.admin_id === ME.id ? (R.creator_id === ME.id ? 'You are the admin again' : 'You are now the admin') : nm(who(R.admin_id)) + ' is now the admin');
   const changed = mediaKey() !== mountKey;
   renderHead(); renderSettings(); renderNow(); renderVote(); renderBadges();
@@ -1011,6 +1015,7 @@ function buildShell() {
     <button class="rb" data-r="leave" aria-label="Leave room">${ic('x', 24)}</button>
     <button class="rb" data-r="settings" aria-label="Room settings">${ic('gear', 24)}</button>
     <div class="rmid" id="rmid"></div>
+    <button class="rb rgame" data-r="games" aria-label="Games" title="Games" aria-pressed="false"><i class="gi-game" aria-hidden="true"></i><i class="gi-chat" aria-hidden="true"></i><b class="gdot" hidden></b></button>
     <button class="rb" data-r="add" aria-label="Add a video">${ic('searchplay', 26)}</button>
     <button class="rb rpb" data-r="people" aria-label="People">${ic('users', 26)}<b id="rcount">1</b></button>
   </header>
@@ -1023,6 +1028,8 @@ function buildShell() {
       <div class="vbar" id="vbar" hidden></div>
       <div class="cbar" id="cbar"><b>${ic('chat', 16)}Chat</b><span class="cbtns"><button type="button" class="ib2" id="skipbtn" data-r="skip" aria-label="Next video" title="Next video" hidden>${ic('skip', 20)}</button>${moreBtn()}<button type="button" class="ib2" data-r="csearch" aria-label="Search in chat" title="Search in chat">${ic('search', 20)}</button></span></div>
       <div class="csbar" id="csbar" hidden><input id="cq" type="search" placeholder="Search in chat" autocomplete="off" aria-label="Search in chat"><span class="cscount" id="cscount"></span><button type="button" class="ib2" data-r="cs-prev" aria-label="Previous match">${ic('up', 18)}</button><button type="button" class="ib2" data-r="cs-next" aria-label="Next match">${ic('down', 18)}</button><button type="button" class="ib2" data-r="cs-close" aria-label="Close search">${ic('x', 18)}</button></div>
+      <div class="gbanner" id="gbanner" hidden></div>
+      <section class="gpanel" id="gpanel" aria-label="Nova Play games" hidden></section>
       <div class="feed" id="feed"></div>
       <div class="mentions" id="mentions" hidden></div>
       ${MEDIA() ? MEDIA().markup() : ''}
@@ -1064,8 +1071,8 @@ function buildShell() {
   el.addEventListener('keydown', e => { if (e.target.id === 'cq') { if (e.key === 'Enter') { e.preventDefault(); searchStep(e.shiftKey ? -1 : 1); } else if (e.key === 'Escape') searchOpen(false); } else if (e.target.id === 'cmsg' && e.key === 'Enter') { e.preventDefault(); sendMsg(); } });
   /* keep the Send button tappable: pressing it must not blur the input (that would swap the icons away) */
   el.addEventListener('pointerdown', e => { if (e.target.closest('.sendb,#emopanel button,.emob')) e.preventDefault(); });
-  el.addEventListener('focusin', e => { if (e.target.id === 'cmsg' || e.target.id === 'cq') kbMode(true); if (e.target.id === 'cmsg') setTimeout(() => { const f = $('#feed'); if (f) f.scrollTop = f.scrollHeight; }, 280); });
-  el.addEventListener('focusout', e => { if (e.target.id === 'cmsg' || e.target.id === 'cq') { sendTyping('idle'); setTimeout(() => { const a = document.activeElement; if (!a || (a.id !== 'cmsg' && a.id !== 'cq')) kbMode(false); }, 60); } });
+  el.addEventListener('focusin', e => { if (e.target.id === 'cmsg' || e.target.id === 'cq' || e.target.id === 'gtext') kbMode(true); if (e.target.id === 'cmsg') setTimeout(() => { const f = $('#feed'); if (f) f.scrollTop = f.scrollHeight; }, 280); });
+  el.addEventListener('focusout', e => { if (e.target.id === 'cmsg' || e.target.id === 'cq' || e.target.id === 'gtext') { if (e.target.id !== 'gtext') sendTyping('idle'); setTimeout(() => { const a = document.activeElement; if (!a || (a.id !== 'cmsg' && a.id !== 'cq' && a.id !== 'gtext')) kbMode(false); }, 60); } });
   bindMsgGestures(el);
   /* phones: follow the visible area so the keyboard never covers the message box */
   if (window.visualViewport) {
@@ -1383,6 +1390,7 @@ function noticeIcon(t) {
   if (n) return ic({ Public: 'globe', Nearby: 'pin', Friends: 'users', Invite: 'lock' }[n[1]] || 'globe', 15);
   if (/mic/i.test(t)) return ic(/disabled/i.test(t) ? 'micoff' : 'mic', 15);
   if (/^Playback|^Voting/.test(t)) return ic('play', 15);
+  if (/^Game |\bstarted (Quick Trivia|Guess the|Emoji Challenge|Predict What|Would You|Video Knowledge)/.test(t)) return ic('game', 15);
   return ic('gear', 15);
 }
 const EOnly = t => window.NovaChatRich ? window.NovaChatRich.emojiOnlyCount(t) : 0;
@@ -1833,6 +1841,7 @@ function onClick(e) {
   const d = el.dataset, r = d.r;
   if (r === 'leave') leave();
   else if (r === 'dock') { if (window.NovaDock) NovaDock.toggle(); }
+  else if (r === 'games') { if (window.NovaGames) NovaGames.toggle(); }
   else if (r === 'settings') openSettings();
   else if (r === 'set') setOpt(d.v);
   else if (r === 'add') {
@@ -2168,6 +2177,10 @@ const roomApi = {
   reportVideo: (id, reason, details) => rpc('room_report_video', { p_room: id, p_reason: reason, p_details: details || '' }),
   toast, oops, inRoom: () => !!R && !dockOpen()
 };
+/* Nova Play (room-games.js) talks to the room only through this small bridge. Every game control is re-checked on the server. */
+function gameHost() {
+  return { sb, rpc: (n, a) => rpc(n, a), toast: (m, k) => toast(m, k), room: () => R, me: () => ME, isAdmin, who, load: ids => loadProfiles(ids) };
+}
 /* sync(): re-read the room + Up next and repaint (used by tests and as a manual re-sync) */
 async function sync() { if (!R) return; await refreshRoom(); await refreshQueue(); renderAll(); await mountMedia(); }
 if (window.NovaPlayer) NovaPlayer.init({

@@ -281,3 +281,20 @@ Every room member has a **private** queue (only they can see or change it) shown
 * **Leave / rejoin:** leaving clears the panel as before; rejoining the same room restores the pending queue. Rows are deleted with the room (closed rooms are removed an hour after closing).
 * **Files:** `room-pqueue-schema.sql`, `room-queue.js`, `room-queue.css`, `api/youtube.js` (`?plitems=`), hooks in `room.js` (`nova:room` event, `NovaRoom.rpc/roomId`) and `nova-home.html`.
 * **Tests:** `node tests/pqueue-api.test.js`, `node tests/e2e-room-queue.js` (Playwright), `tests/room-pqueue-test.sql` (psql, see header).
+
+## Nova Play (interactive watch-room games)
+
+Files: `room-games.js`, `room-games.css`, `room-games-schema.sql`, `room-games-bank.sql`, `game-icon.png`, `chat-icon.png`, `tools/game-bank.js`.
+
+Setup (Supabase SQL editor, in this order, after `rooms-schema.sql`): `room-games-schema.sql` then `room-games-bank.sql`.
+
+How it behaves
+- The **gamepad icon** in the room toolbar opens the Games panel in place of the chat column (the video keeps playing).
+- While the panel is open the same button shows the **chat icon**; tapping it returns to chat **without leaving the game** (a "game is live" banner and a green dot bring you back).
+- Only the **Quit icon inside the panel** leaves a game (confirmation first). A quitter can rejoin while it runs.
+- Only the current room admin sees Select Game / configuration / Start / Pause / Resume / Skip / Next / End / Rematch / custom questions. Every one of those is re-checked on the server; admin changes pause the game and the old admin loses control instantly.
+- Server clock decides rounds; answers are hidden until reveal; scoring is server-side and idempotent.
+
+Tests
+- Server: `psql -f tests/mock-supabase.sql -f rooms-schema.sql -f room-pqueue-schema.sql -f room-games-schema.sql -f room-games-bank.sql -f tests/room-games-test.sql`
+- Browser (phone, small phone, landscape, tablet, laptop, desktop): `E2E_OUT=/tmp/shots node tests/e2e-room-games.js`
