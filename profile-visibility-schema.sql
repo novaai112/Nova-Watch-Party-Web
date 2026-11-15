@@ -130,6 +130,20 @@ returns void language sql security invoker set search_path = '' as $$
 $$;
 grant execute on function public.set_like(text, boolean) to authenticated;
 
+
+-- 3b) per-photo privacy: every gallery photo is Public / Friends / Hidden on its own -------
+alter table public.gallery add column if not exists visibility text not null default 'public';
+alter table public.gallery drop constraint if exists gallery_visibility_ok;
+alter table public.gallery add constraint gallery_visibility_ok check (visibility in ('public','friends','hidden'));
+grant update (visibility) on public.gallery to authenticated;
+drop policy if exists "gallery update own" on public.gallery;
+create policy "gallery update own" on public.gallery for update to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+-- other people never read the table directly any more: they get photos only through public_profile()
+drop policy if exists "gallery select" on public.gallery;
+drop policy if exists "gallery select own" on public.gallery;
+create policy "gallery select own" on public.gallery for select to authenticated using (auth.uid() = user_id);
+
 -- 4) one call returns a profile as THIS viewer may see it ----------------------
 --  * every section follows its own mode: public / friends (accepted friends only) / hidden
 --  * top (Most watched), history and likes are separate; the owner always sees everything
@@ -177,7 +191,8 @@ begin
     'joined', p.created_at, 'own', own, 'is_friend', fr, 'visibility', case when own then vis end, 's', s,
     'bio',     case when (s->>'bio')::boolean then coalesce(p.bio,'') end,
     'socials', case when (s->>'socials')::boolean then p.socials end,
-    'gallery', case when (s->>'gallery')::boolean then (select coalesce(jsonb_agg(path order by created_at desc),'[]') from public.gallery where user_id = p_uid) end,
+    'gallery', case when (s->>'gallery')::boolean then (select coalesce(jsonb_agg(path order by created_at desc),'[]') from public.gallery
+                 where user_id = p_uid and (own or visibility = 'public' or (visibility = 'friends' and fr))) end,
     'stats',   case when (s->>'stats')::boolean then jsonb_build_object(
                  'videos', (select count(*) from public.watch_history where user_id = p_uid and watch_count > 0),
                  'hours',  round(coalesce((select sum(seconds) from public.watch_history where user_id = p_uid),0) / 3600.0, 1),

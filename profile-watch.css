@@ -36,3 +36,47 @@
 .vmi.on{background:rgba(255,255,255,.16)}
 .vmi .ic{flex:none}
 @media (prefers-reduced-motion:reduce){.vmenu{animation:none}}
+
+/* ---- gallery: one smooth scrolling row, "+" first, eye on every photo ---- */
+.gwrap{position:relative;min-width:0}
+.grow{display:flex;gap:14px;align-items:stretch;overflow-x:auto;overflow-y:hidden;padding:18px 20px 22px;scroll-snap-type:x proximity;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;scrollbar-width:none;-ms-overflow-style:none;scroll-padding-inline:20px}
+.grow::-webkit-scrollbar{display:none;width:0;height:0}
+.grow:focus-visible{outline:2px solid #3b82f6;outline-offset:-2px;border-radius:16px}
+.grow .gt{flex:0 0 clamp(150px,38vw,230px);width:auto;aspect-ratio:1;border-radius:24px;scroll-snap-align:start;overflow:hidden}
+.grow .gt img{-webkit-user-drag:none;user-select:none}
+.grow .gtb{border:0;background:transparent;cursor:zoom-in}
+.grow .gadd{display:grid;place-items:center;border:0;cursor:pointer;color:#fff;background:color-mix(in srgb,var(--tx,#0f172a) 22%,transparent);box-shadow:inset 0 0 0 1px #ffffff1f}
+.grow .gadd:hover{background:color-mix(in srgb,var(--tx,#0f172a) 30%,transparent)}
+.gplus{width:64px;height:64px;border-radius:50%;background:#fff;color:#2b2f3a;display:grid;place-items:center;box-shadow:0 6px 18px #0003}
+.gplus .ic{width:34px;height:34px;stroke-width:3.6}
+.grow .gt.up{position:relative}
+.gvis{position:absolute;top:8px;right:8px;z-index:2;width:42px;height:42px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:rgba(255,255,255,.88);cursor:pointer;filter:drop-shadow(0 1px 3px rgba(0,0,0,.55))}
+.gvis:hover,.gvis:focus-visible{color:#fff;background:rgba(0,0,0,.28);outline:0}
+.gvis[aria-expanded=true]{background:rgba(0,0,0,.4);color:#fff}
+.gvis[data-mode=friends]{color:#bfdbfe}.gvis[data-mode=hidden]{color:#e2e8f0}
+.ghint{margin:-6px 20px 18px;font-size:13px;color:var(--mu,#667)}
+#gsec.over .grow{outline:2px dashed var(--ac,#2563eb);outline-offset:-4px;border-radius:16px}
+.gnav{display:none;position:absolute;top:calc(50% - 2px);transform:translateY(-50%);z-index:5;width:42px;height:42px;border-radius:50%;border:1px solid var(--line,#dfe8f0);background:var(--card,#fff);color:inherit;place-items:center;cursor:pointer;box-shadow:0 4px 14px #0002}
+.gnav.l{left:8px}.gnav.r{right:8px}
+.gnav:hover{background:var(--chip2,#eef2f7)}
+@media (hover:hover) and (pointer:fine){.gnav:not([hidden]){display:grid}}
+@media (max-width:899px){.grow{padding:12px 4px 18px;scroll-padding-inline:4px}}
+
+/* full photo viewer */
+.lbx{position:fixed;inset:0;z-index:65;background:rgba(5,8,16,.94);display:flex;flex-direction:column;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.lbt{display:flex;align-items:center;justify-content:space-between;padding:max(14px,env(safe-area-inset-top)) 16px 10px;color:#fff;position:relative;z-index:3}
+.lbc{font-size:14px;font-weight:700;padding:5px 12px;border-radius:999px;background:#ffffff1f}
+.lbg{display:flex;gap:10px}
+.lbtn{background:#ffffff22!important;color:#fff!important;border-color:transparent!important}
+.lbtn:hover{background:#ffffff38!important}
+.lbtrack{flex:1;min-height:0;display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;scrollbar-width:none;outline:0}
+.lbtrack::-webkit-scrollbar{display:none}
+.lbs{flex:0 0 100%;scroll-snap-align:center;scroll-snap-stop:always;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);place-items:center;box-sizing:border-box;padding:8px 16px calc(16px + env(safe-area-inset-bottom));min-width:0}
+.lbs img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;border-radius:14px;box-shadow:0 20px 60px #0008;user-select:none;-webkit-user-drag:none}
+.lbn{display:none;position:absolute;top:50%;transform:translateY(-50%);z-index:4;width:54px;height:54px;border-radius:50%;border:0;background:#ffffff26;color:#fff;place-items:center;cursor:pointer;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.lbn svg{width:28px;height:28px}
+.lbn.l{left:22px}.lbn.r{right:22px}
+.lbn:hover:not(:disabled){background:#ffffff44}
+.lbn:disabled{opacity:.25;cursor:default}
+@media (hover:hover) and (pointer:fine){.lbn:not([hidden]){display:grid}}
+@media (prefers-reduced-motion:reduce){.grow,.lbtrack{scroll-behavior:auto}}

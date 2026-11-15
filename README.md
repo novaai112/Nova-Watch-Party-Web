@@ -344,3 +344,12 @@ Other users open your profile and get exactly what the setting allows. A list th
 History and Likes were only stored on the device before. Now `nova-home.html` and the profile page copy them to your account (`sync_watch_activity`), and deleting, clearing or unliking also updates the account copy (`remove_watch`, `clear_watch_history`, `set_like`).
 
 Files: `profile-visibility-schema.sql`, `nova-profile.js` (menu, visitor view), `profile-watch.js` / `.css` (per-list controls, sync, menu style), `nova-home.html` (sync hooks). Test: `node tests/e2e-profile-visibility.js`.
+
+## Gallery (profile)
+
+* One horizontally scrolling row (smooth, snaps to photos, scrollbar hidden). The **+** tile is always first; the newest photo comes next.
+* Every photo has its own eye icon (top right): tap it for **Public / Friends / Hidden** for that photo. Visitors only receive the photos they are allowed to see.
+* Tap a photo for the full viewer. Laptop: left / right arrow buttons and the arrow keys. Phone / tablet: swipe left or right. A counter shows the position; Esc or the close button leaves. On your own photos the viewer has a Delete button.
+* Laptop: round left / right arrows appear on the row only while there is more to scroll. Drag and drop photos onto the gallery still works.
+* Setup: `profile-visibility-schema.sql` (adds `gallery.visibility` and stops other people reading the table directly; they get photos only through `public_profile`). Photo files sit in a public storage bucket under random file names, so a photo set to Friends or Hidden is not listed for others, but anyone who already has its exact link could still open it.
+* Test: `node tests/e2e-profile-gallery.js`.

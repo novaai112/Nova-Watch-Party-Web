@@ -18,7 +18,7 @@
   const fc = (i, l, v, cls = '') => `<div class="fc ${cls}"><span class=fi>${ic(i, 18)}</span><div class=fv><small>${l}</small>${v}</div></div>`;
   /* ---------- who can see a section: Public / Friends / Hidden ---------- */
   const MODES = [['public', 'Public', 'eye'], ['friends', 'Friends', 'user'], ['hidden', 'Hidden', 'eyeoff']];
-  const modeOf = k => { const v = PD && PD.visibility ? PD.visibility[k] : 'public'; return v === false ? 'hidden' : MODES.some(m => m[0] === v) ? v : 'public'; };   /* old true / false still read correctly */
+  const modeOf = k => { if (k.indexOf('photo:') === 0) { const x = (P._g || []).find(g => g.id === k.slice(6)); return x ? photoMode(x) : 'public'; } const v = PD && PD.visibility ? PD.visibility[k] : 'public'; return v === false ? 'hidden' : MODES.some(m => m[0] === v) ? v : 'public'; };   /* old true / false still read correctly */
   const eye = k => {
     if (!(PD && PD.own)) return '';
     const m = MODES.find(x => x[0] === modeOf(k));
@@ -46,7 +46,12 @@
   }
   async function setMode(k, mode) {
     closeVMenu(); if (!MODES.some(m => m[0] === mode) || modeOf(k) === mode) return;
-    const v = { ...PD.visibility, [k]: mode }; MODES.forEach(() => {});
+    if (k.indexOf('photo:') === 0) {
+      const id = k.slice(6), { error } = await sb.from('gallery').update({ visibility: mode }).eq('id', id).eq('user_id', U.id);
+      if (error) return Nova.toast(/visibility|column|schema/i.test(error.message) ? 'Run profile-visibility-schema.sql in Supabase once to enable photo privacy.' : error.message, 'err');
+      const x = (P._g || []).find(g => g.id === id); if (x) x.visibility = mode; refreshG(); inv && inv(); Nova.toast('Visible to: ' + MODES.find(m => m[0] === mode)[1]); return;
+    }
+    const v = { ...PD.visibility, [k]: mode };
     const { error } = await sb.from('profiles').update({ visibility: v }).eq('id', U.id); if (error) return Nova.toast(error.message, 'err');
     await reload(); Nova.toast('Visible to: ' + MODES.find(m => m[0] === mode)[1]);
   }
@@ -63,15 +68,56 @@
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeM(); });
 
   /* ---------- shared fragments ---------- */
+  const CHEV = { l: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>', r: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg>' };
+  const photoMode = x => MODES.some(m => m[0] === x.visibility) ? x.visibility : 'public';
   const gridItems = (list, own) => list.map((x, i) => {
     const path = typeof x === 'string' ? x : x.path, u = esc(gUrl(path));
-    return `<div class=gt><button class=gtb data-lb="${u}" aria-label="Open photo ${i + 1}"><img src="${u}" alt="" loading=lazy></button>${own ? `<button class=x data-act=delG data-id="${x.id}" data-p="${esc(path)}" aria-label="Delete photo">${ic('x', 15)}</button>` : ''}</div>`;
+    const m = own ? MODES.find(v => v[0] === photoMode(x)) : null;
+    return `<div class=gt role=listitem><button class=gtb data-glb="${u}" data-id="${own ? esc(x.id) : ''}" data-p="${esc(path)}" aria-label="Open photo ${i + 1} of ${list.length}"><img src="${u}" alt="" loading=lazy draggable=false></button>${own ? `<button class=gvis type=button data-vmenu="photo:${esc(x.id)}" data-mode="${m[0]}" aria-haspopup=menu aria-expanded=false title="Who can see this photo: ${m[1]}" aria-label="Who can see this photo: ${m[1]}">${ic(m[2], 24)}</button>` : ''}</div>`;
   }).join('');
-  const gridG = (list, own) => `<div class=gg>${gridItems(list, own)}</div>`;
+  const gRow = (items, own, first = '') => `<div class=gwrap><button class="gnav l" type=button data-gnav=-1 aria-label="Scroll photos left" hidden>${CHEV.l}</button><div class=grow tabindex=0 role=list aria-label="${own ? 'Your photos' : 'Photos'}" data-own="${own ? 1 : 0}">${first}${items}</div><button class="gnav r" type=button data-gnav=1 aria-label="Scroll photos right" hidden>${CHEV.r}</button></div>`;
+  const gridG = (list, own) => gRow(gridItems(list, own), own);
   function gHTML() {
-    const g = P._g || [];
+    const g = P._g || [], add = g.length < MAXG ? `<label class="gt gadd" for=gf role=listitem aria-label="Add photos" title="Add photos"><span class=gplus>${ic('plus', 34)}</span></label>` : '';
     return `${P._gerr ? `<div class=gerr>${ic('alert', 16)}<span>Gallery is not ready: ${esc(P._gerr)}. Run <b>fix-gallery-permissions.sql</b> in Supabase once.</span></div>` : ''}
-${g.length ? `<div class=gg>${g.length<MAXG?`<label class="gt gadd" for=gf aria-label="Add photos" title="Add photos">${ic('plus',28)}</label>`:''}${gridItems(g,true)}</div>` : `<label class=dz id=dz for=gf><div>${ic('upload',24)}</div><div><b>Add photos</b> or drag &amp; drop</div><small>Select several at once · up to ${MAXG} photos · optimised automatically</small></label>`}`;
+${gRow(gridItems(g, true), true, add)}${g.length ? '' : `<p class=ghint>Tap + to add photos · select several at once · up to ${MAXG} photos · optimised automatically</p>`}`;
+  }
+  function refreshG() {
+    const g = $('#gsec'); if (g) { const r = g.querySelector('.grow'), x = r ? r.scrollLeft : 0; g.innerHTML = gHTML(); const n = g.querySelector('.grow'); if (n) n.scrollLeft = x; navAll(); }
+    const c = $('#gcnt'); if (c) c.textContent = `${P._g.length} / ${MAXG}`;
+  }
+  /* arrows (laptop / mouse) show only while there is more to scroll in that direction; touch just swipes */
+  function navUpd(row) {
+    const w = row.parentElement; if (!w || !w.classList.contains('gwrap')) return;
+    const l = w.querySelector('.gnav.l'), r = w.querySelector('.gnav.r'), max = row.scrollWidth - row.clientWidth;
+    if (l) l.hidden = row.scrollLeft < 4; if (r) r.hidden = max < 4 || row.scrollLeft > max - 4;
+  }
+  function navAll() { document.querySelectorAll('.grow').forEach(navUpd); }
+  document.addEventListener('scroll', e => { if (e.target.classList && e.target.classList.contains('grow')) navUpd(e.target); }, true);
+  window.addEventListener('resize', navAll);
+  new MutationObserver(() => { clearTimeout(navAll._t); navAll._t = setTimeout(navAll, 60); }).observe(document.body, { childList: true, subtree: true });
+  document.addEventListener('load', e => { if (e.target.tagName === 'IMG' && e.target.closest('.grow')) navAll(); }, true);
+
+  /* ---------- full photo viewer: swipe on touch, arrows + keys on laptop ---------- */
+  function closeLB() { const o = document.getElementById('lbx'); if (!o) return; document.removeEventListener('keydown', o._k); const f = o._from; o.remove(); document.body.classList.remove('lock'); if (f && f.isConnected) try { f.focus({ preventScroll: true }); } catch (e) {} }
+  function openLB(row, start) {
+    closeLB();
+    const own = row.dataset.own === '1', items = [...row.querySelectorAll('.gtb')]; if (!items.length) return;
+    const o = document.createElement('div'); o.id = 'lbx'; o.className = 'lbx'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', 'Photo viewer'); o._from = document.activeElement;
+    o.innerHTML = `<div class=lbt><span class=lbc aria-live=polite></span><span class=lbg>${own ? `<button class="ib lbtn" type=button data-act=delG aria-label="Delete this photo" title="Delete photo">${ic('trash', 18)}</button>` : ''}<button class="ib lbtn lbx-close" type=button aria-label="Close" title="Close">${ic('x', 18)}</button></span></div>
+<button class="lbn l" type=button aria-label="Previous photo">${CHEV.l}</button><div class=lbtrack tabindex=-1>${items.map((b, i) => `<div class=lbs><img src="${b.dataset.glb}" alt="Photo ${i + 1} of ${items.length}" draggable=false ${Math.abs(i - start) < 2 ? '' : 'loading=lazy'}></div>`).join('')}</div><button class="lbn r" type=button aria-label="Next photo">${CHEV.r}</button>`;
+    document.body.append(o); document.body.classList.add('lock');
+    const tr = o.querySelector('.lbtrack'), pv = o.querySelector('.lbn.l'), nx = o.querySelector('.lbn.r'), ct = o.querySelector('.lbc'), del = o.querySelector('[data-act=delG]'); let idx = start;
+    const sync = () => { ct.textContent = `${idx + 1} / ${items.length}`; pv.disabled = idx <= 0; nx.disabled = idx >= items.length - 1; pv.hidden = nx.hidden = items.length < 2; if (del) { del.dataset.id = items[idx].dataset.id; del.dataset.p = items[idx].dataset.p; } };
+    let want = start;                                   /* quick repeated taps / key presses keep moving one photo each */
+    const go = d => { want = Math.max(0, Math.min(items.length - 1, want + d)); tr.scrollTo({ left: want * tr.clientWidth, behavior: 'smooth' }); };
+    tr.scrollLeft = start * tr.clientWidth; sync(); requestAnimationFrame(() => { if (idx === start) tr.scrollLeft = start * tr.clientWidth; });
+    tr.addEventListener('scroll', () => { const n = Math.round(tr.scrollLeft / (tr.clientWidth || 1)); if (n !== idx) { idx = Math.max(0, Math.min(items.length - 1, n)); sync(); } if (Math.abs(tr.scrollLeft - want * tr.clientWidth) < 2 || !tr.matches(':hover') && Math.abs(want - idx) > 1) want = idx; }, { passive: true });
+    window.addEventListener('resize', () => { tr.scrollLeft = idx * tr.clientWidth; }, { once: false });
+    pv.onclick = () => go(-1); nx.onclick = () => go(1); o.querySelector('.lbx-close').onclick = closeLB;
+    o.addEventListener('click', e => { if (e.target === o || e.target.classList.contains('lbs')) closeLB(); });
+    o._k = e => { if (e.key === 'Escape') { e.stopPropagation(); closeLB(); } else if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); } else if (e.key === 'ArrowRight') { e.preventDefault(); go(1); } };
+    document.addEventListener('keydown', o._k); o.querySelector('.lbx-close').focus({ preventScroll: true });
   }
   const kwHTML = titles => {
     const c = {}; (titles || []).join(' ').toLowerCase().match(/[\p{L}\p{N}]{3,}/gu)?.forEach(w => { if (!STOP.has(w) && !/^\d+$/.test(w)) c[w] = (c[w] || 0) + 1; });
@@ -313,8 +359,8 @@ ${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.
     files = [...files].filter(f => /^image\//i.test(f.type) || /\.(jpe?g|png|webp|gif)$/i.test(f.name)); if (!files.length) return Nova.toast('Please choose image files', 'err');
     const room = MAXG - P._g.length; if (room <= 0) return Nova.toast(`Gallery is full (${MAXG} photos)`, 'err');
     if (files.length > room) { Nova.toast(`Only ${room} more photo${room > 1 ? 's' : ''} fit — extra files skipped`, 'err'); files = files.slice(0, room); }
-    const grid = $('#gsec .gg') || (() => { const g = document.createElement('div'); g.className = 'gg'; $('#gsec').append(g); return g; })(), rows = []; let fail = 0, lastErr = '';
-    const queue = files.map(f => { const tl = document.createElement('div'); tl.className = 'gt up'; tl.innerHTML = '<i class="skl" style="position:absolute;inset:0;border-radius:inherit"></i>'; grid.prepend(tl); return { f, tl }; });
+    const grid = $('#gsec .grow'), rows = []; let fail = 0, lastErr = '';
+    const queue = files.map(f => { const tl = document.createElement('div'); tl.className = 'gt up'; tl.innerHTML = '<i class="skl" style="position:absolute;inset:0;border-radius:inherit"></i>'; const ad = grid.querySelector('.gadd'); ad ? ad.after(tl) : grid.prepend(tl); return { f, tl }; });
     const worker = async () => { for (let j; (j = queue.shift());) { try {
       if (j.f.size > 15e6) throw new Error('Image is larger than 15 MB');
       const blob = await Nova.imgBlob(j.f, 1600, .85, false), p = `${U.id}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`;
@@ -322,7 +368,7 @@ ${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.
     } catch (e) { fail++; lastErr = e.message || String(e); j.tl.remove(); } } };
     await Promise.all([worker(), worker(), worker()]);
     if (rows.length) { const { error } = await sb.from('gallery').insert(rows); if (error) { sb.storage.from('gallery').remove(rows.map(r => r.path)); fail += rows.length; rows.length = 0; lastErr = error.message; } }
-    await loadP(); inv(); const g = $('#gsec'); if (g) g.innerHTML = gHTML(); const c = $('#gcnt'); if (c) c.textContent = `${P._g.length} / ${MAXG}`;
+    await loadP(); inv(); refreshG();
     const perm = /permission denied|row-level security|not authorized/i.test(lastErr);
     if (rows.length) Nova.toast(`${rows.length} photo${rows.length > 1 ? 's' : ''} added${fail ? ` · ${fail} failed` : ''}`, fail ? 'err' : '');
     else if (fail) Nova.toast(perm ? 'Gallery permission missing. Run fix-gallery-permissions.sql in Supabase once.' : (lastErr || 'Upload failed'), 'err');
@@ -337,7 +383,7 @@ ${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.
       if (link && !(window.NovaEmbed && NovaEmbed.join(link.getAttribute('href')))) location.href = link.href;
       return;
     }
-    const el = e.target.closest('[data-close],[data-act],[data-vmenu],[data-vmode],[data-tab],[data-add],[data-acc],[data-dec],[data-clear],[data-lb],[data-profile-friend]'); if (!el) return; const d = el.dataset;
+    const el = e.target.closest('[data-close],[data-act],[data-vmenu],[data-vmode],[data-glb],[data-gnav],[data-tab],[data-add],[data-acc],[data-dec],[data-clear],[data-lb],[data-profile-friend]'); if (!el) return; const d = el.dataset;
     if (d.profileFriend) { await profileFriendAction(el, d.profileFriend, d.userId); return; }
     if (d.close !== undefined) closeM();
     if (d.act === 'editinfo') editInfo();
@@ -346,7 +392,7 @@ ${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.
     if (d.act === 'savesoc') saveSoc(el);
     if (d.act === 'delG' && await ask('Delete this photo?', 'It will be removed from your gallery for good.')) {
       const { error } = await sb.from('gallery').delete().eq('id', d.id); if (error) return Nova.toast(error.message, 'err');
-      sb.storage.from('gallery').remove([d.p]); await loadP(); inv(); const g = $('#gsec'); if (g) g.innerHTML = gHTML(); const c = $('#gcnt'); if (c) c.textContent = `${P._g.length} / ${MAXG}`; Nova.toast('Photo deleted');
+      closeLB(); sb.storage.from('gallery').remove([d.p]); await loadP(); inv(); refreshG(); Nova.toast('Photo deleted');
     }
     if (d.vmenu) openVMenu(el);
     if (d.vmode) await setMode(d.k, d.vmode);
@@ -362,16 +408,15 @@ ${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.
     }
     if (d.acc) { await sb.from('friendships').update({ status: 'accepted' }).eq('user_id', d.acc).eq('friend_id', U.id); await reload(); }
     if (d.dec) { await sb.from('friendships').delete().eq('user_id', d.dec).eq('friend_id', U.id); await reload(); }
-    if (d.lb) { const o = document.createElement('div'); o.className = 'lb'; o.setAttribute('role', 'dialog'); o.innerHTML = `<button class=ib aria-label="Close">${ic('x', 18)}</button><img src="${d.lb}" alt="">`;
-      const close = () => { o.remove(); document.removeEventListener('keydown', k); }, k = ev => ev.key === 'Escape' && close();
-      o.onclick = close; document.addEventListener('keydown', k); document.body.append(o); }
+    if (d.glb) { const row = el.closest('.grow'); if (row) openLB(row, [...row.querySelectorAll('.gtb')].indexOf(el)); }
+    if (d.gnav) { const row = el.parentElement.querySelector('.grow'); if (row) row.scrollBy({ left: +d.gnav * row.clientWidth * 0.8, behavior: 'smooth' }); }
   });
   document.addEventListener('change', async e => {
     const x = e.target;
     if (x.id === 'gf') { const fs = [...x.files]; x.value = ''; if (fs.length) addGallery(fs); return; }
     if (x.dataset && x.dataset.nsfw !== undefined) { NSFW = x.checked; await reload(); }
   });
-  document.addEventListener('dragover', e => { if (e.target.closest && e.target.closest('#dz')) { e.preventDefault(); $('#dz').classList.add('over'); } });
-  document.addEventListener('dragleave', e => { if (e.target.closest && e.target.closest('#dz')) $('#dz').classList.remove('over'); });
-  document.addEventListener('drop', e => { const z = e.target.closest && e.target.closest('#dz'); if (!z) return; e.preventDefault(); z.classList.remove('over'); addGallery(e.dataTransfer.files); });
+  document.addEventListener('dragover', e => { if (e.target.closest && e.target.closest('#gsec')) { e.preventDefault(); $('#gsec').classList.add('over'); } });
+  document.addEventListener('dragleave', e => { if (e.target.closest && e.target.closest('#gsec')) $('#gsec').classList.remove('over'); });
+  document.addEventListener('drop', e => { const z = e.target.closest && e.target.closest('#gsec'); if (!z) return; e.preventDefault(); z.classList.remove('over'); addGallery(e.dataTransfer.files); });
 })();
