@@ -186,7 +186,8 @@ function closePanel() {
 addEventListener('message', e => {
   if (e.origin !== location.origin || !frame || e.source !== frame.contentWindow) return;
   const d = e.data; if (!d || d.nova !== 'dock') return;
-  if (d.type === 'close') closePanel();
+  if (d.type === 'play' && d.item && typeof d.item === 'object' && window.NovaApp && NovaApp.playDirect) { closePanel(); NovaApp.playDirect(d.item); }
+  else if (d.type === 'close') closePanel();
   else if (d.type === 'route' && typeof d.hash === 'string') { panelHash = d.hash.slice(0, 80); paintFab(); }
   else if (d.type === 'join' && typeof d.code === 'string' && /^[A-Za-z0-9]{6,16}$/.test(d.code) && window.NovaRoom && NovaRoom.join) {
     NovaRoom.join(d.code).then(() => { if (room()) closePanel(); });

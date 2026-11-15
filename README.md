@@ -300,3 +300,19 @@ How it behaves
 Tests
 - Server: `psql -f tests/mock-supabase.sql -f rooms-schema.sql -f room-pqueue-schema.sql -f room-games-schema.sql -f tests/room-games-test.sql`
 - Browser (phone, small phone, landscape, tablet, laptop, desktop): `E2E_OUT=/tmp/shots node tests/e2e-room-games.js`
+
+## Watch Activity (profile)
+
+Profile > **Watch Activity** now starts with three horizontally scrolling rows (scrollbar hidden; arrow buttons on desktop):
+**Most watched** (videos watched 2+ times, highest count first), **History** and **Likes**.
+
+* Tap a video: it plays to your watch room (inside the room dock the panel closes and the video starts or joins the room's flow; on the standalone profile page Nova opens and plays it).
+* History: every video has a remove icon, plus **Clear all** (with confirmation). Likes have an unlike heart. Most watched follows History, so removing or clearing a video removes it there too.
+* Data: the same device lists as the History / Likes screens (`nova.h`, `nova.likes`). History now stores a watch count (`n`) and time (`at`); a repeat within 2 minutes is one watch. Videos are recorded when they start in a room (`room.js` -> `NovaApp.addHistory`) and when tapped on a platform screen. Keeps the latest 200.
+* Files: `profile-watch.js`, `profile-watch.css`, hooks in `nova-profile.js` (Activity view), `nova-home.html` (`NovaApp.playDirect/addHistory`), `room-dock.js` (`play` message), `room.js`.
+* Tests: `node tests/e2e-profile-watch.js`.
+
+## Game chat notes
+
+The room chat shows only **"<name> started <game>"** and **"Game ended"** (with the winner when there is one) for Nova Play. Pause / resume / admin-change notes are no longer posted (`room-games-schema.sql`), no longer shown even if an older one is in the chat history (`room.js` `hiddenGameNote`), and have no pop-up either; the Game Paused cover inside the game panel is the only indicator. Re-run `room-games-schema.sql` once: it also deletes the old pause / resume notes from `room_messages`. Test: `node tests/game-chat-notes.test.js`.
+

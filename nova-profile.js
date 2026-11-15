@@ -124,7 +124,7 @@ ${REQ.length ? `<div class=pbody style="border-top:1px solid var(--line)">${REQ.
     const sh = (k, title, body, extra = '') => `<div class=subh><h3>${title}</h3><span class=actg>${extra}${eye(k)}</span></div>${body}`;
     return shell('activity', mbar(t('activity')) + panel(t('activity'), 'What you watch on Nova',
       `<div class=actg><label class=nsfw style="${can ? '' : 'opacity:.5'}" title="${can ? '' : 'Turn off Hide Mature Content in Settings first'}">Include 🔞 NSFW <input type=checkbox class=sw data-nsfw ${NSFW && can ? 'checked' : ''} ${can ? '' : 'disabled'}></label></div>`,
-      `<div class=pbody>${sh('videos', 'Videos', `<div class=tabs>${['top', 'history', 'liked'].map(k => `<button class="tab${TAB === k ? ' on' : ''}" data-tab=${k}>${k[0].toUpperCase() + k.slice(1)}</button>`).join('')}${TAB === 'history' ? '<button class=tab data-clear>Clear</button>' : ''}</div><div style="margin-top:12px">${vidHTML(v[TAB])}</div>`)}
+      `<div class=pbody>${window.NovaWatch ? `<div class=subh><h3>Videos</h3></div>${NovaWatch.html()}` : sh('videos', 'Videos', `<div class=tabs>${['top', 'history', 'liked'].map(k => `<button class="tab${TAB === k ? ' on' : ''}" data-tab=${k}>${k[0].toUpperCase() + k.slice(1)}</button>`).join('')}${TAB === 'history' ? '<button class=tab data-clear>Clear</button>' : ''}</div><div style="margin-top:12px">${vidHTML(v[TAB])}</div>`)}
 ${sh('keywords', 'Keywords', kwHTML(d.titles))}${sh('channels', 'Channels', chHTML(d.channels))}${sh('interests', 'Interests', donutHTML(d.interests))}</div>`));
   };
 

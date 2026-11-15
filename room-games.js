@@ -141,8 +141,7 @@ function events(s, isNew) {
   if (isNew) return;
   if (s.status === 'question' && (o.status !== 'question' || o.idx !== s.q_idx)) { if (snd) beep(660, .09, 'sine'); if (!G.open) flashBanner(); }
   if (s.status === 'reveal' && o.status !== 'reveal') { const r = mineResult(); if (snd && r) { if (r.ok) { beep(740, .1, 'triangle'); setTimeout(() => beep(990, .14, 'triangle'), 110); } else beep(180, .22, 'sawtooth', .06); } }
-  if (s.status === 'paused' && o.status !== 'paused') H.toast(s.paused_reason === 'admin' ? 'Game paused while the room admin changes' : 'Game paused');
-  if (o.status === 'paused' && s.status !== 'paused') H.toast('Game resumed');
+  /* no pause / resume messages anywhere (chat or toast): the Game Paused cover in the game panel is the only indicator */
   if (s.status === 'ended' && o.status !== 'ended') { if (snd) { beep(523, .12, 'triangle'); setTimeout(() => beep(659, .12, 'triangle'), 130); setTimeout(() => beep(784, .22, 'triangle'), 260); } if (!G.open) H.toast('Game ended' + (s.summary && s.summary.winner ? ' · Winner: ' + nm(s.summary.winner) : '')); }
 }
 function autoJoin() {

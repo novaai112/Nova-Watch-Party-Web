@@ -106,6 +106,11 @@ const patch = (page, room, queue) => page.evaluate(([r, q]) => { if (r) Object.a
       await page.click('.pqi-all'); await page.waitForFunction(() => document.querySelector('.pq-n') && document.querySelector('.pq-n').textContent === '119', null, { timeout: 5000 });
       assert.strictEqual(await page.$$eval('.pq-item', e => e.length), 119); assert.ok(await page.$('.pq-live'), 'first video auto-submitted'); });
     await t('queue list can scroll to the last video', async () => { const r = await page.evaluate(() => { const u = document.querySelector('.pq-list'); u.scrollTop = 1e6; return { sh: u.scrollHeight, ch: u.clientHeight, last: u.lastElementChild.querySelector('b').textContent }; }); assert.strictEqual(r.last, 'Song 120'); assert.ok(r.sh > r.ch); });
+    await t('watching a video in the room is recorded in History with a count', async () => { const h = await page.evaluate(() => JSON.parse(localStorage.getItem('nova.h') || '[]')); assert.ok(h.length >= 1 && h[0].n === 1 && h[0].at, JSON.stringify(h).slice(0, 200)); });
+    await t('same video within 2 minutes is one watch; later it counts again', async () => {
+      const r = await page.evaluate(() => { const h = JSON.parse(localStorage['nova.h']), v = h[0]; NovaApp.addHistory(v); const a = JSON.parse(localStorage['nova.h'])[0].n;
+        const o = JSON.parse(localStorage['nova.h']); o[0].at = Date.now() - 600000; localStorage['nova.h'] = JSON.stringify(o); NovaApp.addHistory(v); return [a, JSON.parse(localStorage['nova.h'])[0].n, JSON.parse(localStorage['nova.h']).length]; });
+      assert.deepStrictEqual(r, [1, 2, 1]); });
     console.log('  errors:', page.errs.length ? page.errs : 'none'); await page.screenshot({ path: path.join(OUT, name + '.png') });
     await ctx.close();
   }

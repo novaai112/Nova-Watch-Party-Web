@@ -473,7 +473,6 @@ begin
       update public.game_sessions set admin_id = new.admin_id where id = g.id;      -- the old admin loses control immediately
       perform public._game_pause(g.id, 'admin');                                     -- paused until the new admin (or the server) resumes
     end loop;
-    if found then perform public._notice(new.id, new.admin_id, 'Game paused while the room admin changes'); end if;
   end if;
   return null;
 end $$;
@@ -539,7 +538,6 @@ begin
   s := public._game_lock(p_session);
   if s.status = 'paused' then return; end if;
   perform public._game_pause(p_session, 'manual');
-  perform public._notice(s.room_id, auth.uid(), 'Game paused');
 end $$;
 
 create or replace function public.game_resume(p_session uuid) returns void
@@ -549,7 +547,6 @@ begin
   s := public._game_lock(p_session);
   if s.status <> 'paused' then return; end if;
   perform public._game_resume(p_session, public.room_now());
-  perform public._notice(s.room_id, auth.uid(), 'Game resumed');
 end $$;
 
 -- p_mode 'skip' = close this question now;  'next' = go on from the results screen
@@ -745,3 +742,6 @@ begin
 end $$;
 
 notify pgrst, 'reload schema';
+
+-- chat shows only "started" and "ended" for a game: remove the pause / resume notes that older versions left in chat
+delete from public.room_messages where kind = 'notice' and body ~* '^Game (paused|resumed)';

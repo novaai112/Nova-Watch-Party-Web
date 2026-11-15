@@ -321,7 +321,7 @@ async function loadMsgs() {
     msgCols = 'id,user_id,kind,body,created_at';
     ({ data } = await sb.from('room_messages').select(msgCols).eq('room_id', R.id).order('created_at', { ascending: false }).limit(60));
   }
-  msgs = (data || []).reverse();
+  msgs = (data || []).reverse().filter(m => !hiddenGameNote(m));
   await loadProfiles(msgs.map(m => m.user_id));
   if (MEDIA()) MEDIA().sign(msgs).then(got => { if (got) renderFeed(); });
 }
@@ -442,8 +442,10 @@ function onRoom(p) {
   mountMedia().then(() => { if (!isAdmin()) applyState(false); });
   voiceSync();
 }
+/* Nova Play: the chat only shows "started" and "ended" for a game. Pause / resume / admin-change notes are never shown (old ones included). */
+const hiddenGameNote = m => !!m && m.kind === 'notice' && /^Game (paused|resumed)\b/i.test(String(m.body || ''));
 function addMsg(m) {
-  if (!R || !m || msgs.some(x => x.id === m.id)) return;
+  if (!R || !m || hiddenGameNote(m) || msgs.some(x => x.id === m.id)) return;
   msgs.push(m); if (typers.delete(m.user_id)) renderTyping();
   if (Nova.S.translate && m.kind === 'chat') Nova.tr(m.body).then(t => { if (t !== m.body) { m.tr = t; renderFeed(); } });
   loadProfiles([m.user_id]).then(renderFeed);
@@ -1426,6 +1428,7 @@ function noteNow(m) {
   if (ui.nowKeys[key]) return;
   const first = !Object.keys(ui.nowKeys).length;   // entering a room is not a vote result
   ui.nowKeys[key] = 1;
+  try { if (window.NovaApp && NovaApp.addHistory) NovaApp.addHistory(likeItem(m)); } catch (e) {}   // Watch Activity: History / Most watched
   if (!first && ui.voteSeen && R.playback_mode === 'vote') toast('Winner: ' + (m.title || 'Video'));   // the vote closed and its winner is starting
   ui.voteSeen = false;
   ui.events.push({ t: snow(), title: m.title || 'Video', th: thumb(m), kind: m.kind, media: Object.assign({}, m) });

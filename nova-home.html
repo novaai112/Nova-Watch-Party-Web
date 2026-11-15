@@ -328,7 +328,19 @@ function frame(u,t,lg,th){
 }
 /* called by room.js after a video was picked: leave platform screens, return to the room/home */
 window.novaAfterPick=function(){fclose();close();if(!document.getElementById('picker').hidden)show('home',false)};
-window.NovaApp={isLiked:function(v){return isL(v)},toggleLike:function(v){toggleL(v)}};
+/* play a saved History / Likes item to the room (no extra confirm): single videos go straight to the room, playlists open the import screen */
+function playDirect(v){
+  addH(v);
+  var m=null;
+  if(v.id||v.pl)m=NovaAdd.ytMedia({id:v.id,pl:v.pl,title:v.t,thumb:v.th,live:v.d==='LIVE'});
+  else if(v.url){m=mediaFrom(v.url,v.t);if(m&&v.th)m.thumb=v.th}
+  if(!m||(m.pl&&!m.id)||!(window.NovaRoom&&NovaRoom.ready)){play(v);return}
+  var busy=false;try{busy=!!NovaRoom.ctx().busy}catch(e){}
+  NovaRoom.handle(m,{now:!busy}).then(function(ok){if(!ok)rawM(m)}).catch(function(){rawM(m)})
+}
+window.NovaApp={isLiked:function(v){return isL(v)},toggleLike:function(v){toggleL(v)},addHistory:function(v){try{addH(v)}catch(e){}},playDirect:playDirect};
+/* a video tapped on the standalone profile page waits here until the room code is ready */
+try{var pp=localStorage.getItem('nova.play');if(pp){localStorage.removeItem('nova.play');var pit=JSON.parse(pp),tr=0;(function w(){if(window.NovaRoom&&NovaRoom.ready&&window.NovaApp&&NovaApp.playDirect){NovaApp.playDirect(pit);return}if(++tr<80)setTimeout(w,250)})()}}catch(e){}
 function fclose(){FR.hidden=true;FF.src='about:blank'}
 FR.querySelector('.fb').onclick=fclose;FR.querySelector('.fo').onclick=function(){window.open(fu,'_blank','noopener')};
 document.addEventListener('keydown',function(ev){if(ev.key==='Escape'&&!FR.hidden){ev.stopImmediatePropagation();fclose()}},true);
@@ -364,7 +376,11 @@ var S={
 /* ---- Likes & History (saved on this device, never duplicated) ---- */
 function key(v){return v.id||v.pl||v.url||v.t}
 function lst(k){var seen={},o=[];ld(k,[]).forEach(function(v){var q=key(v);if(!seen[q]){seen[q]=1;o.push(v)}});return o}
-function addH(v){var a=lst('nova.h').filter(function(x){return key(x)!==key(v)});a.unshift(v);sv('nova.h',a.slice(0,100))}
+/* history keeps how many times each video was watched (n) and when (at); a repeat within 2 minutes is the same watch */
+function addH(v){
+  var k=key(v),old=null,a=lst('nova.h').filter(function(x){if(key(x)===k){old=x;return false}return true}),now=Date.now(),n=old?(old.n||1):0,e={},p;
+  if(!old||!old.at||now-old.at>120000)n++;
+  for(p in v)e[p]=v[p];e.n=n;e.at=now;a.unshift(e);sv('nova.h',a.slice(0,200))}
 function isL(v){return lst('nova.likes').some(function(x){return key(x)===key(v)})}
 function toggleL(v){var a=lst('nova.likes');if(isL(v))a=a.filter(function(x){return key(x)!==key(v)});else a.unshift(v);sv('nova.likes',a)}
 function showSaved(k){return function(){list=lst(k);if(!list.length){body.innerHTML='<div class="empty2"><svg width="200" height="180" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.500" y="6" width="14" height="12" rx="2.500" fill="#fff"/><path d="m16.500 10.500 5-3v9l-5-3z" fill="#fff"/><path d="M3 21 21 3" stroke="#000" stroke-width="3.400"/><path d="M3 21 21 3"/></svg>No videos found</div>';return}
@@ -932,7 +948,7 @@ scr.addEventListener('input',function(ev){ev.target.classList&&ev.target.classLi
 if(/^#p-(\w+)/.test(location.hash)){var m0=/^#p-(\w+)/.exec(location.hash);if(S[m0[1]])open(m0[1],false)}
 })();
 </script>
-<script src="nova-chat-rich.js?v=1"></script><script src="nova-chat-media.js?v=1"></script><script src="nova-chat-capture.js?v=1"></script><script src="room-cards.js?v=2"></script><script src="room-media.js?v=3"></script><script src="room-dock.js?v=1"></script><script src="room-queue.js?v=3"></script><script src="room-player.js?v=1"></script><script src="room-sync.js?v=1"></script><script src="room-games.js?v=5"></script><script src="room.js?v=17"></script>
+<script src="nova-chat-rich.js?v=1"></script><script src="nova-chat-media.js?v=1"></script><script src="nova-chat-capture.js?v=1"></script><script src="room-cards.js?v=2"></script><script src="room-media.js?v=3"></script><script src="room-dock.js?v=2"></script><script src="room-queue.js?v=3"></script><script src="room-player.js?v=1"></script><script src="room-sync.js?v=1"></script><script src="room-games.js?v=5"></script><script src="room.js?v=18"></script>
 <script src="mobile-navigation.js?v=2"></script>
 </body>
 </html>
