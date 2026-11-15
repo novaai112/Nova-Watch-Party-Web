@@ -3,7 +3,7 @@
 
   if (!matchMedia('(max-width: 899px)').matches) return;
 
-  const peopleTabs = ['chats', 'friends', 'requests', 'blocked'];
+  const peopleTabs = ['chats', 'recent', 'requests', 'blocked'];
   let start = null;
   let clickSuppressionTarget = null;
   let clickSuppressionTimer = null;

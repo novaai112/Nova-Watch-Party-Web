@@ -44,7 +44,7 @@
       });
       if (!keepPos) bodies.forEach(b => {
         b.x = b.r + Math.random() * Math.max(1, W - 2 * b.r); b.y = b.r + Math.random() * Math.max(1, H - 2 * b.r);
-        const a = Math.random() * 6.283; b.vx = Math.cos(a) * b.s0; b.vy = Math.sin(a) * b.s0;
+        b.vx = 0; b.vy = 0;
       });
       relax(keepPos ? 30 : 260);
     }
@@ -88,17 +88,15 @@
 
     /* ------------------------------------------------ step */
     function step(dt, t) {
+      /* no idle drift: bubbles only move when the user moves them, then glide to a stop */
+      const damp = Math.exp(-1.7 * dt);
       for (const b of bodies) {
         if (b.drag) continue;
-        const a = b.ph + t * (0.32 + (b.i % 5) * 0.07);
-        b.vx += Math.cos(a * 1.7 + b.i) * 16 * dt; b.vy += Math.sin(a * 1.3 + b.i * 2) * 16 * dt;
-        const sp = Math.hypot(b.vx, b.vy);
-        if (sp < b.s0 * 0.7) { const f = sp < 0.01 ? 0 : 1 + 2.2 * dt; if (f) { b.vx *= f; b.vy *= f; } else { b.vx = (Math.random() - .5) * b.s0; b.vy = (Math.random() - .5) * b.s0; } }
-        else if (sp > b.s0 * 2.2) { const f = 1 - 1.8 * dt; b.vx *= f; b.vy *= f; }
-        if (sp > 520) { b.vx *= 520 / sp; b.vy *= 520 / sp; }
+        b.vx *= damp; b.vy *= damp;
+        const sp = Math.hypot(b.vx, b.vy); if (sp > 700) { b.vx *= 700 / sp; b.vy *= 700 / sp; }
       }
       /* the pointer gently pushes bubbles aside */
-      if (pointer && !grab) for (const b of bodies) {
+      if (pointer && !grab && performance.now() - pointer.t < 120) for (const b of bodies) {
         const dx = b.x - pointer.x, dy = b.y - pointer.y, d = Math.hypot(dx, dy) || 1, gap = d - b.r;
         if (gap < 46) { const f = (1 - Math.max(0, gap) / 46) * 520 * dt; b.vx += dx / d * f; b.vy += dy / d * f; }
       }
@@ -131,15 +129,20 @@
       }
     }
 
+    let awake = false;
     function loop(ts) {
       raf = 0;
       if (dead) return;
       if (!stage.isConnected) { destroy(); return; }
       const dt = Math.min(0.034, (ts - last) / 1000 || 0.016); last = ts;
       step(dt, ts / 1000); draw();
+      let maxSp = 0; for (const b of bodies) { const sp = Math.hypot(b.vx, b.vy); if (sp > maxSp) maxSp = sp; }
+      const active = grab || (pointer && performance.now() - pointer.t < 150);
+      if (!active && maxSp < 3) { bodies.forEach(b => { b.vx = b.vy = 0; }); awake = false; return; }   /* everything is still: sleep */
       if (visible && !document.hidden) raf = requestAnimationFrame(loop);
     }
-    function start() { if (!raf && !dead && !RM.matches && visible && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(loop); } }
+    function start() { if (!raf && !dead && awake && !RM.matches && visible && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(loop); } }
+    function wake() { awake = true; start(); }
     function stop() { if (raf) cancelAnimationFrame(raf); raf = 0; }
 
     /* ------------------------------------------------ tooltip / popover */
@@ -164,7 +167,8 @@
     function onDown(e) {
       if (e.target.closest('.nb-tip')) return;
       const p = local(e), bEl = e.target.closest('.nb-b'), b = bEl && bodies[+bEl.dataset.i];
-      pointer = p;
+      pointer = { x: p.x, y: p.y, t: performance.now() };
+      wake();
       if (!b) { if (e.pointerType !== 'mouse') for (const x of bodies) { const dx = x.x - p.x, dy = x.y - p.y, d = Math.hypot(dx, dy) || 1; if (d < 130) { const f = (1 - d / 130) * 220; x.vx += dx / d * f; x.vy += dy / d * f; } } hideTip(true); return; }
       if (RM.matches) { grab = { b, t0: performance.now(), sx: p.x, sy: p.y, moved: false, still: true }; return; }
       grab = { b, x: p.x, y: p.y, ox: p.x - b.x, oy: p.y - b.y, t0: performance.now(), sx: p.x, sy: p.y, moved: false };
@@ -173,10 +177,10 @@
     }
     function onMove(e) {
       const p = local(e);
-      if (e.pointerType === 'mouse' || grab) pointer = grab ? null : p;
+      if (grab) pointer = null; else if (e.pointerType === 'mouse') { pointer = { x: p.x, y: p.y, t: performance.now() }; wake(); }
       if (grab) {
         if (grab.still) return;
-        grab.x = p.x; grab.y = p.y;
+        grab.x = p.x; grab.y = p.y; wake();
         if (Math.hypot(p.x - grab.sx, p.y - grab.sy) > 6) grab.moved = true;
         return;
       }
@@ -194,8 +198,8 @@
         if (o.onTap && o.onTap(b.it) === true) return;
         if (pinned === b) hideTip(true); else showTip(b, true);
         /* a tap also gives the bubble a little nudge */
-        if (!RM.matches) { const a = Math.random() * 6.283; b.vx += Math.cos(a) * 60; b.vy += Math.sin(a) * 60; }
-      } else if (!g.still) { const sp = Math.hypot(b.vx, b.vy); if (sp > 700) { b.vx *= 700 / sp; b.vy *= 700 / sp; } }
+        if (!RM.matches) { const a = Math.random() * 6.283; b.vx += Math.cos(a) * 60; b.vy += Math.sin(a) * 60; wake(); }
+      } else if (!g.still) { const sp = Math.hypot(b.vx, b.vy); if (sp > 700) { b.vx *= 700 / sp; b.vy *= 700 / sp; } wake(); }
     }
     function onCancel() { if (grab) { grab.b.drag = false; grab = null; stage.classList.remove('nbx-grabbing'); } pointer = null; }
     function onLeave(e) { if (e.pointerType === 'mouse') { pointer = null; if (!pinned) hideTip(false); } }
@@ -208,23 +212,35 @@
     stage.addEventListener('pointerup', onUp); stage.addEventListener('pointercancel', onCancel); stage.addEventListener('pointerleave', onLeave);
     stage.addEventListener('keydown', onKey); stage.addEventListener('dragstart', e => e.preventDefault());
     document.addEventListener('pointerdown', outside, true);
+    /* scrolling the page makes the bubbles sway (they lag behind the page a little) */
+    const lastScroll = new WeakMap();
+    if (document.scrollingElement) lastScroll.set(document.scrollingElement, document.scrollingElement.scrollTop);
+    const onScroll = e => {
+      if (RM.matches || !visible) return;
+      const t = e.target === document ? document.scrollingElement : e.target; if (!t || t.scrollTop == null) return;
+      const prev = lastScroll.get(t), cur = t.scrollTop; lastScroll.set(t, cur);
+      if (prev == null) return;
+      const dy = clamp(cur - prev, -60, 60); if (Math.abs(dy) < 1) return;
+      bodies.forEach(b => { if (!b.drag) b.vy += dy * 0.45 * (28 / b.r + 0.4); });
+      wake();
+    };
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true });
 
     /* ------------------------------------------------ lifecycle */
-    const io = 'IntersectionObserver' in window ? new IntersectionObserver(es => { visible = es[0].isIntersecting; visible ? start() : stop(); }, { rootMargin: '80px' }) : null;
+    const io = 'IntersectionObserver' in window ? new IntersectionObserver(es => { visible = es[0].isIntersecting; visible ? (awake && start()) : stop(); }, { rootMargin: '80px' }) : null;
     io && io.observe(stage);
     let rw = W;
     const ro = 'ResizeObserver' in window ? new ResizeObserver(() => {
       const nw = stage.clientWidth; if (!nw || Math.abs(nw - rw) < 2) return;
-      const sx = nw / rw; rw = nw; W = nw; bodies.forEach(b => { b.x *= sx; }); sizeAll(true); draw();
+      const sx = nw / rw; rw = nw; W = nw; bodies.forEach(b => { b.x *= sx; }); sizeAll(true); draw(); if (awake) start();
     }) : null;
     ro && ro.observe(stage);
     const vis = () => (document.hidden ? stop() : start());
     document.addEventListener('visibilitychange', vis);
-    start();
 
     function destroy() {
       if (dead) return; dead = true; stop(); io && io.disconnect(); ro && ro.disconnect();
-      document.removeEventListener('visibilitychange', vis); document.removeEventListener('pointerdown', outside, true);
+      document.removeEventListener('visibilitychange', vis); document.removeEventListener('pointerdown', outside, true); document.removeEventListener('scroll', onScroll, true);
       stage._nb = null;
     }
     stage._nb = { destroy };

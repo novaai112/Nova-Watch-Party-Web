@@ -518,7 +518,7 @@
   setInterval(() => { if (S.channel) dispatchScheduled(); }, 30000);
   /* ============================================================ people (friends, requests, blocks) */
   const friendlyError = friendly, setBusy = (node, busy) => { if (node) node.disabled = busy; };
-  let peopleTab = 'friends', peopleQuery = '', peopleLoadSequence = 0, peopleSearchTimer = null;
+  let peopleTab = 'recent', peopleQuery = '', peopleLoadSequence = 0, peopleSearchTimer = null;
   function peopleRow(user, subtitle, actions = '', tail = '') {
     const id = esc(user.id);
     return `<article class=people-row><button class=people-identity data-go="user/${id}" aria-label="View ${esc(user.full_name || user.username)}">${Nova.avatar(user, 48)}<span><b>${esc(user.full_name || user.username || 'User')}</b><small>@${esc(user.username || '')}</small>${subtitle ? `<small class=people-subtitle>${esc(subtitle)}</small>` : ''}</span></button><div class=people-actions>${tail}${actions}</div></article>`;
@@ -536,12 +536,12 @@
   }
 
   function peopleTabs(back = `<a class=people-rail-back href="nova-home.html" aria-label="Back to Nova home" title="Back to Nova home">${ic('left',20)}</a>`) {
-    const tabs = [['chats','chat','Chats'],['friends','users','Friends'],['requests','userplus','Request'],['blocked','shield','Blocked']];
+    const tabs = [['chats','chat','Chats'],['recent','clock','Recent'],['requests','userplus','Request'],['blocked','shield','Blocked']];
     return `<div class=people-side-rail>${back}<nav class=people-bottom-nav aria-label="People">${tabs.map(([key,icon,label]) => `<button class="${peopleTab===key?'on':''}" data-people-tab="${key}" aria-current="${peopleTab===key?'page':'false'}">${ic(icon,24)}<span>${label}</span>${key==='requests'&&REQ.length?`<i>${REQ.length}</i>`:''}</button>`).join('')}</nav></div>`;
   }
 
   V.friends = requestedTab => {
-    if (['friends', 'requests', 'blocked'].includes(requestedTab)) peopleTab = requestedTab; else if (peopleTab === 'chats') peopleTab = 'friends';
+    if (['recent', 'requests', 'blocked'].includes(requestedTab)) peopleTab = requestedTab; else if (!['recent', 'requests', 'blocked'].includes(peopleTab)) peopleTab = 'recent';
     setTimeout(() => { bindRealtime(); loadPeople(); }, 0);
     return shell('friends', `<section class="people-page">
         ${peopleTabs()}
@@ -557,13 +557,19 @@
     const sequence = ++peopleLoadSequence;
     target.innerHTML = '<p class=chat-loading>Loading people…</p>';
     try {
-      const [friendshipResult, blockResult] = await Promise.all([
+      const [friendshipResult, blockResult, recentResult] = await Promise.all([
         sb.from('friendships').select('user_id,friend_id,status,created_at')
           .or(`user_id.eq.${U.id},friend_id.eq.${U.id}`),
-        sb.from('user_blocks').select('blocked_id,created_at').eq('blocker_id', U.id)
+        sb.from('user_blocks').select('blocked_id,created_at').eq('blocker_id', U.id),
+        peopleTab === 'recent'
+          ? sb.from('recent_people').select('other_id,room_title,last_together,times').eq('user_id', U.id).order('last_together', { ascending: false }).limit(150)
+          : Promise.resolve({ data: [] })
       ]);
       if (friendshipResult.error) throw friendshipResult.error;
       if (blockResult.error) throw blockResult.error;
+      const recentMissing = !!recentResult.error && /recent_people|relation|schema cache/i.test(recentResult.error.message || '');
+      if (recentResult.error && !recentMissing) throw recentResult.error;
+      const recent = recentResult.error ? [] : (recentResult.data || []).filter(row => row.other_id !== U.id);
       const relationships = friendshipResult.data || [], blocked = blockResult.data || [];
       const blockedIds = new Set(blocked.map(row => row.blocked_id));
       const accepted = relationships.filter(row => row.status === 'accepted')
@@ -571,7 +577,7 @@
       const incoming = relationships.filter(row => row.status === 'pending' && row.friend_id === U.id);
       const outgoing = relationships.filter(row => row.status === 'pending' && row.user_id === U.id);
       const allIds = [
-        ...accepted, ...blocked.map(row => row.blocked_id),
+        ...accepted, ...recent.map(row => row.other_id), ...blocked.map(row => row.blocked_id),
         ...incoming.map(row => row.user_id), ...outgoing.map(row => row.friend_id)
       ];
       const q = peopleQuery.trim().replace(/^@/, '').toLowerCase();
@@ -617,10 +623,12 @@
       const empty = text => `<div class=chat-empty><span>${ic('users',28)}</span><p>${esc(text)}</p></div>`;
       const usernameMatches = id => (person(id).username || '').toLowerCase().includes(q);
       let content = '';
-      if (peopleTab === 'friends') {
-        const ids = accepted.filter(id => !q || usernameMatches(id));
-        content = ids.length ? `<div class="nbx nbx-friends"><div class=nbx-head><span>${ic('users',18)} Friends</span><span class=nbx-pill>Top</span></div><div class=nbx-stage data-nb=friends data-nb-items="${esc(JSON.stringify(ids.map(id => { const u = person(id); return { id, name: u.full_name || u.username || 'User', username: u.username || '', avatar: u.avatar_url || '' }; })))}"></div></div>`
-          : empty(q.length >= 2 ? 'No users found for that username.' : 'No friends yet. Search for a username to find people.');
+      if (peopleTab === 'recent') {
+        const ago = iso => { const m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000)); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : m < 43200 ? `${Math.round(m / 1440)} d ago` : new Date(iso).toLocaleDateString(); };
+        const rows = recent.filter(row => !blockedIds.has(row.other_id) && (!q || usernameMatches(row.other_id)));
+        content = recentMissing ? `<div class=chat-empty><b>Recent is not set up yet</b><p>Run recent-people-schema.sql in Supabase once.</p></div>`
+          : rows.length ? `<h3 class=people-section-title>Recent · ${rows.length}</h3>${rows.map(row => peopleRow(person(row.other_id), `${row.room_title || 'Watch room'} · ${ago(row.last_together)}`, actionFor(row.other_id))).join('')}`
+          : empty(q.length >= 2 ? 'No recent people match that username.' : 'Nobody yet. People you share a watch room with show up here.');
       } else if (peopleTab === 'requests') {
         const ins = incoming.filter(row => !q || usernameMatches(row.user_id));
         const outs = outgoing.filter(row => !q || usernameMatches(row.friend_id));
@@ -1462,8 +1470,9 @@
   /* ================================================================ clicks */
   document.addEventListener('click', async event => {
     const t = event.target, hit = sel => t.closest(sel);
-    if (!inMessaging()) return;
     let el;
+    if ((el = hit('.nb-tip [data-open-friend]'))) return openFriendChat(el.dataset.openFriend);
+    if (!inMessaging()) return;
     if ((el = hit('[data-people-tab]'))) {
       const tab = el.dataset.peopleTab;
       if (tab === 'chats') { location.hash = '#chat'; return; }

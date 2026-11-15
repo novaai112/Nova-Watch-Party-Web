@@ -354,3 +354,6 @@ Files: `profile-visibility-schema.sql`, `nova-profile.js` (menu, visitor view), 
 * Laptop: round left / right arrows appear on the row only while there is more to scroll. Drag and drop photos onto the gallery still works.
 * Setup: `profile-visibility-schema.sql` (adds `gallery.visibility` and stops other people reading the table directly; they get photos only through `public_profile`). Photo files sit in a public storage bucket under random file names, so a photo set to Friends or Hidden is not listed for others, but anyone who already has its exact link could still open it.
 * Test: `node tests/e2e-profile-gallery.js`.
+
+## Recent tab (replaces Friends in People)
+Run `recent-people-schema.sql` once in Supabase (after `rooms-schema.sql`). It keeps a small `recent_people` table filled by triggers whenever someone joins a watch room, so the People > Recent tab lists everyone you shared a room with (newest first) with Add / Accept / Requested / Friend actions. Friend bubbles (profile page) now stay still until moved, scrolled or touched.
