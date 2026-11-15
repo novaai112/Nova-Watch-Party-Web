@@ -498,6 +498,7 @@ window.NovaPlayer = {
   closeMenu: () => { if (ui && S.menu) closeMenu(); },
   repaintRate() { paintSpeed(); if (S.menu === 'main') renderMenu(); if (S.menu === 'details') renderMenu(); },
   exitFs: () => { if (S.fs || S.pfs) exitFs(); },
+  enterFs: () => { if (wrap && !(S.fs || S.pfs)) enterFs(); },
   wake
 };
 })();

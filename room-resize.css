@@ -1,0 +1,13 @@
+/* resize handle between video and chat (laptop / monitor only) */
+#rm .rsz{display:none}
+@media (min-width:900px) and (hover:hover) and (pointer:fine){
+  #rm:not(.rm-compact):not(.pl-hidden) .rbody{position:relative}
+  #rm:not(.rm-compact):not(.pl-hidden) .rsz{display:block;position:absolute;z-index:30;width:14px;cursor:col-resize;touch-action:none;outline:0}
+  #rm .rsz[hidden]{display:none!important}
+  #rm .rsz i{position:absolute;top:0;bottom:0;left:50%;width:3px;margin-left:-1.5px;border-radius:3px;background:#2563eb;opacity:0;transition:opacity .15s}
+  #rm .rsz:hover i,#rm .rsz:focus-visible i,#rm .rsz.drag i{opacity:1}
+  #rm .rsz.drag i{width:4px;margin-left:-2px}
+  #rm .rsz[data-hint]:not([data-hint=""])::after{content:attr(data-hint);position:absolute;top:50%;right:20px;transform:translateY(-50%);white-space:nowrap;padding:6px 12px;border-radius:999px;background:#111;color:#fff;font-size:12.5px;font-weight:700;pointer-events:none;box-shadow:0 6px 18px #0004}
+  html.rsz-drag,html.rsz-drag *{cursor:col-resize!important;user-select:none!important}
+  html.rsz-drag iframe,html.rsz-drag video{pointer-events:none!important}
+}

@@ -733,6 +733,7 @@ function setPlayerHidden(b) {
   const sb = $('.rshow', rm); if (sb) sb.hidden = !ui.phide;
   if (ui.phide) { if (window.NovaPlayer) { NovaPlayer.closeMenu(); NovaPlayer.exitFs(); } }
   else { fitYT(); setTimeout(fitYT, 60); if (window.NovaPlayer) { NovaPlayer.layout(); NovaPlayer.update(); } }
+  if (window.NovaSplit) setTimeout(NovaSplit.mount, 0);
 }
 function adminToggle() {
   if (!isAdmin() || !R) return;
@@ -1095,6 +1096,7 @@ function buildShell() {
     vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); fit();
   }
   if (window.NovaDock) NovaDock.attach(el);
+  if (window.NovaSplit) setTimeout(NovaSplit.mount, 0);     // desktop video | chat resize handle
 }
 function renderAll() { renderHead(); renderSettings(); renderControls(); renderNow(); renderFeed(); renderVote(); renderMic(); renderVoice(); renderBadges(); }
 
@@ -2200,7 +2202,7 @@ if (window.NovaPlayer) NovaPlayer.init({
     const u = String(m.url || '').split('#')[0]; return safeHttps(u) ? u : '';
   }
 });
-window.NovaRoom = { rpc: (n, a) => rpc(n, a), roomId: () => (R ? R.id : null), refreshQueue: () => (R ? refreshQueue() : null), handle, ctx, renderHome, active: () => !!R, ready: true, api: roomApi, sync, state: stateName, join: switchTo };
+window.NovaRoom = { hidePlayer: b => setPlayerHidden(b), rpc: (n, a) => rpc(n, a), roomId: () => (R ? R.id : null), refreshQueue: () => (R ? refreshQueue() : null), handle, ctx, renderHome, active: () => !!R, ready: true, api: roomApi, sync, state: stateName, join: switchTo };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 

@@ -97,7 +97,7 @@ const patch = (page, room, queue) => page.evaluate(([r, q]) => { if (r) Object.a
     console.log(name + ': real nova-home.html + room.js');
     await t('in a room: NovaPQ sees the room', async () => assert.ok(await page.evaluate(() => NovaPQ.active()), 'NovaPQ.active() is false while in a room'));
     await page.evaluate(() => show('picker', true));
-    await t('green panel is visible in the picker', async () => { await page.waitForSelector('#pq:not([hidden]) .pq-card', { timeout: 3000 }); });
+    await t('empty queue: the green box is hidden', async () => { await page.waitForTimeout(300); assert.ok(await page.$eval('#pq', e => e.hidden)); });
     await t('launching a playlist opens the import screen (not a direct play)', async () => {
       await page.evaluate(() => document.dispatchEvent(new CustomEvent('nova:platform', { detail: 'youtube' })));
       await page.fill('#scr .sb input', 'https://www.youtube.com/playlist?list=PLabcdefghijk'); await page.press('#scr .sb input', 'Enter');
@@ -105,6 +105,7 @@ const patch = (page, room, queue) => page.evaluate(([r, q]) => { if (r) Object.a
     await t('add all: first video auto-sent to the vote, the other 119 wait in MY queue', async () => {
       await page.click('.pqi-all'); await page.waitForFunction(() => document.querySelector('.pq-n') && document.querySelector('.pq-n').textContent === '119', null, { timeout: 5000 });
       assert.strictEqual(await page.$$eval('.pq-item', e => e.length), 119); assert.ok(await page.$('.pq-live'), 'first video auto-submitted'); });
+    await t('box appears once the queue has videos', async () => { await page.waitForSelector('#pq:not([hidden]) .pq-card', { timeout: 5000 }); });
     await t('queue list can scroll to the last video', async () => { const r = await page.evaluate(() => { const u = document.querySelector('.pq-list'); u.scrollTop = 1e6; return { sh: u.scrollHeight, ch: u.clientHeight, last: u.lastElementChild.querySelector('b').textContent }; }); assert.strictEqual(r.last, 'Song 120'); assert.ok(r.sh > r.ch); });
     await t('watching a video in the room is recorded in History with a count', async () => { const h = await page.evaluate(() => JSON.parse(localStorage.getItem('nova.h') || '[]')); assert.ok(h.length >= 1 && h[0].n === 1 && h[0].at, JSON.stringify(h).slice(0, 200)); });
     await t('same video within 2 minutes is one watch; later it counts again', async () => {

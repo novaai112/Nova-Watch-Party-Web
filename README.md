@@ -316,3 +316,31 @@ Profile > **Watch Activity** now starts with three horizontally scrolling rows (
 
 The room chat shows only **"<name> started <game>"** and **"Game ended"** (with the winner when there is one) for Nova Play. Pause / resume / admin-change notes are no longer posted (`room-games-schema.sql`), no longer shown even if an older one is in the chat history (`room.js` `hiddenGameNote`), and have no pop-up either; the Game Paused cover inside the game panel is the only indicator. Re-run `room-games-schema.sql` once: it also deletes the old pause / resume notes from `room_messages`. Test: `node tests/game-chat-notes.test.js`.
 
+## Resizable video | chat split (laptop / monitor only)
+
+On a wide screen with a mouse (width 900px+, not phones or tablets) the left wall of the chat card is a drag handle (blue line and a resize cursor on hover).
+* Drag left: chat grows, video shrinks. Drag right: chat shrinks.
+* Video gets too small (under about 280px): a hint appears, and on release the video hides, the chat takes the full width, and the **Show player** icon in the header brings the video back at the previous size.
+* Chat gets too small (under about 280px): on release the video goes full screen (real fullscreen, or the page fullscreen fallback). Leaving full screen returns to the previous split.
+* Double-click the handle (or press Home on it) resets the size; the Left / Right arrow keys resize too. The size is remembered as a share of the width (`nova.split`).
+* Files: `room-resize.js`, `room-resize.css`; hooks in `room.js` (`NovaSplit.mount`, `NovaRoom.hidePlayer`) and `room-player.js` (`NovaPlayer.enterFs`). Test: `node tests/e2e-room-resize.js`.
+
+## My queue box
+
+The My queue box in the platform picker is hidden completely while you have no pending videos (it reappears as soon as you add some).
+
+
+## Profile visibility: Public / Friends / Hidden
+
+Every profile section (bio, stats, gallery, friends, socials, keywords, channels, interests) and each watch list (**Most watched**, **History**, **Likes**) has its own eye button on your own profile. Tap it for a menu with three choices:
+* **Public**: everyone signed in can see it.
+* **Friends**: only your accepted friends.
+* **Hidden**: only you.
+
+Other users open your profile and get exactly what the setting allows. A list they may not see is not sent to them at all (enforced in the database, not in the browser), and they are not told it exists. "Preview" on your profile shows what a visitor who is not your friend sees.
+
+**Setup (run once, after `schema.sql`):** open the Supabase SQL editor and run `profile-visibility-schema.sql`. It is safe to re-run. Old on/off settings keep working (on = Public, off = Hidden), and the three watch lists start from your old "Videos" setting.
+
+History and Likes were only stored on the device before. Now `nova-home.html` and the profile page copy them to your account (`sync_watch_activity`), and deleting, clearing or unliking also updates the account copy (`remove_watch`, `clear_watch_history`, `set_like`).
+
+Files: `profile-visibility-schema.sql`, `nova-profile.js` (menu, visitor view), `profile-watch.js` / `.css` (per-list controls, sync, menu style), `nova-home.html` (sync hooks). Test: `node tests/e2e-profile-visibility.js`.

@@ -16,7 +16,40 @@
   const dateF = d => new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
   const stat = () => (PD && PD.stats) || { videos: 0, hours: 0, friends: 0 };
   const fc = (i, l, v, cls = '') => `<div class="fc ${cls}"><span class=fi>${ic(i, 18)}</span><div class=fv><small>${l}</small>${v}</div></div>`;
-  const eye = k => PD && PD.own ? `<button class="ib sm" data-vis=${k} title="${PD.visibility[k] === false ? 'Hidden from others' : 'Visible to others'}" aria-label="Toggle visibility">${ic(PD.visibility[k] === false ? 'eyeoff' : 'eye', 16)}</button>` : '';
+  /* ---------- who can see a section: Public / Friends / Hidden ---------- */
+  const MODES = [['public', 'Public', 'eye'], ['friends', 'Friends', 'user'], ['hidden', 'Hidden', 'eyeoff']];
+  const modeOf = k => { const v = PD && PD.visibility ? PD.visibility[k] : 'public'; return v === false ? 'hidden' : MODES.some(m => m[0] === v) ? v : 'public'; };   /* old true / false still read correctly */
+  const eye = k => {
+    if (!(PD && PD.own)) return '';
+    const m = MODES.find(x => x[0] === modeOf(k));
+    return `<button class="ib sm vmb" type="button" data-vmenu="${k}" data-mode="${m[0]}" aria-haspopup="menu" aria-expanded="false" title="Who can see this: ${m[1]}" aria-label="Who can see this: ${m[1]}">${ic(m[2], 16)}</button>`;
+  };
+  function closeVMenu() { const m = document.getElementById('vmenu'); if (m) { const b = m._btn; m.remove(); if (b) { b.setAttribute('aria-expanded', 'false'); } } document.removeEventListener('pointerdown', vmOutside, true); window.removeEventListener('resize', closeVMenu); window.removeEventListener('scroll', closeVMenu, true); }
+  function vmOutside(e) { const m = document.getElementById('vmenu'); if (m && !m.contains(e.target) && !(m._btn && m._btn.contains(e.target))) closeVMenu(); }
+  function openVMenu(btn) {
+    const was = document.getElementById('vmenu'); const same = was && was._btn === btn; closeVMenu(); if (same) return;
+    const k = btn.dataset.vmenu, cur = modeOf(k), m = document.createElement('div');
+    m.id = 'vmenu'; m.className = 'vmenu'; m.setAttribute('role', 'menu'); m.setAttribute('aria-label', 'Who can see this'); m._btn = btn;
+    m.innerHTML = MODES.map(x => `<button type="button" role="menuitemradio" aria-checked="${x[0] === cur}" class="vmi${x[0] === cur ? ' on' : ''}" data-vmode="${x[0]}" data-k="${k}">${ic(x[2], 22)}<span>${x[1]}</span>${x[0] === cur ? ic('check', 18) : ''}</button>`).join('');
+    document.body.append(m); btn.setAttribute('aria-expanded', 'true');
+    const r = btn.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
+    m.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.right - w)) + 'px';
+    m.style.top = (r.bottom + 8 + h > innerHeight - 8 ? Math.max(8, r.top - 8 - h) : r.bottom + 8) + 'px';
+    document.addEventListener('pointerdown', vmOutside, true); window.addEventListener('resize', closeVMenu); window.addEventListener('scroll', closeVMenu, true);
+    const on = m.querySelector('.on') || m.firstElementChild; if (on) on.focus();
+    m.addEventListener('keydown', e => {
+      const items = [...m.querySelectorAll('.vmi')], i = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeVMenu(); btn.focus(); }
+    });
+  }
+  async function setMode(k, mode) {
+    closeVMenu(); if (!MODES.some(m => m[0] === mode) || modeOf(k) === mode) return;
+    const v = { ...PD.visibility, [k]: mode }; MODES.forEach(() => {});
+    const { error } = await sb.from('profiles').update({ visibility: v }).eq('id', U.id); if (error) return Nova.toast(error.message, 'err');
+    await reload(); Nova.toast('Visible to: ' + MODES.find(m => m[0] === mode)[1]);
+  }
 
   /* ---------- modal ---------- */
   function closeM() { const m = document.getElementById('mdl'); if (m) m.remove(); document.body.classList.remove('lock'); }
@@ -124,7 +157,7 @@ ${REQ.length ? `<div class=pbody style="border-top:1px solid var(--line)">${REQ.
     const sh = (k, title, body, extra = '') => `<div class=subh><h3>${title}</h3><span class=actg>${extra}${eye(k)}</span></div>${body}`;
     return shell('activity', mbar(t('activity')) + panel(t('activity'), 'What you watch on Nova',
       `<div class=actg><label class=nsfw style="${can ? '' : 'opacity:.5'}" title="${can ? '' : 'Turn off Hide Mature Content in Settings first'}">Include 🔞 NSFW <input type=checkbox class=sw data-nsfw ${NSFW && can ? 'checked' : ''} ${can ? '' : 'disabled'}></label></div>`,
-      `<div class=pbody>${window.NovaWatch ? `<div class=subh><h3>Videos</h3></div>${NovaWatch.html()}` : sh('videos', 'Videos', `<div class=tabs>${['top', 'history', 'liked'].map(k => `<button class="tab${TAB === k ? ' on' : ''}" data-tab=${k}>${k[0].toUpperCase() + k.slice(1)}</button>`).join('')}${TAB === 'history' ? '<button class=tab data-clear>Clear</button>' : ''}</div><div style="margin-top:12px">${vidHTML(v[TAB])}</div>`)}
+      `<div class=pbody>${window.NovaWatch ? `<div class=subh><h3>Videos</h3></div><p class="vhint">Choose who can see Most watched, History and Likes on your profile. Use the eye icon on each list: Public, Friends or Hidden.</p>${NovaWatch.html(k => eye(k))}` : sh('history', 'Videos', `<div class=tabs>${['top', 'history', 'liked'].map(k => `<button class="tab${TAB === k ? ' on' : ''}" data-tab=${k}>${k[0].toUpperCase() + k.slice(1)}</button>`).join('')}${TAB === 'history' ? '<button class=tab data-clear>Clear</button>' : ''}</div><div style="margin-top:12px">${vidHTML(v[TAB])}</div>`)}
 ${sh('keywords', 'Keywords', kwHTML(d.titles))}${sh('channels', 'Channels', chHTML(d.channels))}${sh('interests', 'Interests', donutHTML(d.interests))}</div>`));
   };
 
@@ -195,18 +228,25 @@ ${sh('keywords', 'Keywords', kwHTML(d.titles))}${sh('channels', 'Channels', chHT
     }
   }
 
+  const VLISTS = [['top', 'Most watched'], ['history', 'History'], ['liked', 'Likes']];
+  function visitorVideos(v) {
+    const avail = VLISTS.filter(x => Array.isArray(v[x[0]]));                         /* a list that is hidden (or friends-only for a non-friend) arrives as null */
+    if (!avail.length) return '';
+    const tab = avail.some(x => x[0] === TAB) ? TAB : avail[0][0];
+    return `<div class=tabs role=tablist>${avail.map(x => `<button class="tab${tab === x[0] ? ' on' : ''}" role=tab aria-selected="${tab === x[0]}" data-tab=${x[0]}>${x[1]}</button>`).join('')}</div><div style="margin-top:12px">${vidHTML(v[tab])}</div>`;
+  }
   function visitor(pv) {
     const d = PD, S = d.s || {};
     const sec = (k, icon, title, body) => S[k] ? `<section class=card><h3 class=vt>${ic(icon, 17)}${title}</h3><div class=vb>${body}</div></section>` : '';
     const s = d.stats;
-    return `<div class=lite>${pv ? `<div class=pvb><span>${ic('eye', 16)}Previewing as a visitor</span><button class="btn sec sm" data-go=info>Exit preview</button></div>` : `<button class="btn sec sm" data-go=friends style="margin:14px 0">${ic('left', 16)}${t('friends')}</button>`}
+    return `<div class=lite>${pv ? `<div class=pvb><span>${ic('eye', 16)}Previewing as a visitor who is not your friend</span><button class="btn sec sm" data-go=info>Exit preview</button></div>` : `<button class="btn sec sm" data-go=friends style="margin:14px 0">${ic('left', 16)}${t('friends')}</button>`}
 <div class=card><div class=vcover></div><div class=vhb>${profileAvatar({id:d.id,full_name:d.name,username:d.username,avatar_url:d.avatar,country_code:d.country_code}, 96)}<h2>${esc(d.name || '')}</h2><div class=mu>@${esc(d.username || '')}</div>${Nova.geo.line({country_code:d.country_code,country:d.country,city:d.city,region:d.region,lat:d.lat,lng:d.lng})}${profileFriendActions(d,pv)}${S.bio && d.bio ? `<p class=vbio>${esc(d.bio)}</p>` : ''}</div></div>
 ${!pv && !d.own ? publicRoomCard(d.public_room, d.public_room_error) : ''}
 ${s ? sec('stats', 'chart', t('accstats'), `<div class="tiles profile-stat-tiles"><div class="tile blue"><b>${s.videos}</b><span>Videos</span></div><div class="tile green"><b>${s.hours}</b><span>Hours</span></div><div class="tile indigo"><b>${s.friends}</b><span>${t('friends')}</span></div><div class="tile yellow"><b>${(d.gallery || []).length}</b><span>Photos</span></div></div>`) : ''}
 ${d.gallery && d.gallery.length ? sec('gallery', 'image', `${t('gallery')} (${d.gallery.length})`, gridG(d.gallery, false)) : ''}
 ${d.friends && d.friends.length ? sec('friends', 'users', t('friends'), `<div class="frg profile-friends-grid" style="margin:0">${d.friends.map(frTile).join('')}</div>`) : ''}
 ${d.socials ? sec('socials', 'link', t('social'), socChips(d.socials, false)) : ''}
-${d.videos ? sec('videos', 'play', 'Videos', `<div class=tabs>${['top', 'history', 'liked'].map(k => `<button class="tab${TAB === k ? ' on' : ''}" data-tab=${k}>${k[0].toUpperCase() + k.slice(1)}</button>`).join('')}</div><div style="margin-top:12px">${vidHTML(d.videos[TAB])}</div>`) : ''}
+${d.videos ? sec('videos', 'play', 'Videos', visitorVideos(d.videos)) : ''}
 ${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.channels ? sec('channels', 'play', 'Channels', chHTML(d.channels)) : ''}${d.interests ? sec('interests', 'chart', 'Interests', donutHTML(d.interests)) : ''}</div>${bnav('')}`;
   }
   V.user = () => visitor(false);
@@ -298,7 +338,7 @@ ${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.
       if (link && !(window.NovaEmbed && NovaEmbed.join(link.getAttribute('href')))) location.href = link.href;
       return;
     }
-    const el = e.target.closest('[data-close],[data-act],[data-vis],[data-tab],[data-add],[data-acc],[data-dec],[data-clear],[data-lb],[data-profile-friend]'); if (!el) return; const d = el.dataset;
+    const el = e.target.closest('[data-close],[data-act],[data-vmenu],[data-vmode],[data-tab],[data-add],[data-acc],[data-dec],[data-clear],[data-lb],[data-profile-friend]'); if (!el) return; const d = el.dataset;
     if (d.profileFriend) { await profileFriendAction(el, d.profileFriend, d.userId); return; }
     if (d.close !== undefined) closeM();
     if (d.act === 'editinfo') editInfo();
@@ -309,7 +349,8 @@ ${d.titles ? sec('keywords', 'sparkles', 'Keywords', kwHTML(d.titles)) : ''}${d.
       const { error } = await sb.from('gallery').delete().eq('id', d.id); if (error) return Nova.toast(error.message, 'err');
       sb.storage.from('gallery').remove([d.p]); await loadP(); inv(); const g = $('#gsec'); if (g) g.innerHTML = gHTML(); const c = $('#gcnt'); if (c) c.textContent = `${P._g.length} / ${MAXG}`; Nova.toast('Photo deleted');
     }
-    if (d.vis) { const v = { ...PD.visibility, [d.vis]: PD.visibility[d.vis] === false }; const { error } = await sb.from('profiles').update({ visibility: v }).eq('id', U.id); if (error) return Nova.toast(error.message, 'err'); await reload(); }
+    if (d.vmenu) openVMenu(el);
+    if (d.vmode) await setMode(d.k, d.vmode);
     if (d.tab) { TAB = d.tab; route(); }
     if (d.clear !== undefined && await ask('Clear watch history?', 'This removes your watched videos list.', 'Clear')) { await sb.from('watch_history').delete().eq('user_id', U.id); await reload(); }
     if (d.add !== undefined) {
