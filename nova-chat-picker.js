@@ -470,6 +470,6 @@
     if (target.scrollHeight - target.scrollTop - target.clientHeight < 180) searchMediaPicker(mediaQuery, true);
   }, true);
 
-  window.NovaChatPicker = { hooks, open: openMediaPicker, close: closeMediaPicker, trackUnsplash, safeUnsplashAttribution, safeRemoteMedia, forget: url => pendingRemoteSeen.delete(url), reset: () => pendingRemoteSeen.clear(), onClose: null };
+  window.NovaChatPicker = { addRemote: addRemoteMedia, count: () => hooks.count(), hooks, open: openMediaPicker, close: closeMediaPicker, trackUnsplash, safeUnsplashAttribution, safeRemoteMedia, forget: url => pendingRemoteSeen.delete(url), reset: () => pendingRemoteSeen.clear(), onClose: null };
   Object.defineProperty(window.NovaChatPicker, 'hooks', { get: () => hooks });
 })();

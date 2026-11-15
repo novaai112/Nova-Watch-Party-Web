@@ -491,6 +491,7 @@
           <button type=button class=media-menu-item data-media-action="gallery">${ic('image',18)}<span>Photos &amp; videos</span></button>
           <button type=button class=media-menu-item data-media-action="camera">${ic('camera',18)}<span>Camera</span></button>
           <button type=button class=media-menu-item data-media-action="audio">${ic('mic',18)}<span>Audio</span></button>
+          <button type=button class=media-menu-item data-nova-clips><i class="media-brand nclips-brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg></i><span>Nova Clips</span></button>
           <button type=button class=media-menu-item data-media-provider="unsplash"><i class="media-brand unsplash-brand">U</i><span>Unsplash Photos</span></button>
           <button type=button class=media-menu-item data-media-provider="giphy"><i class="media-brand giphy-brand">GIF</i><span>GIPHY</span></button>
           <button type=button class=media-menu-item data-media-provider="klipy"><i class="media-brand klipy-brand">K</i><span>KLIPY</span></button>
@@ -726,5 +727,5 @@
       Nova.toast(/denied|NotAllowed/i.test((error && error.name || '') + (error && error.message || '')) ? 'Camera permission is blocked.' : 'Camera unavailable.', 'err');
     } finally { history.pushState = push; cameraBusy = false; }
   }
-  window.NovaRoomMedia = { markup, buttonHTML, count, reset, prepare, render, parts, sign, addFiles, urlFor: path => signed.get(path), camera: openCamera, close: closeMediaPicker, onChange: null };
+  window.NovaRoomMedia = { addRemote: addRemoteMedia, markup, buttonHTML, count, reset, prepare, render, parts, sign, addFiles, urlFor: path => signed.get(path), camera: openCamera, close: closeMediaPicker, onChange: null };
 })();

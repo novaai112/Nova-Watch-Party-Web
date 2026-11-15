@@ -873,6 +873,7 @@
             <button type=button class="media-menu-item" data-media-action="audio">${ic('music', 18)}<span>Audio</span></button>
             <button type=button class="media-menu-item" data-media-action="videonote">${M.ic('video', 18)}<span>Video message</span></button>
             <button type=button class="media-menu-item" data-media-action="contact">${ic('user', 18)}<span>Contact</span></button>
+            <button type=button class="media-menu-item" data-nova-clips><i class="media-brand nclips-brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg></i><span>Nova Clips</span></button>
             <button type=button class="media-menu-item" data-media-provider="unsplash"><i class="media-brand unsplash-brand">U</i><span>Unsplash Photos</span></button>
             <button type=button class="media-menu-item" data-media-provider="giphy"><i class="media-brand giphy-brand">GIF</i><span>GIPHY</span></button>
             <button type=button class="media-menu-item" data-media-provider="klipy"><i class="media-brand klipy-brand">K</i><span>KLIPY</span></button>
@@ -939,7 +940,7 @@
   S.pending = [];
   function paintPendingRemote() {
     const el = $('#ncPendingRemote'); if (!el) return;
-    el.innerHTML = S.pending.map((p, i) => `<div class="nc-chip-media"><img src="${esc(p.url)}" alt="" referrerpolicy="no-referrer"><span>${esc((p.name || 'Media').slice(0, 24))}</span><button type=button data-remove-pending="${i}" aria-label="Remove">${ic('x', 14)}</button></div>`).join('');
+    el.innerHTML = S.pending.map((p, i) => `<div class="nc-chip-media">${(p.type || '').startsWith('video/') ? `<video src="${esc(p.url)}#t=0.1" muted playsinline preload=metadata></video>` : `<img src="${esc(p.url)}" alt="" referrerpolicy="no-referrer">`}<span>${esc((p.name || 'Media').slice(0, 24))}</span><button type=button data-remove-pending="${i}" aria-label="Remove">${ic('x', 14)}</button></div>`).join('');
     toggleSendMic();
   }
   Pk.hooks.count = () => S.pending.length; Pk.hooks.add = media => { S.pending.push(media); paintPendingRemote(); Pk.close(); };

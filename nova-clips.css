@@ -1,0 +1,28 @@
+/* nova-clips.css — Nova Clips panel inside the attachment picker (friends chat + watch room) */
+.nclips-scroll{flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;-ms-overflow-style:none;scrollbar-width:none}
+.nclips-scroll::-webkit-scrollbar{display:none}
+.nclips-grid{display:grid;grid-template-columns:repeat(var(--cols,8),minmax(0,1fr));gap:3px;padding-bottom:10px}
+
+/* tile = looping preview only; tap = attach like a photo */
+.nclip{position:relative;aspect-ratio:9/16;overflow:hidden;border-radius:6px;background:var(--soft,#eef1f5);cursor:pointer;-webkit-tap-highlight-color:transparent;contain:content;outline:none}
+.nclip:focus-visible{outline:2px solid var(--ac,#2563eb);outline-offset:1px}
+.nclip video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;opacity:0;transition:opacity .25s}
+.nclip.ready video{opacity:1}
+.nclip:not(.ready):not(.fail)::before{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,#ffffff40 50%,transparent 70%);background-size:220% 100%;animation:nclipShimmer 1.4s linear infinite}
+.nclip.fail{opacity:.35}
+@keyframes nclipShimmer{from{background-position:120% 0}to{background-position:-120% 0}}
+.nclip.added{outline:2px solid var(--ac,#2563eb);outline-offset:-2px}
+.nclip-ok{display:none;position:absolute;top:3px;left:3px;width:12px;height:12px;border-radius:50%;background:var(--ac,#2563eb)}
+.nclip.added .nclip-ok{display:block}
+.nclip-ok::after{content:"";position:absolute;left:3.5px;top:2px;width:3px;height:5px;border:solid #fff;border-width:0 1.5px 1.5px 0;transform:rotate(45deg)}
+
+/* the ONLY control: a fully transparent speaker icon (no circle, no background) */
+.nclip-snd{position:absolute;right:0;bottom:0;width:26px;height:26px;display:grid;place-items:center;padding:0;border:0;background:transparent;color:#fff;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.nclip-snd svg{width:13px;height:13px;filter:drop-shadow(0 0 2px #000a) drop-shadow(0 1px 1.5px #0009);opacity:.92}
+.nclip-snd:hover svg,.nclip-snd:focus-visible svg{opacity:1}
+.nclip-snd:focus-visible{outline:2px solid #fff;outline-offset:-4px;border-radius:6px}
+
+/* "Nova Clips" row in the attach menu */
+.nclips-brand{background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;font-size:10px}
+.nclips-brand svg{width:11px;height:11px}
+@media(prefers-reduced-motion:reduce){.nclip:not(.ready):not(.fail)::before{animation:none}.nclip video{transition:none}}
