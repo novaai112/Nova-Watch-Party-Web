@@ -10,7 +10,6 @@
   const D = window.NOVA_CLIPS;
   if (!D || !Array.isArray(D.files) || !D.files.length) return;
 
-  const COLS = 8;               /* grid columns */
   const CONCURRENT = 6;         /* previews downloading at once */
   const PREVIEW_SECONDS = 6;    /* each preview loops its first N seconds (keeps downloads small) */
 
@@ -134,7 +133,7 @@
     const tiles = D.files.map((f, i) =>
       `<div class="nclip" data-clip="${i}" role="button" tabindex="0" aria-label="Attach Nova Clip ${esc(dateOf(i))}"><video muted loop playsinline disablepictureinpicture disableremoteplayback preload="none"></video><button type="button" class="nclip-snd" data-clip-snd>${SVG_OFF}</button><i class="nclip-ok" aria-hidden="true"></i></div>`).join('');
     panel.innerHTML = `<div class="media-provider-head"><button class="media-back" data-media-back aria-label="Back to attachments">${SVG_BACK}</button><b>Nova Clips</b><button class="media-close" data-close-media aria-label="Close attachment picker">${SVG_X}</button></div>
-      <div id="novaClipsScroll" class="media-results-scroll nclips-scroll" role="region" aria-label="Nova Clips"><div class="nclips-grid" style="--cols:${COLS}">${tiles}</div></div>`;
+      <div id="novaClipsScroll" class="media-results-scroll nclips-scroll" role="region" aria-label="Nova Clips"><div class="nclips-grid">${tiles}</div></div>`;
     grid = panel.querySelector('.nclips-grid');
     grid.querySelectorAll('.nclip').forEach(t => { t._s = 'idle'; });
     ['loadeddata', 'playing', 'timeupdate', 'error'].forEach(ev => grid.addEventListener(ev, onVideoEvent, true));
@@ -170,6 +169,29 @@
     }
     const tile = e.target.closest('.nclip');
     if (tile && grid && grid.contains(tile)) attach(tile);
+  }, true);
+
+  /* ---- speaker on video bubbles (friends chat): tap = sound on / off, one video audible at a time, never opens the viewer ---- */
+  const bubbleSnd = (btn, on) => {
+    btn.setAttribute('aria-pressed', String(on)); btn.setAttribute('aria-label', on ? 'Mute video' : 'Unmute video');
+    btn.innerHTML = on ? SVG_ON : SVG_OFF;
+  };
+  function toggleBubble(btn) {
+    const tile = btn.closest('.nc-tile,.rm-tile'), v = tile && tile.querySelector('video');
+    if (!v) return;
+    if (v.muted) {
+      document.querySelectorAll('.nc-tile .nc-snd[aria-pressed="true"],.rm-tile .nc-snd[aria-pressed="true"]').forEach(o => { const ov = o.closest('.nc-tile,.rm-tile').querySelector('video'); if (ov) ov.muted = true; bubbleSnd(o, false); });
+      v.muted = false; bubbleSnd(btn, true);
+      if (v.paused) v.play().catch(() => { v.muted = true; bubbleSnd(btn, false); v.play().catch(() => {}); });
+      else setTimeout(() => { if (v.paused) { v.muted = true; bubbleSnd(btn, false); v.play().catch(() => {}); } }, 250);
+    } else { v.muted = true; bubbleSnd(btn, false); }
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-nc-snd]');
+    if (b) { e.preventDefault(); e.stopPropagation(); toggleBubble(b); }
+  }, true);
+  document.addEventListener('keydown', e => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[data-nc-snd]')) { e.preventDefault(); e.stopPropagation(); toggleBubble(e.target); }
   }, true);
 
   document.addEventListener('keydown', e => {

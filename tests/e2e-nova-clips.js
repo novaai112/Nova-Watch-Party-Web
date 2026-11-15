@@ -11,13 +11,13 @@ const srv = http.createServer((q, r) => {
   else { r.writeHead(200, { 'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes', 'Content-Length': st.size }); fs.createReadStream(f).pipe(r); }
 });
 const MENU = `<div id=mediaMenu class=media-menu><button class=media-menu-item data-media-action=gallery>Photos</button><button class=media-menu-item data-nova-clips><i class="media-brand nclips-brand">▶</i><span>Nova Clips</span></button><button class=media-menu-item data-media-provider=giphy>GIPHY</button></div>`;
-const mk = room => `<div ${room ? 'id=rm' : ''} style="position:relative;width:min(${room ? 420 : 380}px,100vw);box-sizing:border-box;height:600px;border:1px solid #ccc"><section id=chatMediaPicker class=chat-media-picker><style>#chatMediaPicker{position:absolute;left:0;bottom:0;width:100%;background:#fff}#chatMediaPicker.provider-open .media-provider-panel{display:flex}.media-provider-panel{height:min(56vh,480px);flex-direction:column;overflow:hidden;padding:10px 12px 0}.media-provider-panel[hidden]{display:none}.media-provider-head{display:flex;gap:10px;margin-bottom:8px}.media-provider-head>b{flex:1}</style>${MENU}<div id=mediaProviderPanel class=media-provider-panel hidden></div><div id=mediaContactPicker hidden></div></section></div>`;
+const mk = (room, w) => `<div ${room ? 'id=rm' : ''} style="position:relative;width:min(${w}px,100vw);box-sizing:border-box;height:600px;border:1px solid #ccc"><section id=chatMediaPicker class=chat-media-picker><style>#chatMediaPicker{position:absolute;left:0;bottom:0;width:100%;background:#fff}#chatMediaPicker.provider-open .media-provider-panel{display:flex}.media-provider-panel{height:min(56vh,480px);flex-direction:column;overflow:hidden;padding:10px 12px 0}.media-provider-panel[hidden]{display:none}.media-provider-head{display:flex;gap:10px;margin-bottom:8px}.media-provider-head>b{flex:1}</style>${MENU}<div id=mediaProviderPanel class=media-provider-panel hidden></div><div id=mediaContactPicker hidden></div></section></div>`;
 (async () => {
   await new Promise(r => srv.listen(0, r)); const base = `http://127.0.0.1:${srv.address().port}/`;
   const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] }); let fails = 0;
-  for (const [name, vp, room] of [['chat laptop', { width: 1100, height: 760 }, false], ['room phone', { width: 390, height: 800 }, true]]) {
+  for (const [name, vp, room, w, cols] of [['chat laptop', { width: 1280, height: 760 }, false, 1000, 8], ['room tablet', { width: 820, height: 900 }, true, 760, 5], ['room phone', { width: 390, height: 800 }, true, 390, 3]]) {
     const ctx = await b.newContext({ viewport: vp }), p = await ctx.newPage(); p.on('pageerror', e => { fails++; console.error('pageerror', e.message); });
-    await p.setContent(`<!doctype html><meta charset=utf-8><style>:root{--soft:#eef1f5;--ac:#2563eb}body{margin:0;font-family:sans-serif}.media-menu-item{display:flex;gap:8px;padding:8px}</style>${mk(room)}`);
+    await p.setContent(`<!doctype html><meta charset=utf-8><style>:root{--soft:#eef1f5;--ac:#2563eb}body{margin:0;font-family:sans-serif}.media-menu-item{display:flex;gap:8px;padding:8px}</style>${mk(room, w)}`);
     await p.addStyleTag({ path: path.join(root, 'nova-clips.css') });
     await p.evaluate(({ base, files, room }) => {
       window.NOVA_CLIPS = { base, files }; window.__added = [];
@@ -29,7 +29,7 @@ const mk = room => `<div ${room ? 'id=rm' : ''} style="position:relative;width:m
     await p.click('[data-nova-clips]'); await p.waitForSelector('.nclip');
     await t('menu hides and the panel shows "Nova Clips"', async () => { assert(await p.$eval('#mediaMenu', e => e.hidden)); assert.strictEqual(await p.$eval('.media-provider-head b', e => e.textContent), 'Nova Clips'); });
     await t('has every clip as a tile, newest first', async () => { assert.strictEqual(await p.$$eval('.nclip', e => e.length), REAL.length); });
-    await t('exactly 8 columns', async () => { const cols = await p.$eval('.nclips-grid', e => getComputedStyle(e).gridTemplateColumns.split(' ').length); assert.strictEqual(cols, 8); const tops = await p.$$eval('.nclip', e => e.slice(0, 16).map(x => Math.round(x.getBoundingClientRect().top))); assert.strictEqual(new Set(tops).size, 2); });
+    await t(`exactly ${cols} columns`, async () => { const c = await p.$eval('.nclips-grid', e => getComputedStyle(e).gridTemplateColumns.split(' ').length); assert.strictEqual(c, cols); const tops = await p.$$eval('.nclip', e => e.slice(0, 16).map(x => Math.round(x.getBoundingClientRect().top))); assert.strictEqual(new Set(tops).size, Math.ceil(16 / cols)); });
     await p.waitForFunction(() => document.querySelectorAll('.nclip.playing').length >= 6, null, { timeout: 15000 });
     await t('visible tiles autoplay (muted loop previews) and offscreen ones stay unloaded', async () => {
       const r = await p.$$eval('.nclip', e => ({ loaded: e.filter(x => x.querySelector('video').getAttribute('src')).length, playing: e.filter(x => x.classList.contains('playing')).length, off: e.slice(-8).every(x => !x.querySelector('video').getAttribute('src')) }));
@@ -48,6 +48,14 @@ const mk = room => `<div ${room ? 'id=rm' : ''} style="position:relative;width:m
     await t('scrolling loads new tiles and releases the old ones', async () => {
       await p.$eval('#novaClipsScroll', e => e.scrollTop = e.scrollHeight / 2); await p.waitForTimeout(2500);
       const r = await p.$$eval('.nclip', e => ({ first: !e[0].querySelector('video').getAttribute('src'), loaded: e.filter(x => x.querySelector('video').getAttribute('src')).length })); assert(r.first && r.loaded < 90, JSON.stringify(r)); });
+    await t('video bubble speaker: bare icon, toggles sound, one at a time, does not open the viewer', async () => {
+      await p.evaluate(({ base }) => { window.__opened = 0; document.body.insertAdjacentHTML('beforeend', [0, 1].map(i => `<button class=nc-tile data-nc-open=${i} style="position:relative;display:block;width:120px;height:160px"><video class=nc-rmedia muted loop autoplay playsinline src="${base}${encodeURIComponent(window.NOVA_CLIPS.files[i])}"></video><span class=nc-snd role=button tabindex=0 data-nc-snd aria-pressed=false aria-label="Unmute video"></span></button>`).join('')); document.addEventListener('click', e => { if (e.target.closest('[data-nc-open]')) window.__opened++; }); }, { base });
+      await p.waitForTimeout(600);
+      const s = await p.$eval('.nc-tile .nc-snd', e => { const c = getComputedStyle(e); return [c.backgroundColor, c.borderTopWidth]; }); assert.deepStrictEqual(s, ['rgba(0, 0, 0, 0)', '0px']);
+      await p.click('.nc-tile:nth-of-type(1) .nc-snd'); assert.deepStrictEqual(await p.$$eval('.nc-tile video', e => e.map(v => v.muted)), [false, true]);
+      await p.click('.nc-tile[data-nc-open="1"] .nc-snd'); assert.deepStrictEqual(await p.$$eval('.nc-tile video', e => e.map(v => v.muted)), [true, false]);
+      await p.click('.nc-tile[data-nc-open="1"] .nc-snd'); assert.deepStrictEqual(await p.$$eval('.nc-tile video', e => e.map(v => v.muted)), [true, true]);
+      assert.strictEqual(await p.evaluate(() => __opened), 0); });
     await t('no sideways overflow', async () => assert(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth)));
     await p.screenshot({ path: path.join(process.env.SHOTS || __dirname, `nova-clips-${name.replace(' ', '-')}.png`) });
     await ctx.close();

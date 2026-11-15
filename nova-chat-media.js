@@ -352,8 +352,9 @@
         const a = att.attribution;
         if (a && a.photographer) credits.push(`Photo by <a href="${esc(a.photographerUrl)}" target=_blank rel="noopener noreferrer">${esc(a.photographer)}</a> on <a href="${esc(a.photoUrl)}" target=_blank rel="noopener noreferrer">Unsplash</a>`);
       }
+      const snd = remote && kind === 'video' && !att.gif ? `<span class="nc-snd" role="button" tabindex="0" data-nc-snd aria-pressed="false" aria-label="Unmute video"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h3.6l4.9 4V5.5l-4.9 4H4z" fill="currentColor"/><path d="M16 9.5l5 5m0-5l-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>` : '';
       const cls = `nc-tile${att.viewOnce ? ' once' : ''}${remote ? ' remote' : ''}${att.gif ? ' gif' : ''}`;
-      return `<button type=button class="${cls}" ${ratio} data-nc-open="${i}" data-att="${attData(att)}" data-kind="${kind}" ${thumb} aria-label="Open ${kind}">${slot}${label}${badge}${more}${stateOverlay(att, i)}</button>`;
+      return `<button type=button class="${cls}" ${ratio} data-nc-open="${i}" data-att="${attData(att)}" data-kind="${kind}" ${thumb} aria-label="Open ${kind}">${slot}${label}${badge}${snd}${more}${stateOverlay(att, i)}</button>`;
     }).join('');
     return `<div class="nc-mediablock"><div class="nc-grid n${shown.length}" data-count="${shown.length}">${tiles}</div>${credits.length ? `<div class="nc-credit">${credits[0]}</div>` : ''}</div>`;
   }

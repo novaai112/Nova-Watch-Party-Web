@@ -557,7 +557,7 @@
     if (a.url) {
       const remote = safeRemoteMedia(a.url, a.type, a.name);
       if (!remote) return null;
-      return { href: remote.url, name: a.name || remote.name, type: remote.type, gif: !!a.gif || remote.type === 'image/gif',
+      return { remote: true, href: remote.url, name: a.name || remote.name, type: remote.type, gif: !!a.gif || remote.type === 'image/gif',
         attribution: remote.type.startsWith('image/') ? safeUnsplashAttribution(a.attribution) : null, size: a.size };
     }
     if (!a.path) return null;
@@ -568,7 +568,7 @@
     const href = esc(d.href), name = esc(d.name), video = d.type.startsWith('video/');
     if (!href) return `<span class="rm-tile rm-loading" data-i="${i}"><span class=spin></span></span>`;
     const body = video
-      ? (d.gif ? `<video src="${href}" autoplay loop muted playsinline></video>` : `<video src="${href}#t=0.1" preload=metadata muted playsinline></video><span class=rm-play>${ic('play',22)}</span>`)
+      ? (d.gif ? `<video src="${href}" autoplay loop muted playsinline></video>` : d.remote ? `<video src="${href}" autoplay loop muted playsinline preload=metadata></video><span class=nc-snd role=button tabindex=0 data-nc-snd aria-pressed=false aria-label="Unmute video"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h3.6l4.9 4V5.5l-4.9 4H4z" fill="currentColor"/><path d="M16 9.5l5 5m0-5l-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>` : `<video src="${href}#t=0.1" preload=metadata muted playsinline></video><span class=rm-play>${ic('play',22)}</span>`)
       : `<img src="${href}" alt="${name}" loading=lazy>`;
     return `<button type=button class="rm-tile${d.gif ? ' gif' : ''}" data-rm-view="${i}" aria-label="Open ${name}">${body}${more ? `<span class=rm-more>+${more}</span>` : ''}</button>`;
   }
