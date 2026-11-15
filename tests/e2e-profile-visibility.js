@@ -47,6 +47,8 @@ var publicRoomCard = function () { return ''; }, bnav = function () { return '';
     await t('visitor: all three shared -> three tabs', async () => assert.deepStrictEqual(await p.$$eval('.tabs .tab', e => e.map(x => x.textContent)), ['Most watched', 'History', 'Likes']));
     await visit({ top: null, history: null, liked: null });
     await t('visitor: nothing shared -> no videos box at all, no controls', async () => { assert.strictEqual(await p.$$eval('.tabs', e => e.length), 0); assert.strictEqual(await p.$$eval('.vmb', e => e.length), 0); });
+    await p.evaluate(() => { PD = { own: false, id: 'x', name: 'Sam', username: 'sam', s: { videos: false }, videos: null, stats: null, gallery: null, friends: [{ id: 'f1', full_name: 'Fran', username: 'fran' }], socials: null, titles: null, channels: null, interests: null }; document.getElementById('app').innerHTML = V.user(); });
+    await t('visitor: no Friends section on a profile', async () => { const h = await p.$eval('#app', e => e.innerHTML); assert(!/profile-friends-grid/.test(h)); assert(!/Fran/.test(h)); });
     await ctx.close();
   }
   await b.close(); if (fails) process.exit(1); console.log('all profile visibility checks passed');

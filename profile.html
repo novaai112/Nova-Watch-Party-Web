@@ -373,7 +373,7 @@ body.message-page-active.people-experience-active .people-list{grid-column:2;gri
 <script src="skeleton.js?v=1"></script><script src="config.js"></script><script src="/api/config"></script><script src="nova-core.js"></script><script src="nova-location.js"></script>
 <script>
 const {sb,t,esc}=Nova,ic=Nova.ic,app=document.getElementById('app'),$=s=>document.querySelector(s);
-let U,P={},PD=null,REQ=[],PROFILE_RELATION=null,PLAN={pro:false,end:null},PREVIEW=false,NSFW=false,FAILED=null,RT=0,UN={ok:false,val:''};
+let U,P={},PD=null,REQ=[],PROFILE_RELATION=null,PLAN={pro:false,end:null},PREVIEW=false,NSFW=false,FAILED=null,FAIL_MSG='',RT=0,UN={ok:false,val:''};
 /* leave the app page for sign-in / verification: from inside the room dock the whole tab moves, not just the panel */
 const NOVA_EXIT=u=>{try{(window.top||window).location.href=u}catch(e){location.href=u}};
 const MAXG=30,MAXB=300,DESK=matchMedia('(min-width:900px)'),HOME=(window.APP_CONFIG||{}).HOME_URL||'';
@@ -479,7 +479,7 @@ async function loadP(){
 }
 async function fetchPD(id){
  const {data,error}=await sb.rpc('public_profile',{p_uid:id,p_preview:PREVIEW&&id===U.id,p_nsfw:NSFW});
- PD=error?null:data;FAILED=PD?null:id;
+ PD=error?null:data;FAILED=PD?null:id;if(error){console.error('public_profile failed:',error);FAIL_MSG=[error.code,error.message].filter(Boolean).join(': ')}else FAIL_MSG='';
  if(PD&&!PD.own&&id!==U.id){
   const room=await sb.rpc('public_room_for_user',{p_user:id});
   PD.public_room=room.error?null:room.data;
@@ -518,7 +518,7 @@ async function route(){
  else if(k==='preview'){if(!PREVIEW||!PD||PD.id!==U.id||PD.own){PREVIEW=true;app.innerHTML=skel();await fetchPD(U.id)}}
  else if(!PD||PD.id!==U.id||!PD.own){app.innerHTML=skel();await fetchPD(U.id)}
  if(my!==RT)return;
- if(!PD&&k!=='setup'){app.innerHTML='<div class="card pad"><p>We could not load this profile. Check your connection and try again.</p><button class="btn pri" onclick="location.reload()">Try again</button></div>';return}
+ if(!PD&&k!=='setup'){app.innerHTML='<div class="card pad"><p>We could not load this profile. Check your connection and try again.</p>'+(FAIL_MSG?'<p class="mu" style="font-size:12px;word-break:break-word">'+Nova.esc(FAIL_MSG)+'</p>':'')+'<button class="btn pri" onclick="location.reload()">Try again</button></div>';return}
  document.body.classList.toggle('people-experience-active',k==='friends');
  document.body.classList.toggle('message-page-active',k==='friends'||k==='chat');
  document.body.classList.toggle('message-chat-active',k==='chat');
@@ -631,7 +631,7 @@ const boot=async()=>{app.innerHTML=skel();
  try{await loadP()}catch(er){app.innerHTML='<div class="card pad"><p>We could not load your profile. Check your connection and try again.</p><button class="btn pri" onclick="location.reload()">Try again</button></div>';return}
  route()};
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',boot):boot();
-</script><script src="nova-profile.js?v=3"></script><script src="profile-watch.js?v=2"></script><script src="profile-embed.js"></script><script src="nova-chat-rich.js?v=1"></script><script src="nova-chat-media.js?v=1"></script><script src="nova-chat-capture.js?v=1"></script><script src="nova-chat-picker.js?v=1"></script><script src="nova-chat.js?v=20"></script><script src="nova-chat-sheets.js?v=1"></script><script src="mobile-navigation.js?v=2"></script>
+</script><script src="nova-profile.js?v=4"></script><script src="profile-watch.js?v=2"></script><script src="profile-embed.js"></script><script src="nova-chat-rich.js?v=1"></script><script src="nova-chat-media.js?v=1"></script><script src="nova-chat-capture.js?v=1"></script><script src="nova-chat-picker.js?v=1"></script><script src="nova-chat.js?v=20"></script><script src="nova-chat-sheets.js?v=1"></script><script src="mobile-navigation.js?v=2"></script>
 <input type="file" id="avf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" hidden>
 <input type="file" id="gf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" multiple hidden>
 </body></html>
