@@ -157,6 +157,10 @@ const VIEWS = [['desktop 1440x900', { viewport: { width: 1440, height: 900 }, ha
       await t('admin: Start is disabled until one complete question exists', async () => {
         await page.click('#gpb [data-g=pick][data-v=trivia]'); await page.waitForSelector('#gps .gsh');
         assert.ok(await page.locator('#gps [data-g=start]').isDisabled()); });
+      await t('admin: background refreshes never redraw (blink) the open editor', async () => {
+        await page.evaluate(() => { window.__shNode = document.querySelector('#gps .gsh'); NovaGames.refresh(); }); await page.waitForTimeout(800);
+        await page.evaluate(() => NovaGames.refresh()); await page.waitForTimeout(800);
+        assert.ok(await page.evaluate(() => document.querySelector('#gps .gsh') === window.__shNode), 'the editor sheet was rebuilt by a refresh'); });
       await t('admin: editor offers question, emoji, picture, options (+ typed answer); no bank settings', async () => {
         const tx = (await page.innerText('#gps')).toLowerCase();
         for (const sel of ['[data-f=prompt]', '[data-f=emoji]', '[data-g=qimg]', '[data-f=opt][data-j="0"]', '[data-g=qtype][data-v=text]']) assert.strictEqual(await page.locator('#gps ' + sel).count(), 1, 'missing ' + sel);

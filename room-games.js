@@ -212,7 +212,7 @@ function paint(force) {
   const key = viewKey();
   if (force && key !== G.vkey) { G.vkey = key; paintBody(); }
   else if (force) updateLive();
-  if (G.sheet) paintSheet();
+  if (G.sheet === 'board' || G.sheet === 'people') paintSheet();      /* only live sheets follow the data; the editor and confirm sheets are never redrawn behind the admin's back */
   tickUI();
 }
 function viewKey() {
@@ -495,6 +495,7 @@ function closeSheet(keep) {
 function openSheet(k) { G.sheet = k; const s = $('#gps'); if (s) { s.hidden = false; paintSheet(true); } }
 function paintSheet(reset) {
   const el = $('#gps'); if (!el || !G.sheet) return;
+  el.classList.toggle('still', !reset);                          /* a repaint of an open sheet must not replay the slide-in */
   const keep = reset ? 0 : (el.querySelector('.gsh-b') || {}).scrollTop || 0;
   const k = G.sheet; let t = '', b = '', f = '';
   if (k === 'board') { t = 'Leaderboard'; b = teamBar() + `<ol class="lb">${leaderboard().map(rowHTML).join('') || '<li class="gempty">No scores yet</li>'}</ol>`; }

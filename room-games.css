@@ -387,3 +387,4 @@
 #rm .gq-img.ph{width:100%;height:150px;background:linear-gradient(90deg,var(--sf2),#e8eef5,var(--sf2));background-size:200% 100%;animation:gshim 1.2s linear infinite}
 @keyframes gshim{to{background-position:-200% 0}}
 @media(prefers-reduced-motion:reduce){#rm .gq-img.ph{animation:none}}
+#rm .gp-sheet.still .gsh{animation:none}
