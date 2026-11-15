@@ -85,11 +85,18 @@ function pickVariants(list) {
   return { mp4, hls, all: mp4.concat(hls) };
 }
 
-/* choose ~720p-class file when there is one: smooth for everyone, still sharp */
+/* Smooth-for-everyone pick. X offers a ladder (about 320 / 480 / 720 / 1080 px on the short side) and a room stores ONE file
+   for all members, so the default is the sharpest file up to 720p (1080p is ~2.5x the bytes and not visible on a phone).
+   All files stay in `variants`. If nothing is 720p or smaller, the lightest file is used. */
 function bestOf(v) {
   if (v.mp4.length) {
-    const ok = v.mp4.filter((x) => !x.height || x.height <= 1080);
-    return (ok[0] || v.mp4[0]);
+    const known = v.mp4.filter((x) => x.height);
+    if (known.length) {
+      const fit = known.filter((x) => x.height <= 720).sort((a, b) => b.height - a.height || b.bitrate - a.bitrate)[0];
+      return fit || known.slice().sort((a, b) => a.height - b.height || a.bitrate - b.bitrate)[0];
+    }
+    const byRate = v.mp4.slice().sort((a, b) => a.bitrate - b.bitrate);                    /* sizes unknown: judge by bitrate */
+    return byRate.filter((x) => x.bitrate && x.bitrate <= 2500000).pop() || byRate[0];
   }
   return v.hls[0] || null;
 }

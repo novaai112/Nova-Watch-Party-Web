@@ -366,6 +366,8 @@ function quality() {
         const lvl = h.levels[h.currentLevel >= 0 ? h.currentLevel : h.loadLevel];
         return { kind: 'hls', opts, cur: lvl && lvl.height ? lvl.height + 'p' : '', sel: h.autoLevelEnabled ? 'auto' : String(h.currentLevel) };
       }
+      const A = p.video._abr;                                   /* plain file with several qualities (X): own ladder, Auto or locked */
+      if (A && A.ladder.length > 1) return { kind: 'file', opts: A.ladder.slice().reverse().map(r => ({ id: String(r.i), label: r.h ? r.h + 'p' : 'Original' })), cur: A.label(), sel: A.auto ? 'auto' : String(A.level) };
       const vh = p.video.videoHeight;
       return { kind: 'file', opts: [], single: true, cur: vh ? vh + 'p' : '', sel: 'auto' };
     }
@@ -380,6 +382,8 @@ function setQuality(id) {
       if (id === 'auto') { p.yt.setPlaybackQuality('default'); } else { p.yt.setPlaybackQuality(id); if (p.yt.setPlaybackQualityRange) p.yt.setPlaybackQualityRange(id, id); }
     } else if (p.video && p.video._hls) {
       p.video._hls.currentLevel = id === 'auto' ? -1 : +id;
+    } else if (p.video && p.video._abr) {
+      p.video._abr.set(id);
     }
   } catch (e) {}
 }

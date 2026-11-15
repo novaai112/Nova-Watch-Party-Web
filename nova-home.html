@@ -539,6 +539,9 @@ function xMedia(j){
   if(url.length>900&&j.variants){var s=j.variants.filter(function(v){return v.type===j.streamType&&v.url.length<=900})[0];if(s)url=s.url}
   if(hls)url+='#nova='+encodeURIComponent(JSON.stringify({t:'hls',r:j.postUrl||'https://x.com/'}));
   var m={kind:'video',url:url,title:(j.title||'X video').slice(0,150),provider:hls?'web':'x'};
+  /* every quality X offers (up to 5, one file per height) so each member's player picks the one THEIR connection can hold */
+  if(!hls&&j.variants){var seen={},q=[];j.variants.filter(function(v){return v.type==='mp4'&&v.height>=200&&v.url.length<=400}).sort(function(a,b){return b.bitrate-a.bitrate}).forEach(function(v){if(!seen[v.height]){seen[v.height]=1;q.push({h:v.height,u:v.url,b:Math.min(v.bitrate||0,99999999)})}});
+    q.sort(function(a,b){return a.h-b.h});if(q.length>5)q=q.slice(q.length-5);if(q.length>1)m.q=q}
   if(j.thumbnail&&/^https:\/\//.test(j.thumbnail)&&j.thumbnail.length<=500)m.thumb=j.thumbnail;
   /* 18+ mark: X's own sensitive-media flag, or adult words in the post text / author (saved with the room, shows the NSFW badge on Nova Home) */
   try{if(j.sensitive===true||(window.NsfwDetect&&NsfwDetect.assess({kind:'web',title:j.text||j.title,channel:j.author,thumb:j.thumbnail}).nsfw))m.nsfw=true}catch(x){}
@@ -957,7 +960,7 @@ scr.addEventListener('input',function(ev){ev.target.classList&&ev.target.classLi
 if(/^#p-(\w+)/.test(location.hash)){var m0=/^#p-(\w+)/.exec(location.hash);if(S[m0[1]])open(m0[1],false)}
 })();
 </script>
-<script src="nova-chat-rich.js?v=1"></script><script src="nova-chat-media.js?v=1"></script><script src="nova-chat-capture.js?v=1"></script><script src="platform-icons.js?v=2"></script><script src="nsfw-detect.js?v=1"></script><script src="room-cards.js?v=4"></script><script src="room-media.js?v=3"></script><script src="room-dock.js?v=2"></script><script src="room-queue.js?v=5"></script><script src="room-resize.js?v=1"></script><script src="room-player.js?v=2"></script><script src="room-sync.js?v=1"></script><script src="room-games.js?v=5"></script><script src="room.js?v=21"></script>
+<script src="nova-chat-rich.js?v=1"></script><script src="nova-chat-media.js?v=1"></script><script src="nova-chat-capture.js?v=1"></script><script src="platform-icons.js?v=2"></script><script src="nsfw-detect.js?v=1"></script><script src="room-cards.js?v=4"></script><script src="room-media.js?v=3"></script><script src="room-dock.js?v=2"></script><script src="room-queue.js?v=5"></script><script src="room-resize.js?v=1"></script><script src="room-player.js?v=3"></script><script src="room-sync.js?v=1"></script><script src="room-net.js?v=2"></script><script src="room-games.js?v=5"></script><script src="room.js?v=23"></script>
 <script src="mobile-navigation.js?v=2"></script>
 </body>
 </html>

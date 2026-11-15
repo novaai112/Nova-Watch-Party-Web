@@ -754,46 +754,94 @@ function renderGoogleDarkSearchPage(searchData) {
 </html>`;
 }
 
-function proxyMediaStream(targetUrl, refererUrl, req, res, redirects = 5) {
-  if (redirects < 0) {
-    res.statusCode = 502;
-    return res.end('Too many redirects');
-  }
-  let parsed;
-  try {
-    parsed = new URL(targetUrl);
-  } catch (e) {
-    res.statusCode = 400;
-    return res.end('Invalid stream URL');
-  }
+/* ---------- media stream proxy (X / Drive / web videos that the browser may not open directly) ----------
+   Built for slow connections and serverless time limits:
+     · keep-alive connections to the video host (HLS = hundreds of small requests: no new TLS handshake for each one)
+     · big files are served in 6 MB range slices (206 + Content-Range): the first bytes arrive quickly, a seek never
+       downloads more than needed, and a response never runs into the 60 s function limit half-way through a file
+     · the browser may cache what it got (seek back / reload does not download again); never a shared CDN copy
+     · when the viewer stops watching or seeks away, the upstream download is cancelled at once (no wasted bandwidth)
+     · one automatic retry when the connection to the video host breaks before any data arrived
+     · private / internal addresses are refused (SSRF), also after DNS (rebinding) and on every redirect */
+const dns = require('dns');
+const net = require('net');
+const KEEP_HTTPS = new https.Agent({ keepAlive: true, maxSockets: 64, keepAliveMsecs: 15000 });
+const KEEP_HTTP = new http.Agent({ keepAlive: true, maxSockets: 64, keepAliveMsecs: 15000 });
+const SLICE = 6 * 1024 * 1024;
+const UA_MEDIA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
-  const lib = parsed.protocol === 'https:' ? https : http;
+function privateAddress(ip) {
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split('.').map(Number);
+    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
+  }
+  if (net.isIPv6(ip)) {
+    const v = ip.toLowerCase();
+    if (v === '::1' || v === '::' || v.startsWith('fe80') || v.startsWith('fc') || v.startsWith('fd')) return true;
+    const mapped = v.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    return mapped ? privateAddress(mapped[1]) : false;
+  }
+  return true;
+}
+/* DNS lookup that refuses internal addresses (checked at connect time, so DNS rebinding cannot slip through) */
+function safeLookup(hostname, opts, cb) {
+  dns.lookup(hostname, opts, (err, address, family) => {
+    if (err) return cb(err);
+    if (process.env.NOVA_PROXY_ALLOW_PRIVATE === '1') return cb(null, address, family);
+    const list = Array.isArray(address) ? address : [{ address, family }];
+    if (list.some((a) => privateAddress(a.address))) return cb(new Error('Blocked address'));
+    cb(null, address, family);
+  });
+}
+function cacheFor(targetUrl, contentType) {
+  if (/\.m3u8(\?|$)|mpegurl/i.test(targetUrl + ' ' + contentType)) return 'no-cache';            /* playlists: always fresh (live streams) */
+  return 'private, max-age=3600';                                                                    /* segments + file slices: browser only */
+}
+
+function proxyMediaStream(targetUrl, refererUrl, req, res, redirects = 5, attempt = 0, state) {
+  state = state || { up: null, gone: false };
+  if (!state.bound) {
+    state.bound = true;
+    res.on('close', () => { state.gone = !res.writableEnded; if (state.gone && state.up) { try { state.up.destroy(); } catch (e) {} } });
+  }
+  if (state.gone) return;
+  if (redirects < 0) { res.statusCode = 502; return res.end('Too many redirects'); }
+  let parsed;
+  try { parsed = new URL(targetUrl); } catch (e) { res.statusCode = 400; return res.end('Invalid stream URL'); }
+  if (!/^https?:$/.test(parsed.protocol)) { res.statusCode = 400; return res.end('Invalid stream URL'); }
+
+  const bare = parsed.hostname.replace(/^\[|\]$/g, '');
+  if (process.env.NOVA_PROXY_ALLOW_PRIVATE !== '1' && (net.isIP(bare) ? privateAddress(bare) : /^localhost$|\.local$|\.internal$/i.test(bare))) {   /* literal IPs never reach the DNS check */
+    res.statusCode = 403; return res.end('Blocked address');
+  }
+  const secure = parsed.protocol === 'https:';
+  const isPlaylist = /\.m3u8(\?|$)/i.test(targetUrl);
   const headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    'Accept': '*/*',
-    'Referer': refererUrl || (parsed.origin + '/'),
-    'Origin': parsed.origin
+    'User-Agent': UA_MEDIA, 'Accept': '*/*', 'Accept-Encoding': 'identity',
+    'Referer': refererUrl || (parsed.origin + '/'), 'Origin': parsed.origin
   };
   try { if (refererUrl) headers['Origin'] = new URL(refererUrl).origin; } catch (e) {}
-  if (req.headers.range) {
-    headers['Range'] = req.headers.range;
+  let sliced = false;
+  if (!isPlaylist) {
+    const m = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ''));
+    if (m && m[1] !== '') {
+      const a = +m[1], b = m[2] === '' ? Infinity : +m[2];
+      headers['Range'] = 'bytes=' + a + '-' + Math.min(b, a + SLICE - 1); sliced = true;
+    } else if (req.headers.range) headers['Range'] = req.headers.range;
   }
 
-  const upstreamReq = lib.request({
-    hostname: parsed.hostname,
-    port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
-    path: parsed.pathname + parsed.search,
-    method: 'GET',
-    headers
+  const upstreamReq = (secure ? https : http).request({
+    hostname: parsed.hostname, port: parsed.port || (secure ? 443 : 80), path: parsed.pathname + parsed.search,
+    method: 'GET', headers, agent: secure ? KEEP_HTTPS : KEEP_HTTP, lookup: safeLookup
   }, (upstreamRes) => {
-    if ([301, 302, 303, 307, 308].includes(upstreamRes.statusCode) && upstreamRes.headers.location) {
-      const nextUrl = new URL(upstreamRes.headers.location, targetUrl).toString();
+    const code = upstreamRes.statusCode || 200;
+    if ([301, 302, 303, 307, 308].includes(code) && upstreamRes.headers.location) {
+      let nextUrl; try { nextUrl = new URL(upstreamRes.headers.location, targetUrl).toString(); } catch (e) { upstreamRes.resume(); res.statusCode = 502; return res.end('Bad redirect'); }
       upstreamRes.resume();
-      return proxyMediaStream(nextUrl, refererUrl, req, res, redirects - 1);
+      return proxyMediaStream(nextUrl, refererUrl, req, res, redirects - 1, 0, state);
     }
-
     const contentType = String(upstreamRes.headers['content-type'] || '').toLowerCase();
-    const isM3u8 = /\.m3u8(\?|$)/i.test(targetUrl) || contentType.includes('mpegurl');
+    const isM3u8 = isPlaylist || contentType.includes('mpegurl');
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type');
@@ -804,43 +852,45 @@ function proxyMediaStream(targetUrl, refererUrl, req, res, redirects = 5) {
       upstreamRes.on('data', (c) => chunks.push(c));
       upstreamRes.on('end', () => {
         const rawText = Buffer.concat(chunks).toString('utf-8');
+        const wrap = (abs) => `/api/browse?stream=1&url=${encodeURIComponent(abs)}&ref=${encodeURIComponent(refererUrl || targetUrl)}`;
         const rewritten = rawText.split(/\r?\n/).map((line) => {
           const trimmed = line.trim();
           if (!trimmed) return line;
           if (trimmed.startsWith('#')) {
             return line.replace(/URI=["']([^"']+)["']/gi, (_, uriVal) => {
-              const absUri = new URL(uriVal, targetUrl).toString();
-              return `URI="/api/browse?stream=1&url=${encodeURIComponent(absUri)}&ref=${encodeURIComponent(refererUrl || targetUrl)}"`;
+              try { return `URI="${wrap(new URL(uriVal, targetUrl).toString())}"`; } catch (e) { return _; }
             });
           }
-          try {
-            const absSeg = new URL(trimmed, targetUrl).toString();
-            return `/api/browse?stream=1&url=${encodeURIComponent(absSeg)}&ref=${encodeURIComponent(refererUrl || targetUrl)}`;
-          } catch (e) {
-            return line;
-          }
+          try { return wrap(new URL(trimmed, targetUrl).toString()); } catch (e) { return line; }
         }).join('\n');
-
         res.statusCode = 200;
         res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+        /* a finished (VOD) playlist never changes: let the browser keep it for a minute; live ones are always fresh */
+        res.setHeader('Cache-Control', /#EXT-X-ENDLIST/.test(rawText) ? 'private, max-age=60' : 'no-cache');
         res.end(rewritten);
       });
+      upstreamRes.on('error', () => { try { res.end(); } catch (e) {} });
       return;
     }
 
-    res.statusCode = upstreamRes.statusCode || 200;
-    const forwardHeaders = ['content-type', 'content-length', 'content-range', 'accept-ranges'];
-    for (const h of forwardHeaders) {
+    res.statusCode = code;
+    for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
       if (upstreamRes.headers[h]) res.setHeader(h, upstreamRes.headers[h]);
     }
+    if (!upstreamRes.headers['accept-ranges'] && sliced) res.setHeader('Accept-Ranges', 'bytes');
+    if (code === 200 || code === 206) res.setHeader('Cache-Control', cacheFor(targetUrl, contentType));
+    upstreamRes.on('error', () => { try { res.destroy(); } catch (e) {} });
     upstreamRes.pipe(res);
   });
-
+  state.up = upstreamReq;
+  upstreamReq.setTimeout(20000, () => upstreamReq.destroy(new Error('Video host timed out')));
   upstreamReq.on('error', (err) => {
-    if (!res.headersSent) {
-      res.statusCode = 502;
-      res.end(((err && err.message) || 'Stream request failed.'));
+    if (state.gone) return;
+    if (!res.headersSent && attempt < 1 && !/Blocked address/.test(err && err.message)) {       /* quiet single retry */
+      return setTimeout(() => proxyMediaStream(targetUrl, refererUrl, req, res, redirects, attempt + 1, state), 250);
     }
+    if (!res.headersSent) { res.statusCode = /Blocked address/.test(err && err.message) ? 403 : 502; res.end(((err && err.message) || 'Stream request failed.')); }
+    else { try { res.destroy(); } catch (e) {} }
   });
   upstreamReq.end();
 }

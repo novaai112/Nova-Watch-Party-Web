@@ -560,23 +560,28 @@ function loadHls() {
   return hlsWait;
 }
 /* plain files use <video src>; .m3u8 streams use native HLS (Safari) or hls.js */
-function attachSrc(v, url, forceHls) {
+/* opts.onFatal() -> true when the caller switched to another route (so no error toast) */
+function attachSrc(v, url, forceHls, opts) {
+  opts = opts || {};
   if ((!forceHls && !/\.m3u8(?:$|[?#])/i.test(url)) || v.canPlayType('application/vnd.apple.mpegurl')) { v.src = url; return; }
   loadHls().then(() => {
     if (window.Hls && Hls.isSupported()) {
-      const h = new Hls({ enableWorker: true, maxBufferLength: 30, manifestLoadingMaxRetry: 3, levelLoadingMaxRetry: 3, fragLoadingMaxRetry: 4 }); v._hls = h; h.loadSource(url); h.attachMedia(v);
+      if (v._hls) { try { v._hls.destroy(); } catch (e) {} }
+      /* quality ladder + buffer tuned to this connection (room-net.js): slow = start low and climb, fast = start high */
+      const cfg = window.NovaNet ? NovaNet.hlsConfig() : { enableWorker: true, maxBufferLength: 30 };
+      const h = new Hls(cfg); v._hls = h; h.loadSource(url); h.attachMedia(v);
       let netRetries = 0;
       h.on(Hls.Events.ERROR, (ev, d) => {
         if (!d || !d.fatal) return;
-        if (d.type === Hls.ErrorTypes.NETWORK_ERROR && netRetries++ < 3) h.startLoad();
-        else if (d.type === Hls.ErrorTypes.MEDIA_ERROR && netRetries++ < 3) h.recoverMediaError();
-        else toast('This stream cannot be played', 'err');
+        if (d.type === Hls.ErrorTypes.NETWORK_ERROR && netRetries++ < 4) setTimeout(() => { try { h.startLoad(); } catch (e) {} }, 700 * netRetries);
+        else if (d.type === Hls.ErrorTypes.MEDIA_ERROR && netRetries++ < 4) h.recoverMediaError();
+        else if (!(opts.onFatal && opts.onFatal())) toast('This stream cannot be played', 'err');
       });
     } else v.src = url;
   }).catch(() => toast('Could not load the stream player', 'err'));
 }
 const pl = {
-  time() { try { return P.yt ? P.yt.getCurrentTime() || 0 : P.video ? P.video.currentTime : 0; } catch (e) { return 0; } },
+  time() { try { return P.yt ? P.yt.getCurrentTime() || 0 : P.video ? (P.video._abr && P.video._abr.hold != null ? P.video._abr.hold : P.video.currentTime) : 0; } catch (e) { return 0; } },
   dur() { try { return P.yt ? P.yt.getDuration() || 0 : P.video ? (isFinite(P.video.duration) ? P.video.duration : 0) : 0; } catch (e) { return 0; } },
   playing() { try { if (P.yt) { const s = P.yt.getPlayerState(); return s === 1 || s === 3; } return P.video ? !P.video.paused : false; } catch (e) { return false; } },
   play() { try { if (P.yt) P.yt.playVideo(); else if (P.video) P.video.play().catch(showTap); } catch (e) {} },
@@ -656,6 +661,8 @@ function sendRate() { if (ch && isAdmin()) { try { ch.send({ type: 'broadcast', 
 function destroyPlayer() {
   try { if (P.yt) P.yt.destroy(); } catch (e) {}
   try { if (P.video && P.video._hls) P.video._hls.destroy(); } catch (e) {}
+  try { if (P.video && P.video._novaWatch) P.video._novaWatch.stop(); } catch (e) {}
+  try { if (P.video && P.video._abr) P.video._abr.stop(); } catch (e) {}
   P = freshP(); if (SY) SY.reset();
   const w = $('#vwrap'); if (w) $$('#vwrap > *:not(#mv):not(#vcover):not(#vbadge):not(#pui):not(#pgz):not(#syncbar):not(#synccount)').forEach(n => n.remove());
 }
@@ -688,6 +695,7 @@ async function mountMedia() {
     if (!safeHttps(m.url)) return;
     const v = document.createElement('video');
     v.playsInline = true; v.preload = 'auto'; v.controls = false; v.disablePictureInPicture = false;
+    if (window.NovaNet) NovaNet.preconnect(m.provider === 'web' ? webStreamInfo(m).url : m.url);   /* open the connection to the video host now */
     if (m.provider === 'web') {
       const info = webStreamInfo(m);
       const proxy = new URL('/api/browse', location.href);
@@ -695,29 +703,51 @@ async function mountMedia() {
       proxy.searchParams.set('url', info.url);
       if (info.ref) proxy.searchParams.set('ref', info.ref);
       attachSrc(v, proxy.href, info.hls || m.streamType === 'hls');
-    } else attachSrc(v, m.url);
+    } else {
+      /* X posts carry several qualities (m.q): every viewer starts on the one their connection + screen can use and moves up / down by themselves */
+      const ladder = window.NovaNet ? NovaNet.ladderFrom(m) : [];
+      if (ladder.length) {
+        ladder.forEach(r => NovaNet.preconnect(r.u));
+        const viewPx = () => Math.min(w.clientWidth || 640, w.clientHeight || 360) * Math.min(window.devicePixelRatio || 1, 2);
+        const A = NovaNet.abr(v, ladder, {
+          start: NovaNet.pickStart(ladder, null, viewPx()), viewPx,
+          src: r => (v._onProxy ? viaProxy(routeRef, r.u) : r.u),
+          quiet: () => { P.mute = Date.now() + 5000; if (SY) SY.setBuffering(true); },     /* a quality switch is a short buffering, not a seek or a pause */
+          resume: () => { if (key === mountKey) applyState(true); },
+          changed: () => { try { if (window.NovaPlayer) NovaPlayer.update(); } catch (e) {} }
+        });
+        attachSrc(v, ladder[A.level].u);
+      } else attachSrc(v, m.url);
+    }
     /* X / Drive / plain links: if the browser refuses the direct address (hot-link or referer rules),
        retry once through our own stream proxy that sends the source site's referer */
-    const viaProxy = (ref) => { const px = new URL('/api/browse', location.href); px.searchParams.set('stream', '1'); px.searchParams.set('url', m.url); if (ref) px.searchParams.set('ref', ref); return px.href; };
-    let retried = m.provider === 'web';
-    v._retry = () => {
-      if (retried) return false;
-      retried = true;
-      const t = v.currentTime || 0;
-      v.src = viaProxy(m.provider === 'x' ? 'https://x.com/' : m.provider === 'drive' ? 'https://drive.google.com/' : '');
-      v.load();
+    const viaProxy = (ref, u) => { const px = new URL('/api/browse', location.href); px.searchParams.set('stream', '1'); px.searchParams.set('url', u || m.url); if (ref) px.searchParams.set('ref', ref); return px.href; };
+    let retried = m.provider === 'web', onProxy = m.provider === 'web';
+    const routeRef = m.provider === 'x' ? 'https://x.com/' : m.provider === 'drive' ? 'https://drive.google.com/' : '';
+    /* switch between the direct address and our stream proxy, keeping the second we are at */
+    const curUrl = () => (v._abr ? v._abr.ladder[v._abr.level].u : m.url);                /* the quality rung in use */
+    const flip = () => {
+      if (m.provider === 'web') return false;
+      const t = v.currentTime || 0; onProxy = !onProxy; v._onProxy = onProxy;
+      v.src = onProxy ? viaProxy(routeRef, curUrl()) : curUrl(); v.load();
       v.addEventListener('loadedmetadata', () => { try { if (t > 0) v.currentTime = t; } catch (e) {} }, { once: true });
       return true;
     };
+    v._retry = () => { if (retried) return false; retried = true; return onProxy ? false : flip(); };
     P.kind = 'video'; P.video = v;
     ['play', 'pause', 'seeked'].forEach(ev => v.addEventListener(ev, () => { if (isAdmin() && Date.now() > P.mute) publish(!v.paused, v.currentTime); updateTimeUI(); }));
     v.addEventListener('ended', () => { if (isAdmin()) ended(); });
     v.addEventListener('loadedmetadata', () => { P.ready = true; pl.vol(); pl.applyRate(); renderControls(); applyState(true); });
     v.addEventListener('playing', () => { P.started = true; hideTap(); paintCover(); });
     ['waiting', 'stalled'].forEach(ev => v.addEventListener(ev, () => { if (SY && !v.paused) SY.setBuffering(true); }));
+    /* slow-connection safety net: frozen playback is nudged, restarted at the same second, then moved to the other route */
+    const netHooks = { reload: () => flip(), resume: () => { if (key === mountKey) applyState(true); } };
+    if (window.NovaNet) NovaNet.watch(v, netHooks);
     ['playing', 'canplay', 'pause', 'seeked'].forEach(ev => v.addEventListener(ev, () => { if (SY && !(ev === 'seeked' && v.readyState < 3)) SY.setBuffering(false); }));
     v.addEventListener('error', () => {
       if (key !== mountKey) return;
+      if (v._abr && v._abr.onError()) return;                                  /* the new quality would not open: back to the previous one */
+      if (window.NovaNet && NovaNet.recoverError(v, netHooks)) return;     /* network dropped mid-video: retry from the same second */
       if (v._retry && v._retry()) return;
       const c = v.error && v.error.code;
       mediaFailed();
