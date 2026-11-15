@@ -169,8 +169,50 @@
       if (assess(m).nsfw) { put(k, true); return true; }
       return null;
     };
-    /* only the sources the server can look into */
-    api.needsDeepCheck = m => !!m && (m.kind === 'youtube' ? !!m.id : /^https:\/\//i.test(str(m.url)) && m.provider !== 'drive' && m.provider !== 'twitch');
+    /* what can still be looked into: a web page (server), a YouTube id (server) or the thumbnail picture (in this browser) */
+    const DIRECT = /\.(?:mp4|m3u8|webm|ogg|mov)(?:$|[?#])|(?:^|\.)twimg\.com$/i;
+    const canPage = m => !!m && m.kind !== 'youtube' && /^https:\/\//i.test(str(m.url)) && m.provider !== 'drive' && m.provider !== 'twitch' && m.provider !== 'x' &&
+      !(DIRECT.test(str(m.url).split('#')[0]) || (urlParts(m.url) && DIRECT.test(urlParts(m.url).host)));
+    const canImage = m => !!m && m.kind !== 'youtube' && /^https:\/\/[^\s]+$/i.test(str(m.thumb)) && !!api.imageCheck;
+    api.needsDeepCheck = m => !!m && ((m.kind === 'youtube' && !!m.id) || canPage(m) || canImage(m));
+
+    /* picture check: an on-device classifier (TensorFlow.js + NSFWJS, loaded on demand from a CDN) looks at the thumbnail.
+       Catches videos whose title and address say nothing (a person's name on X, a bare .mp4 link). Nothing is uploaded:
+       the picture is only drawn in this browser. If the libraries cannot load, the check is skipped and retried later. */
+    api.imageCheck = true;
+    const LIBS = ['https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js', 'https://cdn.jsdelivr.net/npm/nsfwjs@4.2.0/dist/browser/nsfwjs.min.js'];
+    const loadScript = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.async = true; s.crossOrigin = 'anonymous'; s.onload = res; s.onerror = () => rej(new Error('lib')); document.head.appendChild(s); });
+    let modelP = null, modelFailAt = 0, imgChain = Promise.resolve();
+    const loadModel = () => {
+      if (modelP) return modelP;
+      if (Date.now() - modelFailAt < 5 * 60e3) return Promise.reject(new Error('model-backoff'));
+      modelP = (async () => {
+        if (!window.tf) await loadScript(LIBS[0]);
+        if (!window.nsfwjs) await loadScript(LIBS[1]);
+        return await window.nsfwjs.load();
+      })().catch(e => { modelP = null; modelFailAt = Date.now(); throw e; });
+      return modelP;
+    };
+    const loadImg = url => new Promise((res, rej) => {
+      const im = new Image(), t = setTimeout(() => rej(new Error('img-timeout')), 9000);
+      im.crossOrigin = 'anonymous'; im.referrerPolicy = 'no-referrer'; im.decoding = 'async';
+      im.onload = () => { clearTimeout(t); res(im); }; im.onerror = () => { clearTimeout(t); rej(new Error('img')); };
+      im.src = url;
+    });
+    /* -> true / false, or null when the picture could not be checked */
+    api.classifyImage = url => {
+      const job = imgChain.then(async () => {
+        try {
+          const [model, im] = await Promise.all([loadModel(), loadImg(url)]);
+          const out = await model.classify(im, 5), p = {};
+          out.forEach(o => { p[o.className] = o.probability; });
+          const x = (p.Porn || 0) + (p.Hentai || 0), sexy = p.Sexy || 0;
+          return x >= 0.55 || (x >= 0.3 && sexy >= 0.4) || sexy >= 0.9;
+        } catch (e) { return null; }
+      });
+      imgChain = job.then(() => 0, () => 0);
+      return job;
+    };
     const token = async () => { try { const s = await Nova.sb.auth.getSession(); return (s && s.data && s.data.session && s.data.session.access_token) || ''; } catch (e) { return ''; } };
     const getJson = async (url, auth) => {
       const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 9000);
@@ -189,9 +231,13 @@
             const j = await getJson('/api/youtube?id=' + encodeURIComponent(m.id));
             answered = true;
             yes = assess(Object.assign({}, m, { ageRestricted: !!j.ageRestricted, title: [m.title, j.title].join(' '), channel: j.channel, description: j.description, tags: j.tags })).nsfw;
-          } else if (api.needsDeepCheck(m)) {
+          } else if (canPage(m)) {
             const j = await getJson('/api/nsfw-check?url=' + encodeURIComponent(m.url), await token());
             answered = !j.unchecked; yes = !!j.nsfw;
+          }
+          if (!yes && canImage(m)) {
+            const r = await api.classifyImage(m.thumb);
+            if (r !== null) { answered = true; yes = r; }
           }
         } catch (e) { /* offline / not signed in / API not deployed: stay "not flagged", try again next session */ }
         if (answered) put(k, yes);

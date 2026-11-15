@@ -540,6 +540,8 @@ function xMedia(j){
   if(hls)url+='#nova='+encodeURIComponent(JSON.stringify({t:'hls',r:j.postUrl||'https://x.com/'}));
   var m={kind:'video',url:url,title:(j.title||'X video').slice(0,150),provider:hls?'web':'x'};
   if(j.thumbnail&&/^https:\/\//.test(j.thumbnail)&&j.thumbnail.length<=500)m.thumb=j.thumbnail;
+  /* 18+ mark: X's own sensitive-media flag, or adult words in the post text / author (saved with the room, shows the NSFW badge on Nova Home) */
+  try{if(j.sensitive===true||(window.NsfwDetect&&NsfwDetect.assess({kind:'web',title:j.text||j.title,channel:j.author,thumb:j.thumbnail}).nsfw))m.nsfw=true}catch(x){}
   return m
 }
 function showPop(j,opt){opt=opt||{};
@@ -811,6 +813,8 @@ function tMedia(j){
   var m={kind:'embed',url:tEmbed(j.kind,j.id,j.channel),provider:'twitch'};
   m.title=((j.title||j.name||'Twitch').replace(/\s+/g,' ')).slice(0,150);
   if(j.thumbnail&&/^https:\/\//.test(j.thumbnail)&&j.thumbnail.length<=500)m.thumb=j.thumbnail;
+  /* 18+ mark: X's own sensitive-media flag, or adult words in the post text / author (saved with the room, shows the NSFW badge on Nova Home) */
+  try{if(j.sensitive===true||(window.NsfwDetect&&NsfwDetect.assess({kind:'web',title:j.text||j.title,channel:j.author,thumb:j.thumbnail}).nsfw))m.nsfw=true}catch(x){}
   return m
 }
 function tPop(j){

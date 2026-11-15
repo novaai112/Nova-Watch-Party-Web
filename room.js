@@ -2199,7 +2199,10 @@ function previewSource(m) {
       if (info.ref) px.searchParams.set('ref', info.ref);
       return { type: 'video', src: px.href, hls: info.hls || m.streamType === 'hls' };
     }
-    return { type: 'video', src: m.url, hls: /\.m3u8(?:$|[?#])/i.test(m.url) };
+    /* X / Drive files: the browser may be refused (hot-link / referer rules) — fall back to our stream proxy, like the room player does */
+    const ref = m.provider === 'x' ? 'https://x.com/' : m.provider === 'drive' ? 'https://drive.google.com/' : '';
+    const px = new URL('/api/browse', location.href); px.searchParams.set('stream', '1'); px.searchParams.set('url', m.url); if (ref) px.searchParams.set('ref', ref);
+    return { type: 'video', src: m.url, alt: ref ? px.href : '', hls: /\.m3u8(?:$|[?#])/i.test(m.url) };
   }
   return null;   // embeds cannot be muted / seeked from outside, so they keep the thumbnail
 }

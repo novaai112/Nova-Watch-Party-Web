@@ -115,7 +115,12 @@ function mountMedia(host, r, opts) {
       try { if (t.pos > 0.5 && (!h.dur || t.pos < h.dur)) v.currentTime = t.pos; } catch (e) {}
       v.play().catch(() => {});
     });
-    v.addEventListener('error', () => { if (dead) return; h.destroy(); h.el = null; opts && opts.onFail && opts.onFail(); });
+    let triedAlt = !src.alt;
+    v.addEventListener('error', () => {
+      if (dead) return;
+      if (!triedAlt) { triedAlt = true; api().attachSrc(v, src.alt, src.hls); return; }   // direct address refused → same video through the stream proxy
+      h.destroy(); h.el = null; opts && opts.onFail && opts.onFail();
+    });
     h.setMuted = m => { h.muted = m; v.muted = m; if (!m) { v.volume = .7; v.play().catch(() => {}); } };
     h.destroy = () => { dead = true; try { v.pause(); if (v._hls) v._hls.destroy(); v.removeAttribute('src'); v.load(); } catch (e) {} v.remove(); };
   }

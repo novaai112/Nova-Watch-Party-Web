@@ -291,6 +291,7 @@ begin
     if u is null or length(u) > 1000 or u !~ '^https://[^\s<>"'']+$' then raise exception 'Invalid link'; end if;
     r := r || jsonb_build_object('url', u);
   end if;
+  if coalesce(p->>'nsfw','') = 'true' then r := r || '{"nsfw":true}'::jsonb; end if;
   u := p->>'thumb';
   if u is not null and length(u) <= 500 and u ~ '^https://[^\s<>"'']+$' then
     r := r || jsonb_build_object('thumb', u);

@@ -106,7 +106,7 @@ function fromSyndication(d, id) {
       const best = bestOf(v);
       if (!best) continue;
       return {
-        hasVideo: true, id, source: 'x-embed', quoted: p !== d,
+        hasVideo: true, id, source: 'x-embed', quoted: p !== d, sensitive: !!(p.possibly_sensitive || d.possibly_sensitive),
         author: p.user ? (p.user.name || '') + (p.user.screen_name ? ' (@' + p.user.screen_name + ')' : '') : '',
         text: String(p.text || '').replace(/https:\/\/t\.co\/\w+/g, '').trim(),
         thumbnail: m.media_url_https || (p.video && p.video.poster) || '',
@@ -117,7 +117,7 @@ function fromSyndication(d, id) {
     if (p.video && Array.isArray(p.video.variants)) {
       const v = pickVariants(p.video.variants.map((x) => ({ url: x.src, content_type: x.type })));
       const best = bestOf(v);
-      if (best) return { hasVideo: true, id, source: 'x-embed', author: p.user ? (p.user.name || '') : '', text: String(p.text || '').replace(/https:\/\/t\.co\/\w+/g, '').trim(), thumbnail: p.video.poster || '', duration: 0, gif: false, variants: v.all, best };
+      if (best) return { hasVideo: true, id, source: 'x-embed', sensitive: !!(p.possibly_sensitive || d.possibly_sensitive), author: p.user ? (p.user.name || '') : '', text: String(p.text || '').replace(/https:\/\/t\.co\/\w+/g, '').trim(), thumbnail: p.video.poster || '', duration: 0, gif: false, variants: v.all, best };
     }
   }
   /* post exists but has no video */
@@ -136,7 +136,7 @@ function fromFx(d, id) {
       const v = pickVariants(list);
       const best = bestOf(v);
       if (!best) continue;
-      return { hasVideo: true, id, source: 'fxtwitter', quoted: p !== t, author: p.author ? (p.author.name || '') + (p.author.screen_name ? ' (@' + p.author.screen_name + ')' : '') : '', text: String(p.text || '').trim(), thumbnail: v0.thumbnail_url || '', duration: Math.round(v0.duration || 0), gif: v0.type === 'gif', variants: v.all, best };
+      return { hasVideo: true, id, source: 'fxtwitter', sensitive: !!(p.possibly_sensitive || t.possibly_sensitive), quoted: p !== t, author: p.author ? (p.author.name || '') + (p.author.screen_name ? ' (@' + p.author.screen_name + ')' : '') : '', text: String(p.text || '').trim(), thumbnail: v0.thumbnail_url || '', duration: Math.round(v0.duration || 0), gif: v0.type === 'gif', variants: v.all, best };
     }
   }
   return { hasVideo: false, id, source: 'fxtwitter', author: t.author ? (t.author.name || '') : '', text: String(t.text || '').trim(), thumbnail: '' };
@@ -149,7 +149,7 @@ function fromVx(d, id) {
     const m = vids[0];
     const v = pickVariants([{ url: m.url, content_type: /m3u8/.test(m.url) ? 'application/x-mpegURL' : 'video/mp4' }]);
     const best = bestOf(v);
-    if (best) return { hasVideo: true, id, source: 'vxtwitter', author: (d.user_name || '') + (d.user_screen_name ? ' (@' + d.user_screen_name + ')' : ''), text: String(d.text || '').trim(), thumbnail: m.thumbnail_url || '', duration: Math.round((m.duration_millis || 0) / 1000), gif: m.type === 'gif', variants: v.all, best };
+    if (best) return { hasVideo: true, id, source: 'vxtwitter', sensitive: !!(d.possibly_sensitive || d.sensitive), author: (d.user_name || '') + (d.user_screen_name ? ' (@' + d.user_screen_name + ')' : ''), text: String(d.text || '').trim(), thumbnail: m.thumbnail_url || '', duration: Math.round((m.duration_millis || 0) / 1000), gif: m.type === 'gif', variants: v.all, best };
   }
   return { hasVideo: false, id, source: 'vxtwitter', author: d.user_name || '', text: String(d.text || '').trim(), thumbnail: '' };
 }
@@ -229,7 +229,7 @@ async function listFromFx(handle) {
 function shapeItem(r, id, user, date) {
   const best = r.best;
   return {
-    id, author: r.author, text: r.text, thumbnail: r.thumbnail, duration: r.duration || 0, gif: !!r.gif,
+    id, author: r.author, text: r.text, thumbnail: r.thumbnail, duration: r.duration || 0, gif: !!r.gif, sensitive: !!r.sensitive,
     title: (r.text ? r.text.replace(/\s+/g, ' ').slice(0, 90) : '') || ('Video by ' + (r.author || 'X')),
     streamUrl: best.url, streamType: best.type, variants: r.variants, date: date || '',
     postUrl: 'https://x.com/' + (user || 'i') + '/status/' + id
@@ -287,7 +287,7 @@ module.exports = async function handler(req, res) {
     const title = (r.text ? r.text.replace(/\s+/g, ' ').slice(0, 90) : '') || ('Video by ' + (r.author || 'X'));
     return json(res, 200, {
       ok: true, hasVideo: true, id: post.id, author: r.author, text: r.text, title,
-      thumbnail: r.thumbnail, duration: r.duration, gif: !!r.gif, quoted: !!r.quoted,
+      thumbnail: r.thumbnail, duration: r.duration, gif: !!r.gif, quoted: !!r.quoted, sensitive: !!r.sensitive,
       streamUrl: best.url, streamType: best.type, variants: r.variants, source: r.source,
       postUrl: 'https://x.com/' + (post.user || 'i') + '/status/' + post.id
     });

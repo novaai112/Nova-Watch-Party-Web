@@ -41,7 +41,10 @@ function rooms() {
     base(4, { kind: 'video', provider: 'web', title: 'Some video', url: 'https://tube.example/v/1' }),                              // server: page says adult
     base(5, { kind: 'video', provider: 'web', title: 'Sex Education Season 3 Official Trailer', url: 'https://media.test/a.mp4' }), // normal (weak word only)
     base(6, { kind: 'video', provider: 'web', title: 'Desi XXX full video', url: 'https://clips.example/x' }),                      // instant: title
-    base(7, { kind: 'video', provider: 'web', title: 'Cat video', url: 'https://clips.example/cat' })                              // server says no
+    base(7, { kind: 'video', provider: 'web', title: 'Cat video', url: 'https://clips.example/cat' }),                             // server says no
+    Object.assign(base(8, { kind: 'video', provider: 'x', title: 'Remy LaCroix', url: 'https://video.twimg.com/ext_tw_video/1/pu/vid/avc1/720x1280/a.mp4' }), {}), // X: name only -> picture check
+    base(9, { kind: 'video', provider: 'x', title: 'Beach sunset', url: 'https://video.twimg.com/ext_tw_video/2/pu/vid/avc1/720x1280/b.mp4' }),                 // X: picture is fine
+    base(10, { kind: 'video', provider: 'x', title: 'Saved with flag', url: 'https://video.twimg.com/ext_tw_video/3/pu/vid/avc1/720x1280/c.mp4', nsfw: true })     // flag saved at import
   ];
 }
 let ok = 0, bad = 0; const t = async (n, f) => { try { await f(); ok++; console.log('  ✓', n); } catch (e) { bad++; console.error('  ✗', n, '\n    ', (e.message || e).toString().split('\n').slice(0, 3).join('\n     ')); } };
@@ -60,6 +63,8 @@ let ok = 0, bad = 0; const t = async (n, f) => { try { await f(); ok++; console.
     r.fulfill({ contentType: 'application/json', body: JSON.stringify({ id, title: 'x', channel: 'c', ageRestricted: id === 'AGEabc12345', description: '', tags: [] }) }); });
   await ctx.route('**/api/nsfw-check**', r => { const u = new URL(r.request().url()).searchParams.get('url'); calls.push('chk:' + u);
     r.fulfill({ contentType: 'application/json', body: JSON.stringify({ nsfw: u === 'https://tube.example/v/1', score: 10, reasons: [] }) }); });
+  /* stand-in for TensorFlow.js + NSFWJS (the real libraries load from a CDN): room 8's thumbnail is "Porn", the others "Neutral" */
+  await ctx.addInitScript(`window.tf={};window.nsfwjs={load:async()=>({classify:async(im)=>{window.__imgChecks=(window.__imgChecks||0)+1;const adult=/\\/8\\.svg/.test(im.src);return adult?[{className:'Porn',probability:.93},{className:'Neutral',probability:.07}]:[{className:'Neutral',probability:.97},{className:'Porn',probability:.03}]}})};`);
   await ctx.addInitScript(`window.__rooms=${JSON.stringify(rooms())};`);
   const page = await ctx.newPage(); const errs = []; page.on('pageerror', e => errs.push(e.message));
   await page.goto(`http://localhost:${port}/nova-home.html`);
@@ -71,7 +76,12 @@ let ok = 0, bad = 0; const t = async (n, f) => { try { await f(); ok++; console.
   });
   await t('normal videos are never badged', async () => {
     await page.waitForTimeout(600);
-    for (const id of ['r2', 'r5', 'r7']) assert.ok(!(await has(id)), id + ' wrongly flagged');
+    for (const id of ['r2', 'r5', 'r7', 'r9']) assert.ok(!(await has(id)), id + ' wrongly flagged');
+  });
+  await t('X video with only a name as title: picture check adds the badge; clean X picture does not; saved flag works', async () => {
+    await page.waitForFunction(() => document.querySelector('.room[data-rid="r8"] .cover .pbg.nsfw'), null, { timeout: 6000 });
+    assert.ok(!(await has('r9')), 'r9 wrongly flagged'); assert.ok(await has('r10'));
+    assert.ok(await page.evaluate(() => window.__imgChecks >= 2));
   });
   await t('badge sits top-right of the video box, same row as the platform icon, uses the uploaded NSFW image', async () => {
     const g = await page.evaluate(() => { const cv = document.querySelector('.room[data-rid="r1"] .cover'), a = cv.querySelector('.pbg:not(.nsfw)').getBoundingClientRect(), b = cv.querySelector('.pbg.nsfw').getBoundingClientRect(), c = cv.getBoundingClientRect();
@@ -85,6 +95,10 @@ let ok = 0, bad = 0; const t = async (n, f) => { try { await f(); ok++; console.
     assert.strictEqual(calls.length, n, 'extra server calls: ' + calls.slice(n));
   });
   await t('each undecided video is checked once', async () => { assert.strictEqual(new Set(calls).size, calls.length, calls.join(',')); });
+  await t('X video preview: direct address first, our stream proxy (with x.com referer) as fallback', async () => {
+    const r = await page.evaluate(() => NovaRoom.api.previewSource(NovaRoom.api.byId('r8').media));
+    assert.ok(r && r.type === 'video' && r.src.startsWith('https://video.twimg.com/') && /\/api\/browse\?stream=1&url=.*&ref=https%3A%2F%2Fx\.com%2F/.test(r.alt), JSON.stringify(r));
+  });
   await t('hover preview carries the badge too', async () => {
     const c = await page.locator('#pubL .room[data-rid="r1"] .cover').boundingBox();
     await page.mouse.move(c.x + 30, c.y + 30); await page.mouse.move(c.x + 40, c.y + 40);
