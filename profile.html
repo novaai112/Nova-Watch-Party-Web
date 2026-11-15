@@ -414,7 +414,7 @@ let AVT=null;
 const planPill=()=>`<span class="pill pl">${ic('sparkles',11)}${PLAN.pro?'Pro Plan':'Free Plan'}</span>`;
 
 /* one navigation list drives the desktop sidebar AND the mobile list */
-const NAV=[['info','user','info','#2563eb'],['stats','chart','accstats','#16a34a'],['gallery','image','gallery','#db2777'],['friends','users','friends','#0d9488'],['social','link','social','#7c3aed'],
+const NAV=[['info','user','info','#2563eb'],['stats','chart','accstats','#16a34a'],['gallery','image','gallery','#db2777'],['social','link','social','#7c3aed'],
  ['settings','settings','settings','#475569'],['language','globe','language','#0891b2'],['privacy','shield','privdata','#dc2626'],['security','lock','security','#dc2626'],['support','help','support','#0d9488'],['notifications','bell','notification','#2563eb'],['activity','play','activity','#ea580c']];
 const mbar=(title,right='',back='home')=>`<div class="mbar mo"><button class=ib data-go=${back} aria-label="Back">${ic('left')}</button><h1>${title}</h1>${right||'<span style="width:40px"></span>'}</div>`;
 const panel=(title,sub,act,body)=>`<section class="card panel"><div class=phead><div class=pt><h2>${title}</h2>${sub?`<p>${sub}</p>`:''}</div>${act||''}</div><div class=pcard>${body}</div></section>`;
