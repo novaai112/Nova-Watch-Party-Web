@@ -84,6 +84,38 @@ function platBadge(m, cls) {
   return `<span class="pbg ${cls || ''}" title="${esc(name)}" aria-label="${esc(name)}">${src ? `<img src="${src}" alt="" draggable="false">` : key === 'youtube' ? YT_SVG : ic('globe', 16)}</span>`;
 }
 
+/* NSFW mark: only on the Nova Home room cards (and their hover preview / sheet), top-right of the video box in the same
+   row as the platform icon. Shown for 18+ videos found by nsfw-detect.js (address, title, YouTube age limit, page rating). */
+function nsfwBadge(m) {
+  const src = (window.PLAT_ICON || {}).nsfw;
+  if (!m || !src || !window.NsfwDetect || NsfwDetect.verdict(m) !== true) return '';
+  return `<span class="pbg nsfw" title="Adult content (18+)" aria-label="NSFW - adult content"><img src="${src}" alt="" draggable="false"></span>`;
+}
+/* checks the videos on the home cards that the instant check could not decide (server look-up, 3 at a time) and
+   adds the badge to the card as soon as one is found to be adult */
+let nsfwQ = [], nsfwBusy = 0;
+function nsfwScan() {
+  if (!window.NsfwDetect) return;
+  homeRooms.forEach(r => {
+    const m = r.media; if (!m || NsfwDetect.verdict(m) !== null || !NsfwDetect.needsDeepCheck(m)) return;
+    const k = NsfwDetect.keyOf(m); if (nsfwQ.some(x => x.k === k)) return;
+    nsfwQ.push({ k, m });
+  });
+  const pump = () => {
+    while (nsfwBusy < 3 && nsfwQ.length) { const j = nsfwQ.shift(); nsfwBusy++; NsfwDetect.resolve(j.m).finally(() => { nsfwBusy--; pump(); }); }
+  };
+  pump();
+}
+function nsfwPaint() {
+  document.querySelectorAll('.room[data-rid] .cover').forEach(cv => {
+    const r = homeRooms.find(x => x.id === cv.closest('.room').dataset.rid);
+    const has = cv.querySelector('.pbg.nsfw'), want = !!(r && r.media && window.NsfwDetect && NsfwDetect.verdict(r.media) === true);
+    if (want && !has) cv.insertAdjacentHTML('beforeend', nsfwBadge(r.media));
+    else if (!want && has) has.remove();
+  });
+}
+if (window.NsfwDetect) NsfwDetect.onFlag(nsfwPaint);
+
 /* ---------- state ---------- */
 let ME = null, R = null, members = [], queue = [], msgs = [], prof = {}, ch = null;
 const typers = new Map();            /* user id -> { k: 'typing'|'uploading', until } */
@@ -2001,7 +2033,7 @@ function card(r) {
   const av = (r.members || []).slice(0, 4).map(u => userAvatar(u, 30, false, u.id === r.admin_id)).join('');
   const more = Math.max(0, (r.count || 0) - 4);
   return `<div class="room${r.invited ? ' inv' : ''}" role="button" tabindex="0" data-code="${esc(r.code)}" data-rid="${esc(r.id)}">
-    <div class="cover">${thumb(m) ? `<img src="${esc(thumb(m))}" alt="" loading="lazy" decoding="async">` : ''}${platBadge(m, 'card')}</div>
+    <div class="cover">${thumb(m) ? `<img src="${esc(thumb(m))}" alt="" loading="lazy" decoding="async">` : ''}${platBadge(m, 'card')}${nsfwBadge(m)}</div>
     <div class="info"><b class="rt">${esc((m && m.title) || r.title)}</b><div class="avs">${av}${more ? `<em>+${more}</em>` : ''}</div></div>
     ${pct ? `<i class="prog" style="width:${pct * .62}%"></i>` : ''}</div>`;
 }
@@ -2032,6 +2064,7 @@ function renderHome() {
   set('invL', 'invE', inv, 'No invited rooms right now.');
   set('pubL', 'pubE', pub, 'No public rooms right now.');
   if (window.NovaCards) NovaCards.afterRender();
+  nsfwScan();
 }
 const dockOpen = () => !!(window.NovaDock && NovaDock.isOpen());
 async function loadHome() {
@@ -2177,7 +2210,7 @@ function livePos(r) {
 }
 const roomApi = {
   rooms: () => homeRooms, byId: id => homeRooms.find(r => r.id === id) || null,
-  previewSource, livePos, now: snow, attachSrc, thumb, fmt, PRIV, ic, platBadge,
+  previewSource, livePos, now: snow, attachSrc, thumb, fmt, PRIV, ic, platBadge, nsfwBadge,
   reload: () => loadHome(),
   dismiss: id => rpc('room_dismiss', { p_room: id }),
   reportVideo: (id, reason, details) => rpc('room_report_video', { p_room: id, p_reason: reason, p_details: details || '' }),

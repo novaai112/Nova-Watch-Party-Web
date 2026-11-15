@@ -132,3 +132,10 @@ html.rc-lock,html.rc-lock body{overflow:hidden}
 .rc-m .uav.host{padding:0;background:conic-gradient(from 25deg,#f7c96a,#d641cc,#4f73ff,#54e2c2,#f7c96a)}
 .rc-m .uav.host .avt{box-shadow:0 0 0 2px #fff;width:42px!important;height:42px!important}
 .rc-m .uav:not(.host) .avt{width:44px!important;height:44px!important}
+
+/* NSFW mark (white wordmark): right side of the video box, same top row and height as the platform icon.
+   Home cards only — the room itself never shows it. */
+.pbg.nsfw{left:auto;right:8px;top:8px;width:52px;height:22px}
+.pbg.nsfw img{width:40px;height:auto;object-fit:contain}
+.rc-box .pbg.nsfw{right:12px;top:12px;left:auto;width:58px;height:24px;border-radius:8px}
+.rc-box .pbg.nsfw img{width:45px}

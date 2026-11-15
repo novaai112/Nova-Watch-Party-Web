@@ -157,3 +157,4 @@ module.exports = async (req, res) => {
   }
 };
 module.exports._test = { isPrivateIp, parsePreview };
+module.exports._internal = { verifyUser, fetchHtml, metaContent, decode, send };

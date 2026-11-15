@@ -58,7 +58,10 @@ module.exports = async (req, res) => {
       return send(res, 200, {
         id: v.id, title: decode(v.snippet.title), channel: decode(v.snippet.channelTitle),
         thumb: thumbOf(v.snippet.thumbnails), dur: dur(v.contentDetails && v.contentDetails.duration),
-        embeddable: !(v.status && v.status.embeddable === false), live: v.snippet.liveBroadcastContent === 'live'
+        embeddable: !(v.status && v.status.embeddable === false), live: v.snippet.liveBroadcastContent === 'live',
+        /* 18+ signals for the NSFW badge on Nova Home: YouTube's own age restriction, "made for adults" text and tags */
+        ageRestricted: !!(v.contentDetails && v.contentDetails.contentRating && v.contentDetails.contentRating.ytRating === 'ytAgeRestricted'),
+        description: decode(v.snippet.description || '').slice(0, 400), tags: (v.snippet.tags || []).slice(0, 15).map(decode)
       }, 'public, s-maxage=3600');
     }
     if (q.plitems) {

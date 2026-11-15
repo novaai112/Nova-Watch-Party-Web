@@ -151,7 +151,7 @@ function activate(card) {
   deactivate();
   getLayer();
   const vid = document.createElement('div'); vid.className = 'rc-vid'; vid.hidden = true;
-  vid.innerHTML = '<div class="rc-media"></div>' + (api().platBadge ? api().platBadge(r.media, 'card') : '') + '<button type="button" class="rc-mute" aria-label="Unmute" tabindex="-1"></button>';
+  vid.innerHTML = '<div class="rc-media"></div>' + (api().platBadge ? api().platBadge(r.media, 'card') : '') + (api().nsfwBadge ? api().nsfwBadge(r.media) : '') + '<button type="button" class="rc-mute" aria-label="Unmute" tabindex="-1"></button>';
   const panel = document.createElement('div'); panel.className = 'rc-info';
   panel.innerHTML = '<h4 class="rc-pt"></h4><div class="rc-time"><span class="rc-ico"></span><b class="rc-now"></b><span class="rc-sep"> / </span><span class="rc-tot"></span></div><div class="rc-bar"><i></i></div><div class="rc-meta rc-w"></div><div class="rc-meta rc-o"></div>';
   const tip = document.createElement('div'); tip.className = 'rc-tip';
@@ -337,7 +337,7 @@ function buildSheet() {
   const members = r.members || [], more = Math.max(0, (Number(r.count) || 0) - members.length);
   const pv = ((a.PRIV || []).find(x => x[0] === r.privacy) || [])[2] || 'Public';
   sheet.body.innerHTML = `
-    <div class="rc-box"><div class="rc-bg">${a.thumb(r.media) ? `<img src="${esc(a.thumb(r.media))}" alt="">` : ''}</div><div class="rc-media"></div>${a.platBadge ? a.platBadge(r.media, 'card') : ''}<button type="button" class="rc-mute rc-mute-s" data-a="mute" aria-label="Unmute"></button></div>
+    <div class="rc-box"><div class="rc-bg">${a.thumb(r.media) ? `<img src="${esc(a.thumb(r.media))}" alt="">` : ''}</div><div class="rc-media"></div>${a.platBadge ? a.platBadge(r.media, 'card') : ''}${a.nsfwBadge ? a.nsfwBadge(r.media) : ''}<button type="button" class="rc-mute rc-mute-s" data-a="mute" aria-label="Unmute"></button></div>
     <div class="rc-head">
       <div class="rc-tx"><div class="rc-t">${esc(roomTitle(r))}</div><div class="rc-s">${esc(provider(r))}</div><div class="rc-st"><span class="rc-state"></span><span class="rc-priv">${privSvg(r.privacy, 15)}<span>${esc(pv)}</span></span></div></div>
       <div class="rc-acts">
