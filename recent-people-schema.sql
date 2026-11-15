@@ -20,7 +20,8 @@ drop policy if exists recent_people_own_select on public.recent_people;
 create policy recent_people_own_select on public.recent_people for select to authenticated using (user_id = auth.uid());
 drop policy if exists recent_people_own_delete on public.recent_people;
 create policy recent_people_own_delete on public.recent_people for delete to authenticated using (user_id = auth.uid());
-revoke insert, update on public.recent_people from public, anon, authenticated;
+revoke all on public.recent_people from public, anon, authenticated;
+grant select, delete on public.recent_people to authenticated;   -- without this grant the app gets 'permission denied'
 
 create or replace function public._recent_touch() returns trigger
 language plpgsql security definer set search_path = public as $$

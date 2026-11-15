@@ -567,7 +567,7 @@
       ]);
       if (friendshipResult.error) throw friendshipResult.error;
       if (blockResult.error) throw blockResult.error;
-      const recentMissing = !!recentResult.error && /recent_people|relation|schema cache/i.test(recentResult.error.message || '');
+      const recentMissing = !!recentResult.error && /could not find the table|schema cache|does not exist|42P01/i.test(recentResult.error.message || '');
       if (recentResult.error && !recentMissing) throw recentResult.error;
       const recent = recentResult.error ? [] : (recentResult.data || []).filter(row => row.other_id !== U.id);
       const relationships = friendshipResult.data || [], blocked = blockResult.data || [];
