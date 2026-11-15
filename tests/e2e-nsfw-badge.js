@@ -85,7 +85,7 @@ let ok = 0, bad = 0; const t = async (n, f) => { try { await f(); ok++; console.
   });
   await t('badge sits top-right of the video box, same row as the platform icon, uses the uploaded NSFW image', async () => {
     const g = await page.evaluate(() => { const cv = document.querySelector('.room[data-rid="r1"] .cover'), a = cv.querySelector('.pbg:not(.nsfw)').getBoundingClientRect(), b = cv.querySelector('.pbg.nsfw').getBoundingClientRect(), c = cv.getBoundingClientRect();
-      return { sameTop: Math.abs(a.top - b.top) < 1, sameH: Math.abs(a.height - b.height) < 1, right: Math.round(c.right - b.right), left: Math.round(a.left - c.left), isRight: b.left > c.left + c.width / 2, src: cv.querySelector('.pbg.nsfw img').src.slice(0, 22), natW: cv.querySelector('.pbg.nsfw img').naturalWidth }; });
+      return { sameTop: Math.abs(a.top - b.top) < 1, sameH: Math.abs(a.height - b.height) < 1, right: Math.round(c.right - b.right), left: Math.round(a.left - c.left), isRight: b.right > c.left + c.width / 2, src: cv.querySelector('.pbg.nsfw img').src.slice(0, 22), natW: cv.querySelector('.pbg.nsfw img').naturalWidth }; });
     assert.ok(g.sameTop && g.sameH && g.isRight && g.right === 8 && g.left === 8 && g.src.startsWith('data:image/png') && g.natW === 192, JSON.stringify(g));
   });
   await t('badge survives a home re-render and a second visit uses the cache (no new server calls)', async () => {

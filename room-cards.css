@@ -121,11 +121,13 @@ html.rc-lock,html.rc-lock body{overflow:hidden}
 @media (prefers-reduced-motion:reduce){.rc-ov,.rc-sheet,.rc-vid,.rc-info,.rc-tip,.rc-mute,.room{transition:none!important}}
 
 /* platform icon (YouTube, X, Drive …) — the only platform mark shown on a video */
-.pbg{position:absolute;z-index:4;display:grid;place-items:center;width:34px;height:22px;background:#000d;border-radius:7px;box-shadow:0 1px 4px #0006;pointer-events:none}
-.pbg img{width:15px;height:15px;object-fit:contain}.pbg svg{width:15px;height:15px;color:#fff}
+/* v45: no background card / box behind the marks — the icon itself is drawn clean and uncropped, with a soft shadow that
+   follows the icon's shape so it stays readable on bright and dark thumbnails alike. */
+.pbg{position:absolute;z-index:4;display:flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;background:none;border:0;border-radius:0;box-shadow:none;overflow:visible;line-height:0;pointer-events:none}
+.pbg img,.pbg svg{display:block;width:26px;height:26px;max-width:none;object-fit:contain;color:#fff;filter:drop-shadow(0 0 1px #000c) drop-shadow(0 1px 3px #000b)}
 .room .cover .pbg.card,.rc-vid .pbg.card{left:8px;top:8px;right:auto}
-.rc-box .pbg.card{left:12px;top:12px;width:38px;height:24px;border-radius:8px}
-.rc-box .pbg.card img,.rc-box .pbg.card svg{width:17px;height:17px}
+.rc-box .pbg.card{left:12px;top:12px;width:30px;height:30px}
+.rc-box .pbg.card img,.rc-box .pbg.card svg{width:30px;height:30px}
 
 /* v3: every member row has the same 48px avatar slot, so the host's ring/crown never pushes the name sideways */
 .rc-m .uav{width:48px;height:48px;display:grid;place-items:center;padding:0;border-radius:50%}
@@ -135,7 +137,7 @@ html.rc-lock,html.rc-lock body{overflow:hidden}
 
 /* NSFW mark (white wordmark): right side of the video box, same top row and height as the platform icon.
    Home cards only — the room itself never shows it. */
-.pbg.nsfw{left:auto;right:8px;top:8px;width:52px;height:22px}
-.pbg.nsfw img{width:40px;height:auto;object-fit:contain}
-.rc-box .pbg.nsfw{right:12px;top:12px;left:auto;width:58px;height:24px;border-radius:8px}
-.rc-box .pbg.nsfw img{width:45px}
+.pbg.nsfw{left:auto;right:8px;top:8px;width:77px}
+.pbg.nsfw img{width:77px;height:18px;object-fit:contain}
+.rc-box .pbg.nsfw{right:12px;top:12px;left:auto;width:94px;height:30px}
+.rc-box .pbg.nsfw img{width:94px;height:22px}
