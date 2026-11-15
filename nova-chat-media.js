@@ -314,6 +314,7 @@
   function claimAudio(owner) {
     if (nowPlaying && nowPlaying !== owner && nowPlaying.pause) nowPlaying.pause();
     nowPlaying = owner;
+    if (owner && window.Nova && Nova.audio) Nova.audio.watch(owner);     /* Settings > Mute When Other Audio Plays: the room video yields while this plays */
   }
   const SPEEDS = [1, 1.5, 2];
 

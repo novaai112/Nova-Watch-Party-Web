@@ -318,3 +318,10 @@ body.nc-noscroll{overflow:hidden}
 .nc-grid.n1 .nc-tile.remote,.nc-grid.n1 .nc-tile.remote .nc-rmedia{max-width:min(270px,58vw)}
 .nc-grid.n1 .nc-tile{width:min(270px,58vw)}
 .nc-grid.n1 .nc-tile.remote{width:auto}
+
+/* ---- Translate / Original button under a message's text (inbox chat + room chat) ---- */
+.mt-btn,.mt-note{display:block;margin:3px 0 0;padding:3px 0;background:none;border:0;box-shadow:none;font:inherit;font-size:12.5px;line-height:1.3;font-weight:500;color:inherit;opacity:.55;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent;min-height:0;width:auto}
+.mt-btn:hover{opacity:.85;text-decoration:underline}
+.mt-btn:focus-visible{outline:2px solid currentColor;outline-offset:2px;border-radius:4px;opacity:.9}
+.mt-btn.busy,.mt-note{cursor:default;font-style:italic}
+.mt-btn.busy:hover{opacity:.55;text-decoration:none}

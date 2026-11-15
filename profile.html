@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Nova — My Account</title>
-<link rel="icon" href="7949.jpg" type="image/jpeg"><link rel="stylesheet" href="auth.css"><link rel="stylesheet" href="skeleton.css?v=1"><link rel="stylesheet" href="nova-location.css"><link rel="stylesheet" href="chat-pro.css?v=3">
+<link rel="icon" href="7949.jpg" type="image/jpeg"><link rel="stylesheet" href="auth.css"><link rel="stylesheet" href="skeleton.css?v=1"><link rel="stylesheet" href="nova-location.css"><link rel="stylesheet" href="chat-pro.css?v=4">
 <meta name="theme-color" content="#f4f4f2">
 <link rel="stylesheet" href="profile-watch.css?v=3"><link rel="stylesheet" href="nova-bubbles.css?v=1"><script src="theme.js"></script>
 <script src="translator.js"></script>
@@ -381,7 +381,7 @@ body.message-page-active.message-chat-active:not(.message-thread-active) .chat-v
 }
 </style></head><body><div id="nova-auth-check" class="sk" role="status" aria-live="polite"><div class="sk-splash" aria-hidden="true"><div class="sk-top"><i class="skl"></i><i class="skl brand"></i><i class="skl"></i></div><i class="skl search"></i><i class="skl ln w3" style="height:20px"></i><div class="sk-wrap"><div class="sk-room"><i class="skl"></i><div class="sk-info"><i class="skl ln w4"></i><i class="skl ln w2"></i></div></div><div class="sk-room"><i class="skl"></i><div class="sk-info"><i class="skl ln w4"></i><i class="skl ln w2"></i></div></div></div></div><span class="sk-sr">Checking your sign-in…</span></div><div id="app"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="skeleton.js?v=1"></script><script src="config.js"></script><script src="/api/config"></script><script src="nova-core.js"></script><script src="nova-location.js"></script>
+<script src="skeleton.js?v=1"></script><script src="config.js"></script><script src="/api/config"></script><script src="nova-core.js?v=2"></script><script src="nova-location.js"></script>
 <script>
 const {sb,t,esc}=Nova,ic=Nova.ic,app=document.getElementById('app'),$=s=>document.querySelector(s);
 let U,P={},PD=null,REQ=[],PROFILE_RELATION=null,PLAN={pro:false,end:null},PREVIEW=false,NSFW=false,FAILED=null,FAIL_MSG='',RT=0,UN={ok:false,val:''};
@@ -631,6 +631,8 @@ document.addEventListener('change',async e=>{const x=e.target;
   if(await ask('Verify you are 18+','To show mature content we first need a quick live face check (about 30 seconds, one time only). Until it succeeds, mature content stays hidden.','Start verification',false))NOVA_EXIT('age-verify.html?next='+encodeURIComponent('profile.html#settings'));
   return}
  await Nova.set(k,x.checked);
+ if(k==='floating'&&x.checked&&!Nova.pip.supported())Nova.toast('This browser has no floating video support. The setting is saved for browsers that do.','err');
+ if(k==='mute'&&x.checked&&!navigator.audioSession)Nova.toast('Saved. This browser cannot see other apps, so Nova mutes its video while other Nova audio plays.');
  if(k==='hideLoc'&&!x.checked&&Nova.geo)Nova.geo.onUnhide()});
 window.addEventListener('hashchange',()=>{route();scrollTo(0,0)});
 DESK.addEventListener?DESK.addEventListener('change',()=>route()):DESK.addListener(()=>route());
@@ -642,7 +644,7 @@ const boot=async()=>{app.innerHTML=skel();
  try{await loadP()}catch(er){app.innerHTML='<div class="card pad"><p>We could not load your profile. Check your connection and try again.</p><button class="btn pri" onclick="location.reload()">Try again</button></div>';return}
  route()};
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',boot):boot();
-</script><script src="nova-bubbles.js?v=2"></script><script src="nova-profile.js?v=9"></script><script src="profile-watch.js?v=2"></script><script src="profile-embed.js"></script><script src="nova-chat-rich.js?v=1"></script><script src="nova-chat-media.js?v=1"></script><script src="nova-chat-capture.js?v=1"></script><script src="nova-chat-picker.js?v=1"></script><script src="nova-chat.js?v=20"></script><script src="nova-chat-sheets.js?v=1"></script><script src="mobile-navigation.js?v=2"></script>
+</script><script src="nova-bubbles.js?v=2"></script><script src="nova-profile.js?v=9"></script><script src="profile-watch.js?v=2"></script><script src="profile-embed.js"></script><script src="nova-chat-rich.js?v=1"></script><script src="nova-chat-media.js?v=1"></script><script src="nova-chat-capture.js?v=1"></script><script src="nova-chat-picker.js?v=1"></script><script src="nova-chat.js?v=21"></script><script src="nova-chat-sheets.js?v=2"></script><script src="mobile-navigation.js?v=2"></script>
 <input type="file" id="avf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" hidden>
 <input type="file" id="gf" accept="image/jpeg,image/png,image/webp,image/gif,image/heic" multiple hidden>
 </body></html>

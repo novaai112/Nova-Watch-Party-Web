@@ -11,7 +11,7 @@
     en: { settings:'Settings', social:'Social', language:'Language', support:'Support', notification:'Notification', mydata:'My Data', terms:'Terms & Condition', acct:'Accounts & subscription', profile:'Profile',
       quick:'Quick Reaction', quickd:'Change your double-tap reaction to chat messages',
       mature:'Hide Mature Content', matured:'Do not display explicit content', haptic:'Haptic Feedback', hapticd:'Vibrate in response to taps and actions',
-      floating:'Floating Video Player', floatingd:'Allows videos to be played outside the app', translate:'Auto-translate Chat Messages', translated:'Auto-translate chat messages that do not match your language',
+      floating:'Floating Video Player', floatingd:'Allows videos to be played outside the app', translate:'Auto-translate Chat Messages', translated:'Automatically show chat messages in English, in room and inbox chats',
       mute:'Mute When Other Audio Plays', muted:'Mute audio when another app plays sound, though your device may mute it automatically during calls', hideloc:'Hide Location', hidelocd:'Hides your city, state and map location. Your country flag stays visible',
       privacy:'Privacy', contact:'Contact us', delete:'Delete Account', signout:'Sign out', save:'Save', cancel:'Cancel', no:'NO', yes:'YES', bio:'Bio', gallery:'Gallery', stats:'Stats', friends:'Friends', joined:'Join Date', socials:'Socials', soon:'Nothing here yet.',
       privpol:'Privacy Policy', datapol:'Data Policy', tos:'Terms of Service', noshare:'Do not share my data with third parties' },
@@ -96,7 +96,8 @@
     t(k) { return T.en[k] || k; },
     async set(k, v) {
       if (k === 'hideMature' && v === false && !Nova.maturityVerified && !Nova._allowUnhide) return;   // server also enforces this
-      Nova.S[k] = v; localStorage.setItem('nova_settings', JSON.stringify(Nova.S));
+      Nova.S[k] = v; try { localStorage.setItem('nova_settings', JSON.stringify(Nova.S)); } catch (_) {}
+      announce(k);
       const { data } = await Nova.sb.auth.getSession();
       if (data.session) await Nova.sb.from('profiles').update({ settings: Nova.S }).eq('id', data.session.user.id);
     },
@@ -107,20 +108,15 @@
       if (data && data.settings) { Nova.S = { ...DEF, ...data.settings }; }
       if (!Nova.maturityVerified) Nova.S.hideMature = true;          // unverified accounts never show mature content
       localStorage.setItem('nova_settings', JSON.stringify(Nova.S));
+      announce('*');
     },
+    /* the emoji used by double-tap on a chat message (Settings > Quick Reaction); always a usable emoji */
+    quick() { const q = String(Nova.S.quick || '').trim(); return q && q.length <= 16 ? q : DEF.quick; },
     haptic() { if (Nova.S.haptic && navigator.vibrate) navigator.vibrate(15); },
-    // Use for every incoming chat message: returns English text if auto-translate is ON and message isn't English.
-    async tr(text) {
-      if (!Nova.S.translate || !text) return text;
-      try {
-        const r = await fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=' + encodeURIComponent(text));
-        const j = await r.json(); return j[2] && j[2] !== 'en' ? j[0].map(x => x[0]).join('') : text;
-      } catch { return text; }
-    },
-    // Floating player + mute rule: call from your player page.
-    audioRule(video) {
-      document.addEventListener('visibilitychange', () => { if (document.hidden && Nova.S.mute && video) video.muted = true; else if (video) video.muted = false; });
-    },
+    // Translate any text to English (kept for older callers): the English text, or the original when it is already English / cannot be translated.
+    async tr(text) { if (!text) return text; try { const r = await Nova.mt.translate(text); return r && !r.same ? r.text : text; } catch { return text; } },
+    // Kept for older pages: registers a <video>/<audio> with the shared audio rule + floating player.
+    audioRule(video) { if (video) { Nova.audio.element(video); Nova.pip.attach(video); } },
     applyLang() {
       document.documentElement.lang = Nova.S.lang;
       document.querySelectorAll('[data-i18n]').forEach(e => e.textContent = Nova.t(e.dataset.i18n));
@@ -128,6 +124,122 @@
     },
     esc: s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]))
   };
+
+  /* a setting changed (this tab, another tab, or pulled from the server): tell the modules that depend on it */
+  function announce(key) { try { document.dispatchEvent(new CustomEvent('nova:setting', { detail: { key } })); } catch (_) {} }
+  window.addEventListener('storage', e => {
+    if (e.key !== 'nova_settings' || !e.newValue) return;
+    try { Nova.S = { ...DEF, ...JSON.parse(e.newValue), hideMature: Nova.S.hideMature }; announce('*'); } catch (_) {}
+  });
+
+  /* ---------- Settings > "Mute When Other Audio Plays" ----------
+     Browsers cannot hear other apps, so the rule listens to what a page CAN know:
+       · the operating system took the audio session away (call, another app, Siri…) - navigator.audioSession
+       · another sound inside Nova starts (voice note, audio file, video message in chat) - Nova.audio.watch()
+     While such a "hold" is active and the setting is ON, every registered sink (the room video, ...) is muted;
+     when the last hold ends the sink goes back to how the person had it. A person who un-mutes by hand during
+     a hold keeps their choice until the next one. Setting OFF releases everything at once. */
+  const AU = Nova.audio = {
+    holds: new Set(), sinks: new Set(),
+    active() { return !!Nova.S.mute && AU.holds.size > 0; },
+    /* sink = { get(): boolean muted, set(boolean) } ; returns an unregister function */
+    sink(sink) {
+      const s = { ducked: false, prev: false, get: sink.get, set: sink.set };
+      AU.sinks.add(s); AU.apply();
+      return () => { AU.sinks.delete(s); if (s.ducked) { s.ducked = false; if (!s.prev) { try { s.set(false); } catch (_) {} } } };
+    },
+    /* a media element as a sink; a manual un-mute during a hold is respected */
+    element(el) {
+      if (!el || el._novaAudio) return el && el._novaAudio;
+      let own = false;
+      const sink = { get: () => el.muted, set: m => { own = true; try { el.muted = m; } finally { own = false; } } };
+      const off = AU.sink(sink), s = [...AU.sinks].pop();
+      el.addEventListener('volumechange', () => { if (!own && s && s.ducked && !el.muted) s.ducked = false; });
+      el._novaAudio = off; return off;
+    },
+    hold(reason) { AU.holds.add(reason); AU.apply(); },
+    release(reason) { AU.holds.delete(reason); AU.apply(); },
+    apply() {
+      const want = AU.active();
+      AU.sinks.forEach(s => {
+        try {
+          if (want && !s.ducked) { s.prev = !!s.get(); s.ducked = true; if (!s.prev) s.set(true); }
+          else if (!want && s.ducked) { s.ducked = false; if (!s.prev && s.get()) s.set(false); }
+        } catch (_) {}
+      });
+    },
+    /* an in-app sound source (voice note, audio, video message): holds while it plays */
+    watch(el, reason) {
+      if (!el || el._novaWatch) return; el._novaWatch = 1;
+      const key = reason || 'media:' + Math.random().toString(36).slice(2);
+      const on = () => { if (!el.muted && el.volume > 0) AU.hold(key); };
+      const off = () => AU.release(key);
+      el.addEventListener('playing', on); el.addEventListener('volumechange', () => (el.paused || el.muted ? off() : on()));
+      ['pause', 'ended', 'emptied', 'error', 'abort'].forEach(n => el.addEventListener(n, off));
+      if (!el.paused) on();
+    }
+  };
+  document.addEventListener('nova:setting', e => { if (e.detail && (e.detail.key === 'mute' || e.detail.key === '*')) AU.apply(); });
+  /* the OS reports that another app / a call took the audio output */
+  (function systemAudio() {
+    const s = navigator.audioSession; if (!s || !s.addEventListener) return;
+    const on = () => { if (s.state === 'interrupted') AU.hold('system'); else AU.release('system'); };
+    try { s.addEventListener('statechange', on); on(); } catch (_) {}
+  })();
+
+  /* ---------- Settings > "Floating Video Player" (Picture-in-Picture) ----------
+     ON: a playing <video> floats over other apps when the person leaves the page (where the browser allows it)
+         and the room player shows a Floating player button.
+     OFF: the browser's own PiP button is disabled, auto-float is off, and an open floating window is closed.
+     Players that live in an iframe (YouTube, embedded pages) are the site's own player: the browser exposes no
+     PiP for those, so only direct / stream videos can float. */
+  const PIP = Nova.pip = {
+    vids: new Set(),
+    supported() { return !!(document.pictureInPictureEnabled && HTMLVideoElement.prototype.requestPictureInPicture); },
+    enabled() { return Nova.S.floating !== false && PIP.supported(); },
+    canFloat(v) { return !!v && PIP.enabled() && v.readyState >= 1 && !v.disablePictureInPicture; },
+    active() { return document.pictureInPictureElement || null; },
+    async enter(v) {
+      if (!PIP.canFloat(v)) return false;
+      if (document.pictureInPictureElement === v) return true;
+      try { await v.requestPictureInPicture(); return true; } catch (_) { return false; }
+    },
+    async exit() { if (document.pictureInPictureElement) { try { await document.exitPictureInPicture(); } catch (_) {} } },
+    async toggle(v) {
+      if (document.pictureInPictureElement === v) { await PIP.exit(); return false; }
+      return PIP.enter(v);
+    },
+    paint(v) {
+      const on = PIP.enabled();
+      v.disablePictureInPicture = !on;
+      if (on) v.setAttribute('autopictureinpicture', ''); else v.removeAttribute('autopictureinpicture');
+      try { v.autoPictureInPicture = on; } catch (_) {}
+    },
+    attach(v) {
+      if (!v || v._novaPip) return; v._novaPip = 1; PIP.vids.add(v); PIP.paint(v);
+      v.addEventListener('enterpictureinpicture', () => document.dispatchEvent(new CustomEvent('nova:pip', { detail: { on: true, video: v } })));
+      v.addEventListener('leavepictureinpicture', () => document.dispatchEvent(new CustomEvent('nova:pip', { detail: { on: false, video: v } })));
+      PIP.sessionHandler();
+    },
+    detach(v) { PIP.vids.delete(v); if (v) { v._novaPip = 0; } if (document.pictureInPictureElement === v) PIP.exit(); },
+    current() { return [...PIP.vids].find(v => v.isConnected && !v.paused && !v.ended) || null; },
+    /* Chromium: the media-session action lets the browser float a playing video the moment the tab is left */
+    sessionHandler() {
+      if (!('mediaSession' in navigator)) return;
+      try { navigator.mediaSession.setActionHandler('enterpictureinpicture', PIP.enabled() ? () => { const v = PIP.current(); if (v) PIP.enter(v); } : null); } catch (_) {}
+    }
+  };
+  document.addEventListener('nova:setting', e => {
+    if (!e.detail || (e.detail.key !== 'floating' && e.detail.key !== '*')) return;
+    PIP.vids.forEach(PIP.paint); PIP.sessionHandler();
+    if (!PIP.enabled()) PIP.exit();
+  });
+  /* fallback for browsers without the media-session action: float on leaving the page (needs recent user activity, so it may be refused - that is fine) */
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden || !PIP.enabled() || document.pictureInPictureElement) return;
+    const v = PIP.current(); if (v) PIP.enter(v);
+  });
+
   /* ---------- shared UI helpers (icons, avatar, toast, socials, username, image tools) ---------- */
   const P_ = {
     search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>',
@@ -274,5 +386,209 @@
   };
 
   document.addEventListener('click', () => Nova.haptic(), true);
+
+  /* ---------- Message translation (room chat + inbox chat) -> English ----------
+     Every incoming text message gets a small dim "Translate" button under its text. Tap = the message is shown
+     in English and the button becomes "Original"; tap "Original" = the sender's own words and the button is
+     "Translate" again. With Auto-translate ON (Settings, room settings, inbox chat settings) every incoming
+     message is shown in English by itself; "Original" still works per message and is remembered.
+     Any language is accepted (source auto-detected). Romanised Hindi ("Hinglish") is translated with the source
+     forced to Hindi. Links, @mentions, e-mails and `code` are never translated. Long text is split at sentence
+     ends. Results are cached for the session. Own messages, emoji/number/link-only messages and messages that
+     are already English get no button. */
+  Nova.mt = (function () {
+    const PROTECT = /(https?:\/\/\S+|www\.\S+|[\w.+-]+@[\w-]+\.[\w.-]+|@[\w.]{2,32}|`[^`]*`)/g;
+    const CHUNK = 450, MAXLEN = 5000;
+    const EN = new Set(('the a an is are was were be been am i you he she it we they me my your his her our their this that these those and or but not no yes of to in on at for with from by as if so do does did have has had will would can could should what when where who why how all just now then there here very too also up out about over one two like really think know see get got go going want need let make good great nice please thanks thank ok okay hi hello hey bye lol haha omg wow cool bro sure yeah yep nope fine well oh uh um hmm tonight today tomorrow again more much some any only still than them him us its dont cant wont im ive id ill thats whats lets watch video movie room song play').split(' '));
+    const HI = new Set(('hai hain hoon hu ho tha thi the nahi nahin ni na kya kyu kyun kyon kyunki kynki kyuki kaise kaisa kaisi kaun kab kahan kahaan kitna kitni mera meri mere tera teri tere tum tumhara tumhari apna apni apne hum humara mujhe mujhko tujhe tujhko usse usko unko isko aap aapko main mai maine tune usne hamne bhai yaar yar dost bhaiya didi beta bete beti accha acha achha theek thik bahut bohot bahot bhot abhi kal aaj raat subah jaldi chal chalo aaja aao jao ja ata aati rahe rahi raha karo kar karna karta karti kiya kiye kuch koi sab sabko woh wo yeh ye isliye lekin par magar aur ya toh tho bas phir fir sirf bilkul zyada jyada kam bol bolo bata batao dekh dekho suno sun samajh pata maloom mat chahiye chahta chahti milega milegi milenge hoga hogi honge sakta sakti paisa ghar baap maa mummy papa behen bhen pe se ko ke ki ka mein ne').split(' '));
+    // words that are also normal English: do not count them as Hindi evidence on their own
+    const HI_AMBIG = new Set(['the', 'tha', 'ho', 'ja', 'ata', 'par', 'bas', 'na', 'ya', 'toh', 'ye', 'kar', 'sab', 'ki', 'ka', 'ke', 'ko', 'se', 'ne', 'pe', 'main', 'mai', 'hum', 'mat', 'bol', 'sun', 'chal', 'ni', 'ab', 'to', 'hi', 'me']);
+    const strip = t => String(t == null ? '' : t).replace(PROTECT, ' ').replace(/\p{Extended_Pictographic}|[\uFE0F\u200D]/gu, ' ');
+    const words = t => String(t).toLowerCase().match(/[a-z']+/g) || [];
+    const ascii = t => !/[^\x00-\x7F\u2018\u2019\u201c\u201d\u2026\u2013\u2014]/.test(t);
+    const eligible = text => /\p{L}/u.test(strip(text));
+    const hinglish = text => {
+      const t = strip(text); if (!ascii(t)) return false;
+      const w = words(t); if (!w.length) return false;
+      const strong = w.filter(x => HI.has(x) && !HI_AMBIG.has(x)).length, any = w.filter(x => HI.has(x)).length;
+      return strong >= 2 || (strong >= 1 && any >= 2) || (strong === 1 && w.length <= 2) || (any >= 3 && any / w.length >= .4);
+    };
+    const enRatio = w => w.length ? w.filter(x => EN.has(x)).length / w.length : 0;
+    const likelyEnglish = text => {
+      const t = strip(text); if (!ascii(t) || hinglish(t)) return false;
+      const w = words(t); if (!w.length) return false;
+      if (w.length < 4) return w.some(x => EN.has(x));      // short ASCII text: one common English word is enough
+      return enRatio(w) >= .34;
+    };
+    const norm = s => String(s).toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, ' ').trim();
+
+    /* ---- network: Google (gtx) -> MyMemory fallback, small concurrency limit ---- */
+    let active = 0; const waiting = [];
+    const slot = () => new Promise(res => { const go = () => { active++; res(); }; active < 4 ? go() : waiting.push(go); });
+    const free = () => { active--; const n = waiting.shift(); if (n) n(); };
+    const getJSON = async url => { const r = await fetch(url); if (!r.ok) throw new Error('http ' + r.status); return r.json(); };
+    async function gtx(q, sl) {
+      const j = await getJSON('https://translate.googleapis.com/translate_a/single?client=gtx&sl=' + sl + '&tl=en&dt=t&q=' + encodeURIComponent(q));
+      if (!Array.isArray(j) || !Array.isArray(j[0])) throw new Error('shape');
+      return { text: j[0].map(x => (x && x[0]) || '').join(''), src: String(j[2] || sl) };
+    }
+    async function memory(q, sl) {
+      let out = '';
+      for (const part of q.match(/[\s\S]{1,140}/g) || []) {          // MyMemory limit is 500 bytes: stay far below it
+        const j = await getJSON('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(part) + '&langpair=' + (sl === 'auto' ? 'Autodetect' : sl) + '|en');
+        const t = j && j.responseData && j.responseData.translatedText;
+        if (!t || /INVALID|QUERY LENGTH|MYMEMORY WARNING|PLEASE SELECT/i.test(t)) throw new Error('mm');
+        out += t;
+      }
+      return { text: out, src: 'und' };
+    }
+    async function piece(q, sl) {
+      await slot();
+      try {
+        try { return await gtx(q, sl); }
+        catch (_) { try { return await gtx(q, sl); } catch (__) { return await memory(q, sl); } }
+      } finally { free(); }
+    }
+
+    /* ---- split a message into translatable pieces; links/mentions/e-mails/code and blank lines stay untouched ---- */
+    function sentences(line) {
+      if (line.length <= CHUNK) return [line];
+      const out = []; let cur = '';
+      for (const s of line.match(/[^.!?\u0964\u0965\u2026]+[.!?\u0964\u0965\u2026]*\s*|\s+/g) || [line]) {
+        if (cur && (cur + s).length > CHUNK) { out.push(cur); cur = ''; }
+        if (s.length > CHUNK) { for (let i = 0; i < s.length; i += CHUNK) out.push(s.slice(i, i + CHUNK)); } else cur += s;
+      }
+      if (cur) out.push(cur);
+      return out;
+    }
+    function plan(text) {
+      const out = [];
+      String(text).slice(0, MAXLEN).split(PROTECT).forEach((seg, i) => {
+        if (i % 2) return out.push(seg);
+        seg.split(/(\n+)/).forEach((line, j) => {
+          if (j % 2 || !/\p{L}/u.test(line)) return out.push(line);
+          sentences(line).forEach(ch => {
+            if (!/\p{L}/u.test(ch)) return out.push(ch);
+            const lead = ch.match(/^\s*/)[0], trail = ch.slice(lead.length).match(/\s*$/)[0];
+            out.push({ q: ch.trim(), lead, trail });
+          });
+        });
+      });
+      return out;
+    }
+    async function pass(parts, sl) {
+      const jobs = parts.filter(p => typeof p === 'object');
+      const res = await Promise.all(jobs.map(j => piece(j.q, sl)));
+      const srcs = res.map(r => r.src.split('-')[0].toLowerCase());
+      let k = 0;
+      const text = parts.map(p => { if (typeof p === 'string') return p; const r = res[k++]; return p.lead + r.text.trim() + p.trail; }).join('');
+      return { text, srcs };
+    }
+    async function run(original) {
+      const text = String(original), parts = plan(text); if (!parts.some(p => typeof p === 'object')) return { text, src: 'und', same: true };
+      const hing = hinglish(text);
+      let r = await pass(parts, hing ? 'hi' : 'auto');
+      // Latin-script text that Google called English but is clearly not English (unlisted Hinglish): try again as Hindi
+      const t = strip(text), w = words(t);
+      if (!hing && r.srcs.every(s => s === 'en' || s === 'und') && ascii(t) && w.length >= 3 && enRatio(w) < .2) {
+        try { const h = await pass(parts, 'hi'); if (norm(h.text) !== norm(text)) r = { text: h.text, srcs: ['hi'] }; } catch (_) {}
+      }
+      const allEn = r.srcs.every(s => s === 'en');
+      const same = allEn || norm(r.text) === norm(text);
+      const src = r.srcs.find(s => s !== 'en' && s !== 'und') || r.srcs[0] || 'und';
+      return { text: same ? text : r.text, src, same };
+    }
+    const cache = new Map();
+    function translate(text) {
+      const key = String(text);
+      if (!cache.has(key)) {
+        if (cache.size > 600) cache.delete(cache.keys().next().value);
+        const p = run(key); cache.set(key, p); p.catch(() => cache.get(key) === p && cache.delete(key));
+      }
+      return cache.get(key);
+    }
+
+    /* ---- per-message state shared by the room chat and the inbox chat ---- */
+    const hosts = {}, entries = new Map(), dirty = new Set();
+    const K = (h, id) => h + ':' + id;
+    const E = (h, id, body) => { const e = entries.get(K(h, id)); if (!e) return null; if (e.body !== String(body || '')) { entries.delete(K(h, id)); return null; } return e; };
+    function paint(h) {
+      dirty.add(h); if (paint.t) return;
+      paint.t = requestAnimationFrame(() => { paint.t = 0; const hs = [...dirty]; dirty.clear(); hs.forEach(x => { try { hosts[x] && hosts[x].rerender(); } catch (_) {} }); });
+    }
+    function make(h, id, body, state) { const e = { body: String(body || ''), state, text: '', src: '', pref: null, manual: false, failed: false }; entries.set(K(h, id), e); return e; }
+    function start(h, id, body, manual) {
+      let e = E(h, id, body) || make(h, id, body, 'idle');
+      if (manual) e.manual = true;
+      if (e.state !== 'idle') return e;
+      e.state = 'loading'; e.failed = false; paint(h);
+      translate(e.body).then(r => {
+        if (entries.get(K(h, id)) !== e) return;
+        if (r.same) {
+          if (e.manual) { e.state = 'same'; setTimeout(() => { if (entries.get(K(h, id)) === e && e.state === 'same') { e.state = 'english'; paint(h); } }, 2600); }
+          else e.state = 'english';
+        } else { e.state = 'done'; e.text = r.text; e.src = r.src; }
+        paint(h);
+      }).catch(() => {
+        if (entries.get(K(h, id)) !== e) return;
+        e.state = 'idle'; e.failed = true;
+        if (e.manual) { e.pref = null; e.manual = false; if (Nova.toast) Nova.toast('Translation is unavailable right now. Check your connection and try again.', 'err'); }
+        paint(h);
+      });
+      return e;
+    }
+    const shown = (h, id, body) => {
+      const e = E(h, id, body); if (!e || e.state !== 'done') return false;
+      return e.pref === 'tr' ? true : e.pref === 'orig' ? false : !!Nova.S.translate;
+    };
+    const text = (h, id, body) => { const e = E(h, id, body); return shown(h, id, body) ? e.text : String(body == null ? '' : body); };
+    /* called while rendering an incoming message: starts the background translation when Auto-translate is ON */
+    function auto(h, id, body, mine) {
+      if (mine || !Nova.S.translate || !body || !eligible(body) || E(h, id, body)) return;
+      if (likelyEnglish(body)) return void make(h, id, body, 'english');
+      start(h, id, body, false);
+    }
+    function act(h, id, body, what) {
+      if (!body || !eligible(body)) return;
+      const e = E(h, id, body) || make(h, id, body, 'idle');
+      if (what === 'orig') { e.pref = 'orig'; return paint(h); }
+      if (e.state === 'loading' || e.state === 'same') return;
+      e.pref = 'tr'; e.manual = true;
+      if (e.state === 'english') { e.state = 'idle'; }          // the user insists: ask the translator anyway
+      if (e.state === 'done') return paint(h);
+      start(h, id, body, true);
+    }
+    function button(h, id, body, mine) {
+      if (mine || !body || !eligible(body)) return '';
+      const e = E(h, id, body), a = `data-mt-h="${Nova.esc(h)}" data-mt-id="${Nova.esc(id)}"`;
+      if (e && e.state === 'english') return '';
+      if (!e && likelyEnglish(body)) return '';
+      if (e && e.state === 'same') return '<span class="mt-note" role="status">Already in English</span>';
+      if (e && e.state === 'loading') return `<button type="button" class="mt-btn busy" disabled aria-busy="true">Translating…</button>`;
+      const on = shown(h, id, body);
+      return `<button type="button" class="mt-btn" ${a} data-mt-act="${on ? 'orig' : 'tr'}" aria-label="${on ? 'Show original message' : 'Translate message to English'}">${on ? 'Original' : 'Translate'}</button>`;
+    }
+    /* a chat registers itself: rerender() redraws its messages; items() lists its incoming-capable messages */
+    function host(name, h) { hosts[name] = h; }
+    function sweep() {
+      Object.keys(hosts).forEach(h => {
+        let list = []; try { list = hosts[h].items() || []; } catch (_) {}
+        if (Nova.S.translate) list.slice(-80).forEach(it => {
+          const e = E(h, it.id, it.body);
+          if (e && e.failed && e.state === 'idle') start(h, it.id, it.body, false); else auto(h, it.id, it.body, it.mine);
+        });
+        paint(h);
+      });
+    }
+    document.addEventListener('nova:setting', ev => { const k = ev.detail && ev.detail.key; if (k === 'translate' || k === '*') sweep(); });
+    document.addEventListener('click', ev => {
+      const b = ev.target && ev.target.closest && ev.target.closest('.mt-btn[data-mt-act]'); if (!b) return;
+      ev.preventDefault(); ev.stopPropagation();
+      const h = b.dataset.mtH, id = b.dataset.mtId; let it = null;
+      try { it = (hosts[h] && hosts[h].items() || []).find(x => String(x.id) === String(id)); } catch (_) {}
+      if (it) act(h, it.id, it.body, b.dataset.mtAct);
+    }, true);
+    return { translate, eligible, likelyEnglish, hinglish, host, auto, text, shown, button, act };
+  })();
   window.Nova = Nova;
 })();

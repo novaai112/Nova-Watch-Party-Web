@@ -5,6 +5,6 @@ create table auth.users(id uuid primary key default gen_random_uuid(), email tex
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true),'')::uuid $$;
 grant usage on schema auth to anon, authenticated, public;
 create table public.friendships(user_id uuid, friend_id uuid, status text);
-create table public.profiles(id uuid primary key, full_name text, username text, avatar_url text, country_code text, city text, region text, location_lat float8, location_lng float8);
+create table public.profiles(id uuid primary key, settings jsonb, maturity_verified boolean not null default false, full_name text, username text, avatar_url text, country_code text, city text, region text, location_lat float8, location_lng float8);
 create view public.public_profiles as select * from public.profiles;
 create publication supabase_realtime;

@@ -93,16 +93,54 @@ function nsfwBadge(m) {
 }
 /* checks the videos on the home cards that the instant check could not decide (server look-up, 3 at a time) and
    adds the badge to the card as soon as one is found to be adult */
-let nsfwQ = [], nsfwBusy = 0;
+let nsfwQ = [], nsfwBusy = 0, nsfwDone = new Map(), homeT2 = 0;
+/* ---- Hide Mature Content ----
+   ON (the default, and always for accounts that have not passed the 18+ check): adult rooms are not listed anywhere
+   (Invited, Public, Nearby, Friends) and can not be entered by any route (card, link, invite, switching rooms, rejoin).
+   OFF: they are shown (with the NSFW mark) and can be entered. The server enforces the same rule (rooms-schema.sql), this is
+   the second layer that also covers what only the browser can tell (page rating, YouTube age limit, picture check). */
+const hidesMature = () => !(window.Nova && Nova.S && Nova.S.hideMature === false && Nova.maturityVerified);
+/* true = adult, null = still being checked (held back while Hide Mature is ON), false = fine */
+function matureState(m) {
+  if (!m || !window.NsfwDetect) return false;
+  const v = NsfwDetect.verdict(m);
+  if (v === true) return true;
+  if (v === false) return false;
+  return NsfwDetect.needsDeepCheck(m) && !nsfwDone.has(NsfwDetect.keyOf(m)) ? null : false;
+}
+/* the setting + the 18+ verification live on the account: pull them on load and every 30 s, so a change made on another device or
+   page applies here too. If they cannot be read, Hide Mature Content stays ON (safe default). */
+let matureAt = 0;
+async function syncMature(force) {
+  if (!window.Nova || !Nova.sync || !ME) return;
+  if (!force && Date.now() - matureAt < 30000) return;
+  matureAt = Date.now();
+  const before = hidesMature();
+  try { await Nova.sync(ME.id); } catch (e) {}
+  if (before !== hidesMature() && !R) renderHome();
+}
+const roomShown = r => !hidesMature() || matureState(r && r.media) === false;
+const visibleRooms = () => homeRooms.filter(roomShown);
+function scheduleHome() { clearTimeout(homeT2); homeT2 = setTimeout(() => { if (!R || dockOpen()) renderHome(); }, 120); }
+async function matureGate() {
+  const v = await gate({ icon: 'lock', title: 'Mature content is hidden', actions: [{ label: 'Open Settings', value: 'settings', primary: true }, { label: 'Close', value: 'close' }],
+    text: 'This Watch Party has 18+ content and Hide Mature Content is on. To join it, turn that setting off in Settings (a one-time 18+ check is needed).' });
+  if (v === 'settings') location.href = 'profile.html#settings';
+}
+/* adult videos are marked 18+ when somebody starts them, so every viewer's Hide Mature Content can act on the mark */
+const tagAdult = m => (m && !m.nsfw && window.NsfwDetect && NsfwDetect.verdict(m) === true) ? Object.assign({}, m, { nsfw: true }) : m;
 function nsfwScan() {
   if (!window.NsfwDetect) return;
   homeRooms.forEach(r => {
     const m = r.media; if (!m || NsfwDetect.verdict(m) !== null || !NsfwDetect.needsDeepCheck(m)) return;
-    const k = NsfwDetect.keyOf(m); if (nsfwQ.some(x => x.k === k)) return;
+    const k = NsfwDetect.keyOf(m); if (nsfwQ.some(x => x.k === k) || Date.now() - (nsfwDone.get(k) || 0) < 60000) return;
     nsfwQ.push({ k, m });
   });
   const pump = () => {
-    while (nsfwBusy < 3 && nsfwQ.length) { const j = nsfwQ.shift(); nsfwBusy++; NsfwDetect.resolve(j.m).finally(() => { nsfwBusy--; pump(); }); }
+    while (nsfwBusy < 3 && nsfwQ.length) {
+      const j = nsfwQ.shift(); nsfwBusy++;
+      NsfwDetect.resolve(j.m).finally(() => { nsfwBusy--; nsfwDone.set(j.k, Date.now()); if (hidesMature()) scheduleHome(); pump(); });
+    }
   };
   pump();
 }
@@ -114,12 +152,14 @@ function nsfwPaint() {
     else if (!want && has) has.remove();
   });
 }
-if (window.NsfwDetect) NsfwDetect.onFlag(nsfwPaint);
+if (window.NsfwDetect) NsfwDetect.onFlag(() => { nsfwPaint(); if (hidesMature()) scheduleHome(); });
 
 /* ---------- state ---------- */
 let ME = null, R = null, members = [], queue = [], msgs = [], prof = {}, ch = null;
 const typers = new Map();            /* user id -> { k: 'typing'|'uploading', until } */
 let hiddenMsgs = new Set(), typingAt = 0, typingKind = '';
+/* chat reactions: message id -> Map(user id -> emoji). reactOK turns false when room-reactions-schema.sql was not run yet */
+let reacts = new Map(), reactOK = true, reactCh = null, popNext = null;
 let rateAt = 0, skew = 0, skewSet = false, clockAt = 0, statsAt = 0, SY = null, syncRepaintT = 0, hbT = null, tickT = null, homeT = null, homeRooms = [], mountKey = '', advAt = 0, endedAt = 0, pubT = 0, pubAt = 0;
 let homeLoaded = false, homeLoading = false, homeLoadError = '', homeErrorNotified = '';
 let roomSchemaWarned = false, chSub = false;
@@ -282,6 +322,7 @@ function cleanup(keepShell) {
   clearTimeout(net.timer); net.down = false; net.n = 0; net.busy = false;
   clearInterval(hbT); clearInterval(tickT); hbT = tickT = null;
   if (ch) { try { sb.removeChannel(ch); } catch (e) {} ch = null; }
+  if (reactCh) { try { sb.removeChannel(reactCh); } catch (e) {} reactCh = null; } reacts = new Map();
   closeAllPeers(); stopMic();
   if (window.NovaRoomMedia) NovaRoomMedia.reset();
   clearInterval(vadT); vadT = null; vad.clear(); speak.clear(); micMap.clear();
@@ -356,11 +397,13 @@ async function loadMsgs() {
   }
   msgs = (data || []).reverse().filter(m => !hiddenGameNote(m));
   await loadProfiles(msgs.map(m => m.user_id));
+  await loadReacts();
   if (MEDIA()) MEDIA().sign(msgs).then(got => { if (got) renderFeed(); });
 }
 function subscribe() {
   const id = R.id; typers.clear();
   try { hiddenMsgs = new Set(JSON.parse(localStorage.getItem('nova_room_hide_' + id) || '[]')); } catch (e) { hiddenMsgs = new Set(); }
+  subscribeReacts(id);
   const c = ch = sb.channel('nova-room-' + id, { config: { broadcast: { self: false } } }); chSub = false;
   c
     .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: 'id=eq.' + id }, onRoom)
@@ -440,6 +483,7 @@ async function reconnect() {
     await restoreRoom();
   } catch (e) {
     net.busy = false;
+    if (R && e && e.hint === 'mature') { net.down = false; cleanup(); matureGate(); return; }
     if (R && /removed|closed/i.test(String(e && e.message))) return gone(e.message);
     if (net.down) scheduleReconnect();
     return;
@@ -480,7 +524,6 @@ const hiddenGameNote = m => !!m && m.kind === 'notice' && /^Game (paused|resumed
 function addMsg(m) {
   if (!R || !m || hiddenGameNote(m) || msgs.some(x => x.id === m.id)) return;
   msgs.push(m); if (typers.delete(m.user_id)) renderTyping();
-  if (Nova.S.translate && m.kind === 'chat') Nova.tr(m.body).then(t => { if (t !== m.body) { m.tr = t; renderFeed(); } });
   loadProfiles([m.user_id]).then(renderFeed);
   if (MEDIA() && Array.isArray(m.attachments) && m.attachments.length) MEDIA().sign([m]).then(got => { if (got) renderFeed(); });
 }
@@ -492,7 +535,7 @@ async function beat() {
     if (!d.member) {
       if (d.status === 'open') {
         try { const cp = cachedPos(), row = await rpc('join_room', { p_code: R.code, p_lat: cp ? cp.lat : null, p_lng: cp ? cp.lng : null }); R = row; await Promise.all([refreshMembers(), refreshQueue()]); }
-        catch (e) { gone(/removed/i.test(e.message) ? 'You were removed from the room' : e.message); }
+        catch (e) { if (e && e.hint === 'mature') { cleanup(); matureGate(); } else gone(/removed/i.test(e.message) ? 'You were removed from the room' : e.message); }
       } else gone('Room closed');
     } else if (d.admin_id && d.admin_id !== R.admin_id) await refreshRoom().then(() => { renderAll(); mountMedia(); });
   } catch (e) { if (R && isNetErr(e)) netDown(); }
@@ -659,6 +702,8 @@ function showCount(n) {
 }
 function sendRate() { if (ch && isAdmin()) { try { ch.send({ type: 'broadcast', event: 'rate', payload: { r: ui.rate } }); } catch (e) {} } }
 function destroyPlayer() {
+  try { if (P.offAudio) P.offAudio(); } catch (e) {}
+  try { if (P.video) { Nova.pip.detach(P.video); if (P.video._novaAudio) P.video._novaAudio = null; } } catch (e) {}
   try { if (P.yt) P.yt.destroy(); } catch (e) {}
   try { if (P.video && P.video._hls) P.video._hls.destroy(); } catch (e) {}
   try { if (P.video && P.video._novaWatch) P.video._novaWatch.stop(); } catch (e) {}
@@ -679,6 +724,7 @@ async function mountMedia() {
   destroyPlayer();
   const w = $('#vwrap'); if (!w) return;
   const m = R.media, adm = isAdmin();
+  guardMature();
   if (!m) { if (window.NovaPlayer) NovaPlayer.unmount(); w.insertAdjacentHTML('afterbegin', emptyHTML()); renderControls(); renderNow(); return; }
   const rk = mkey(m) + '|' + R.media_ver;
   if (ui.rateKey !== rk) { ui.rateKey = rk; ui.rate = 1; }
@@ -694,7 +740,7 @@ async function mountMedia() {
   if (m.kind === 'video') {
     if (!safeHttps(m.url)) return;
     const v = document.createElement('video');
-    v.playsInline = true; v.preload = 'auto'; v.controls = false; v.disablePictureInPicture = false;
+    v.playsInline = true; v.preload = 'auto'; v.controls = false;
     if (window.NovaNet) NovaNet.preconnect(m.provider === 'web' ? webStreamInfo(m).url : m.url);   /* open the connection to the video host now */
     if (m.provider === 'web') {
       const info = webStreamInfo(m);
@@ -735,6 +781,8 @@ async function mountMedia() {
     };
     v._retry = () => { if (retried) return false; retried = true; return onProxy ? false : flip(); };
     P.kind = 'video'; P.video = v;
+    P.offAudio = Nova.audio.element(v);      /* Settings > Mute When Other Audio Plays */
+    Nova.pip.attach(v);                       /* Settings > Floating Video Player */
     ['play', 'pause', 'seeked'].forEach(ev => v.addEventListener(ev, () => { if (isAdmin() && Date.now() > P.mute) publish(!v.paused, v.currentTime); updateTimeUI(); }));
     v.addEventListener('ended', () => { if (isAdmin()) ended(); });
     v.addEventListener('loadedmetadata', () => { P.ready = true; pl.vol(); pl.applyRate(); renderControls(); applyState(true); });
@@ -772,7 +820,7 @@ async function mountMedia() {
   P.yt = new YT.Player('ytp', {
     videoId: m.id || undefined, playerVars: vars,
     events: {
-      onReady: () => { if (key !== mountKey) return; P.ready = true; pl.vol(); pl.applyRate(); renderControls(); applyState(true); setTimeout(checkBlocked, 1800); },
+      onReady: () => { if (key !== mountKey) return; P.ready = true; P.offAudio = Nova.audio.sink({ get: () => { try { return !!(P.yt && P.yt.isMuted()); } catch (e) { return false; } }, set: m => { try { if (P.yt) m ? P.yt.mute() : P.yt.unMute(); } catch (e) {} } }); pl.vol(); pl.applyRate(); renderControls(); applyState(true); setTimeout(checkBlocked, 1800); },
       onStateChange: e => {
         const s = e.data;
         if (SY) SY.setBuffering(s === 3);                                   /* 3 = buffering */
@@ -1254,7 +1302,7 @@ function openSettings(refresh) {
     ${R.playback_mode === 'vote' ? group('Voting time', 'How long the vote stays open when a video ends', [12, 20, 30, 60].map(n => optBtn('votesec:' + n, 'check', n + ' s', (R.vote_seconds || 12) === n, !adm)).join('')) : ''}
     <section class="sg row"><span class="sgi">${ic(R.voice_enabled ? 'mic' : 'micoff', 18)}</span><div class="sgh"><b>Voice chat</b><small>${R.voice_enabled ? (R.privacy === 'public' ? 'Everyone can talk and listen' : 'Only admin-approved members can talk') : 'Microphones are off for everyone'}</small></div><input type="checkbox" class="sw" id="voicesw" ${R.voice_enabled ? 'checked' : ''} ${adm ? '' : 'disabled'} aria-label="Voice chat"></section>
     <section class="sg"><div class="sgh"><b>Volume</b><small>Balance between the video and voices</small></div><div class="vol">${ic('vol', 18)}<input type="range" id="volr" min="0" max="100" value="${ui.vol}" aria-label="Video and voice balance">${ic('phone', 18)}</div></section>
-    <section class="sg row"><span class="sgi">${ic('globe', 18)}</span><div class="sgh"><b>Auto-translate chat</b><small>Translate messages into your language</small></div><input type="checkbox" class="sw" id="trsw" ${Nova.S.translate ? 'checked' : ''} aria-label="Auto-translate chat"></section>`;
+    <section class="sg row"><span class="sgi">${ic('globe', 18)}</span><div class="sgh"><b>Auto-translate chat</b><small>Show every received message in English. Each message still has a Translate / Original button</small></div><input type="checkbox" class="sw" id="trsw" ${Nova.S.translate ? 'checked' : ''} aria-label="Auto-translate chat"></section>`;
   if (refresh && $('#rmodal')) $('#rmodal .mb').innerHTML = html; else sheet(html);
 }
 function renderSettings() {
@@ -1466,12 +1514,15 @@ function hl(html) {   /* wrap search matches (in already-escaped text) in <mark>
   const re = new RegExp(esc(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
   return html.split(/(<[^>]*>)/).map(x => x[0] === '<' ? x : x.replace(re, mm => `<mark>${mm}</mark>`)).join('');
 }
-function msgText(m) { return String(m.tr || m.body || ''); }
+/* chat translation (Translate / Original button + Auto-translate to English): the engine is Nova.mt in nova-core.js */
+if (Nova.mt) Nova.mt.host('room', { rerender: () => renderFeed(), items: () => msgs.filter(m => m.kind === 'chat' && m.body).map(m => ({ id: m.id, body: m.body, mine: !!ME && m.user_id === ME.id })) });
+function msgText(m) { return m.kind === 'chat' && Nova.mt ? Nova.mt.text('room', m.id, String(m.body || '')) : String(m.body || ''); }
 function msgHTML(m) {
   const u = who(m.user_id);
   if (m.kind === 'notice') return `<div class="nt" role="status"><span>${noticeIcon(m.body)}<em>${esc(m.body)}</em></span></div>`;
   if (m.kind === 'system') return `<div class="sy">${userAvatar(u, 24)}<span><b>${esc(nm(u))}</b> ${esc(m.body)}</span></div>`;
-  const me = m.user_id === ME.id, raw = msgText(m);
+  const me = m.user_id === ME.id; if (m.kind === 'chat' && m.body && Nova.mt) Nova.mt.auto('room', m.id, m.body, me);
+  const raw = msgText(m);
   const text = hl(esc(raw).replace(/@([\w.]{2,24})/g, (a, n) =>
     members.some(x => (who(x.user_id).username || '').toLowerCase() === n.toLowerCase()) ? `<span class="mn">${a}</span>` : a));
   const P = MEDIA() && Array.isArray(m.attachments) && m.attachments.length ? MEDIA().parts(m.attachments, m.id) : null;
@@ -1479,11 +1530,11 @@ function msgHTML(m) {
   const name = me ? '' : `<small>${esc(nm(u))}</small>`;
   const emo = !P && raw ? EOnly(raw) : 0, big = emo > 0 && emo <= 8;
   const hit = ui.q.trim() && raw.toLowerCase().includes(ui.q.trim().toLowerCase()) ? ' hit' : '';
-  const row = (inner, cls) => `<div class="cm${me ? ' me' : ''}${hit}" data-mid="${esc(m.id || '')}">${userAvatar(u, 32)}<div class="cb2 ${cls}">${name}${inner}</div></div>`;
+  const row = (inner, cls) => `<div class="cm${me ? ' me' : ''}${hit}" data-mid="${esc(m.id || '')}">${userAvatar(u, 32)}<div class="cb2 ${cls}">${name}${inner}${reactsHTML(m)}</div></div>`;
   /* big emoji only / a lone GIF or sticker: bare, no card, time beside it */
   if (big) return row(`<div class="rm-row"><p class="rm-emoji e${Math.min(emo, 3)}">${text}</p>${time}</div>`, 'bare');
   if (P && P.hasVisual && !P.hasOther && !raw) return row(`<div class="rm-row"><div class="rm-media">${P.visual}</div>${time}</div>`, 'bare' + (P.gifOnly ? ' gifonly' : ''));
-  const card = (raw || (P && P.hasOther)) ? `<div class="mcard${P && P.hasVisual ? ' after' : ''}">${P && P.hasOther ? `<div class="message-attachments">${P.other}</div>` : ''}${text ? `<p>${text}</p>` : ''}${time}</div>` : '';
+  const card = (raw || (P && P.hasOther)) ? `<div class="mcard${P && P.hasVisual ? ' after' : ''}">${P && P.hasOther ? `<div class="message-attachments">${P.other}</div>` : ''}${text ? `<p>${text}</p>${m.kind === 'chat' && m.body && Nova.mt ? Nova.mt.button('room', m.id, m.body, me) : ''}` : ''}${time}</div>` : '';
   const vis = P && P.hasVisual ? `<div class="rm-media">${P.visual}</div>` : '';
   return row(vis + card, vis ? 'bare' : 'card');
 }
@@ -1540,7 +1591,7 @@ function renderFeed() {
   items.forEach(i => { h += i.h; if (!done && i.sys) { done = true; h += cardsHTML(); } });
   if (!done) h += cardsHTML();
   if (!msgs.some(m => m.kind === 'chat' && !hiddenMsgs.has(m.id))) h += '<div class="fempty">No messages yet — say hi 👋</div>';
-  f.innerHTML = h;
+  f.innerHTML = h; popReact();
   if (ui.q.trim()) markCur(); else if (near || ui.first) { f.scrollTop = f.scrollHeight; ui.first = false; }
 }
 /* ---- typing indicator (broadcast on the room channel, like the inbox chat) ---- */
@@ -1566,7 +1617,7 @@ function renderTyping() {
 
 /* ---- message options: long-press / right-click ---- */
 function msgById(id) { return msgs.find(m => String(m.id) === String(id)); }
-function dropMsg(id) { if (!id) return; const n = msgs.length; msgs = msgs.filter(m => String(m.id) !== String(id)); if (msgs.length !== n) renderFeed(); }
+function dropMsg(id) { if (!id) return; reacts.delete(String(id)); const n = msgs.length; msgs = msgs.filter(m => String(m.id) !== String(id)); if (msgs.length !== n) renderFeed(); }
 function saveHidden() { try { localStorage.setItem('nova_room_hide_' + R.id, JSON.stringify([...hiddenMsgs].slice(-300))); } catch (e) {} }
 function copyText(t) {
   if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(t).then(() => true, () => false);
@@ -1574,6 +1625,78 @@ function copyText(t) {
   let ok = false; try { ok = document.execCommand('copy'); } catch (e) {} a.remove(); return Promise.resolve(ok);
 }
 function closeMsgMenu() { const o = $('#msgmenu'); if (o) o.remove(); }
+/* =====================================================================
+   CHAT REACTIONS — double-tap / long-press menu / chips. One reaction per person per message.
+   Double-tap uses Settings > Quick Reaction (Nova.quick()), the same emoji as the inbox chat.
+   ===================================================================== */
+const rKey = id => String(id);
+const NEED_REACT_SQL = 'Reactions need room-reactions-schema.sql to be run in Supabase once.';
+const reactMissing = e => /relation|does not exist|schema cache|could not find the table/i.test((e && e.message) || '');
+function setReact(mid, uid, emoji) {
+  const k = rKey(mid); let m = reacts.get(k);
+  if (!m) { if (!emoji) return; reacts.set(k, m = new Map()); }
+  if (emoji) m.set(uid, emoji); else m.delete(uid);
+  if (!m.size) reacts.delete(k);
+}
+const myReact = id => (reacts.get(rKey(id)) || new Map()).get(ME && ME.id) || null;
+async function loadReacts() {
+  reacts = new Map();
+  const ids = msgs.filter(m => m.kind === 'chat' && m.id != null).map(m => m.id);
+  if (!R || !ids.length) return;
+  const { data, error } = await sb.from('room_message_reactions').select('message_id,user_id,emoji').eq('room_id', R.id).in('message_id', ids);
+  if (error) { if (reactMissing(error)) reactOK = false; return; }
+  reactOK = true; (data || []).forEach(r => setReact(r.message_id, r.user_id, r.emoji));
+}
+/* its own realtime channel: if the table does not exist yet, only reactions are affected - chat, video and voice keep working */
+function subscribeReacts(id) {
+  if (reactCh) { try { sb.removeChannel(reactCh); } catch (e) {} reactCh = null; }
+  const T = 'room_message_reactions', up = p => { const r = p.new; if (!r || r.message_id == null) return; setReact(r.message_id, r.user_id, r.emoji); if (msgById(r.message_id)) renderFeed(); };
+  try {
+    reactCh = sb.channel('nova-room-react-' + id)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: T, filter: 'room_id=eq.' + id }, up)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: T, filter: 'room_id=eq.' + id }, up)
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: T }, p => {          /* DELETE cannot be filtered server-side: replica identity full gives us room_id */
+        const r = p.old; if (!r || r.message_id == null || (r.room_id && R && r.room_id !== R.id)) return;
+        if (r.user_id) setReact(r.message_id, r.user_id, null); else reacts.delete(rKey(r.message_id));
+        if (msgById(r.message_id)) renderFeed();
+      })
+      .subscribe();
+  } catch (e) {}
+}
+function reactsHTML(m) {
+  const map = m.kind === 'chat' ? reacts.get(rKey(m.id)) : null; if (!map || !map.size) return '';
+  const g = new Map();
+  map.forEach((e, uid) => { let x = g.get(e); if (!x) g.set(e, x = { n: 0, mine: false, who: [] }); x.n++; if (ME && uid === ME.id) { x.mine = true; x.who.unshift('You'); } else x.who.push(nm(who(uid))); });
+  return `<div class="rxs">${[...g].sort((a, b) => b[1].n - a[1].n).map(([e, x]) =>
+    `<button type="button" class="rx${x.mine ? ' mine' : ''}" data-rx="${esc(m.id)}" data-e="${esc(e)}" aria-pressed="${x.mine}" aria-label="${esc(e)} ${x.n} — ${esc(x.who.join(', '))}" title="${esc(x.who.join(', '))}"><span>${esc(e)}</span>${x.n > 1 ? `<b>${x.n}</b>` : ''}</button>`).join('')}</div>`;
+}
+/* floating emoji where the person tapped (fixed + outside the feed, so the feed repaint does not wipe it) */
+function reactBurst(emoji, x, y) {
+  const root = $('#rm'); if (!root || window.matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+  const b = document.createElement('span'); b.className = 'rxburst'; b.textContent = emoji; b.setAttribute('aria-hidden', 'true');
+  b.style.left = x + 'px'; b.style.top = y + 'px'; root.appendChild(b); setTimeout(() => b.remove(), 800);
+}
+async function toggleReact(id, emoji, at) {
+  const m = msgById(id); if (!m || m.kind !== 'chat' || !ME || !R || m.id == null || !emoji) return;
+  if (!reactOK) return toast(NEED_REACT_SQL, 'err');
+  const prev = myReact(m.id), next = prev === emoji ? null : emoji;
+  setReact(m.id, ME.id, next); if (next) popNext = rKey(m.id); renderFeed();
+  if (next && at) reactBurst(next, at.x, at.y);
+  if (next && navigator.vibrate && Nova.S.haptic) navigator.vibrate(10);
+  const { error } = next
+    ? await sb.from('room_message_reactions').upsert({ message_id: m.id, room_id: R.id, user_id: ME.id, emoji: next }, { onConflict: 'message_id,user_id' })
+    : await sb.from('room_message_reactions').delete().eq('message_id', m.id).eq('user_id', ME.id);
+  if (error) {
+    setReact(m.id, ME.id, prev); renderFeed();
+    if (reactMissing(error)) { reactOK = false; toast(NEED_REACT_SQL, 'err'); } else toast(error.message || 'Could not react', 'err');
+  }
+}
+/* the reaction you just added bounces once */
+function popReact() {
+  if (!popNext) return; const id = popNext; popNext = null;
+  const c = $('#feed .cm[data-mid="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"] .rx.mine'); if (c) { c.classList.add('pop'); setTimeout(() => c.classList.remove('pop'), 420); }
+}
+
 function openMsgMenu(id) {
   const m = msgById(id); if (!m || m.kind !== 'chat') return;
   closeMsgMenu(); if (MEDIA()) MEDIA().close(); emojiToggle(false);
@@ -1582,10 +1705,7 @@ function openMsgMenu(id) {
   const A = (label, icon, run, danger) => acts.push({ label, icon, run, danger });
   A('Reply', 'reply', () => { const i = $('#cmsg'); if (!i) return; if (!mine && u.username) i.value = '@' + u.username + ' ' + i.value; i.focus(); syncTyping(); });
   if (m.body) A('Copy', 'copy', () => copyText(m.body).then(ok => toast(ok ? 'Copied' : 'Could not copy', ok ? undefined : 'err')));
-  if (m.body) A(m.tr ? 'Show original' : 'Translate', 'globe', () => {
-    if (m.tr) { delete m.tr; return renderFeed(); }
-    Nova.tr(m.body).then(t => { if (t && t !== m.body) { m.tr = t; renderFeed(); } else toast('Nothing to translate'); }).catch(() => toast('Translation unavailable', 'err'));
-  });
+  if (m.body && !mine && Nova.mt && Nova.mt.eligible(m.body) && (Nova.mt.shown('room', m.id, m.body) || !Nova.mt.likelyEnglish(m.body))) { const on = Nova.mt.shown('room', m.id, m.body); A(on ? 'Show original' : 'Translate to English', 'globe', () => Nova.mt.act('room', m.id, m.body, on ? 'orig' : 'tr')); }
   if (atts.length) A('Save to device', 'down', () => saveAtts(atts));
   if (!mine) A('Report', 'flag', () => openReport(m.user_id), true);
   A('Delete for me', 'trash', () => { hiddenMsgs.add(m.id); saveHidden(); renderFeed(); toast('Deleted for you'); }, !mine);
@@ -1596,8 +1716,11 @@ function openMsgMenu(id) {
   }, true);
   const o = document.createElement('div'); o.className = 'msh'; o.id = 'msgmenu';
   const who_ = esc(nm(u)), prev = m.body ? esc(String(m.body).slice(0, 80)) : (atts.length ? esc(atts.length + ' attachment' + (atts.length > 1 ? 's' : '')) : '');
-  o.innerHTML = `<div class="msb" role="dialog" aria-label="Message options"><div class="msh-h"><b>${who_}</b><small>${prev}</small></div>${acts.map((a, i) => `<button type="button" class="mso${a.danger ? ' dng' : ''}" data-mi="${i}">${ic(a.icon, 20)}<span>${a.label}</span></button>`).join('')}<button type="button" class="mso cancel" data-mi="x">Cancel</button></div>`;
+  const qs = [Nova.quick(), ...['👍', '❤️', '😂', '😮', '😢', '🙏'].filter(e => e !== Nova.quick())].slice(0, 6), cur = myReact(m.id);
+  const bar = reactOK ? `<div class="rxbar" role="group" aria-label="React to message">${qs.map(e => `<button type="button" class="${e === cur ? 'on' : ''}" data-rq="${esc(e)}" aria-label="React ${esc(e)}" aria-pressed="${e === cur}">${esc(e)}</button>`).join('')}</div>` : '';
+  o.innerHTML = `<div class="msb" role="dialog" aria-label="Message options"><div class="msh-h"><b>${who_}</b><small>${prev}</small></div>${bar}${acts.map((a, i) => `<button type="button" class="mso${a.danger ? ' dng' : ''}" data-mi="${i}">${ic(a.icon, 20)}<span>${a.label}</span></button>`).join('')}<button type="button" class="mso cancel" data-mi="x">Cancel</button></div>`;
   o.addEventListener('click', e => {
+    const q = e.target.closest('[data-rq]'); if (q) { closeMsgMenu(); toggleReact(m.id, q.dataset.rq); return; }
     const b = e.target.closest('[data-mi]');
     if (!b && e.target !== o) return;
     closeMsgMenu(); if (b && b.dataset.mi !== 'x') acts[+b.dataset.mi].run();
@@ -1628,6 +1751,23 @@ function bindMsgGestures(el) {
   });
   el.addEventListener('pointermove', e => { if (pressM && (Math.abs(e.clientX - pressM.x) > 10 || Math.abs(e.clientY - pressM.y) > 10)) { clearTimeout(pressM.t); pressM = null; } });
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(n => el.addEventListener(n, () => { if (pressM) { clearTimeout(pressM.t); pressM = null; } }));
+  /* chips: tap = add / remove YOUR reaction with that emoji */
+  el.addEventListener('click', e => {
+    const c = e.target.closest('.rx[data-rx]'); if (!c) return;
+    e.preventDefault(); e.stopPropagation(); toggleReact(c.dataset.rx, c.dataset.e);
+  });
+  /* double-tap (touch) / double-click (mouse) on a message = react with Settings > Quick Reaction */
+  let lastTap = { id: '', t: 0, x: 0, y: 0 };
+  el.addEventListener('click', e => {
+    const m = target(e); if (!m || Date.now() - menuAt < 600) return;
+    if (e.target.closest('.uav,a,button,input,audio,video,[data-r],[data-rm-view],.rxs,.rxbar')) { lastTap = { id: '', t: 0, x: 0, y: 0 }; return; }
+    const now = Date.now(), id = m.dataset.mid;
+    if (lastTap.id === id && now - lastTap.t < 320 && Math.abs(e.clientX - lastTap.x) < 36 && Math.abs(e.clientY - lastTap.y) < 36) {
+      lastTap = { id: '', t: 0, x: 0, y: 0 };
+      const sel = window.getSelection && window.getSelection(); if (sel && sel.removeAllRanges) sel.removeAllRanges();
+      toggleReact(id, Nova.quick(), { x: e.clientX, y: e.clientY });
+    } else lastTap = { id, t: now, x: e.clientX, y: e.clientY };
+  });
   /* a long-press that opened the menu must not also open the photo viewer */
   el.addEventListener('click', e => { if (Date.now() - menuAt < 600 && e.target.closest('.cm[data-mid]')) { e.stopPropagation(); e.preventDefault(); } }, true);
 }
@@ -1838,6 +1978,8 @@ function openReport(id) {
 }
 /* actions */
 async function pick(m, now) {
+  m = tagAdult(m);
+  if (hidesMature() && m && m.nsfw) { toast('This is an 18+ video. Turn off Hide Mature Content in Settings to play it.', 'err'); return false; }
   try {
     const r = await rpc('room_pick', { p_room: R.id, p_media: m, p_now: !!now });
     toast(r && r.action === 'queued' ? 'Added to Up next' : 'Playing now');
@@ -1849,6 +1991,8 @@ async function pick(m, now) {
 async function handle(m, o) {
   o = o || {};
   if (!await auth()) { toast('Sign in to add a video to a room', 'err'); return false; }
+  m = tagAdult(m);
+  if (hidesMature() && m && m.nsfw) { toast('This is an 18+ video. Turn off Hide Mature Content in Settings to play it.', 'err'); return false; }
   try {
     if (!R) {
       const row = await rpc('create_room', { p_title: m.title || 'Nova room', p_privacy: 'public', p_media: m });
@@ -2069,16 +2213,17 @@ function card(r) {
 }
 function renderHome() {
   const q = ($('#hs') ? $('#hs').value : '').trim().toLowerCase();
-  const rooms = homeRooms.filter(r => !r.mine && (!q || ((r.media && r.media.title) || r.title || '').toLowerCase().includes(q)));
+  const hide = hidesMature(), held = hide && homeRooms.some(r => !r.mine && matureState(r.media) === null);
+  const rooms = homeRooms.filter(r => !r.mine && roomShown(r) && (!q || ((r.media && r.media.title) || r.title || '').toLowerCase().includes(q)));
   const inv = rooms.filter(r => r.invited), pub = rooms.filter(r => !r.invited);
   const set = (l, e, list, emptyText) => {
     const a = $('#' + l), b = $('#' + e);
-    const loading = !homeLoaded && !list.length && window.NovaSk;
+    const loading = (!homeLoaded || held) && !list.length && window.NovaSk;
     if (a) a.innerHTML = loading ? NovaSk.rooms(l === 'invL' ? 1 : 3) : list.map(card).join('');
     if (!b) return;
     b.hidden = list.length > 0;
     if (list.length) return;
-    if (!homeLoaded) {
+    if (!homeLoaded || held) {
       b.hidden = !!window.NovaSk;
       b.innerHTML = '<i class="spin" aria-hidden="true"></i> Loading rooms…';
       b.setAttribute('aria-live', 'polite');
@@ -2107,6 +2252,7 @@ async function loadHome() {
       homeLoadError = 'Sign in to load rooms.';
       return;
     }
+    await syncMature();
     const pos = JSON.parse(sessionStorage.getItem('nova_pos') || 'null');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
@@ -2130,15 +2276,45 @@ async function loadHome() {
     renderHome();
   }
 }
+/* is this video adult? instant answer from the cache / rules, otherwise the deep check (max 8 s - the in-room guard keeps watching) */
+async function adultNow(m) {
+  if (!window.NsfwDetect || !m) return false;
+  const v = NsfwDetect.verdict(m); if (v !== null) return v;
+  toast('Checking this room…');
+  return Promise.race([NsfwDetect.resolve(m), new Promise(res => setTimeout(() => res(false), 8000))]).catch(() => false);
+}
+/* inside a room: the video that is playing now is checked once per video. Hide Mature ON -> leave with the explanation.
+   Hide Mature OFF and I am the admin -> mark the video 18+ for everybody, so members who hide mature content are taken out. */
+let guardKey = '';
+async function guardMature() {
+  const m = R && R.media; if (!m || !window.NsfwDetect) return;
+  const k = NsfwDetect.keyOf(m) + '|' + R.media_ver + '|' + hidesMature(); if (k === guardKey) return; guardKey = k;
+  const rid = R.id, ver = R.media_ver, hide = hidesMature();
+  let yes = false; try { yes = await NsfwDetect.resolve(m); } catch (e) {}
+  if (!yes || !R || R.id !== rid || R.media_ver !== ver) return;
+  if (isAdmin() && !R.media.nsfw) { try { await rpc('room_flag_nsfw', { p_room: rid }); } catch (e) {} }
+  if (!hide) return;
+  try { await rpc('leave_room', { p_room: rid }); } catch (e) {}
+  cleanup(); await matureGate();
+}
 async function joinByCode(code, pos) {
   if (!await auth()) { try { sessionStorage.setItem('nova_join', code); } catch (e) {} location.href = 'index.html'; return; }
   pos = pos || cachedPos();
-  try { const row = await rpc('join_room', { p_code: code, p_lat: pos ? pos.lat : null, p_lng: pos ? pos.lng : null }); await enter(row); }
+  try {
+    const row = await rpc('join_room', { p_code: code, p_lat: pos ? pos.lat : null, p_lng: pos ? pos.lng : null });
+    /* the server already refuses what it can recognise; this also catches what only the browser can tell (age limit, page rating, picture) */
+    if (hidesMature() && row && row.media && await adultNow(row.media)) {
+      try { await rpc('leave_room', { p_room: row.id }); } catch (e) {}
+      await matureGate(); loadHome(); return;
+    }
+    await enter(row);
+  }
   catch (e) { await joinDenied(e, code, pos); }
 }
 /* the server said no: show the right message, never room details, and allow a safe retry for location problems */
 async function joinDenied(e, code, pos) {
   const h = (e && e.hint) || '';
+  if (h === 'mature') { await matureGate(); loadHome(); return; }
   const retryAct = [{ label: 'Try again', value: 'retry', primary: true }, { label: 'Close', value: 'close' }];
   if (h === 'nearby_location' && !pos) {
     const p = await locationReady('join');
@@ -2194,6 +2370,7 @@ window.addEventListener('hashchange', hashJoin);
 
 async function boot() {
   const u = await auth();
+  await syncMature(true);
   if (!u) {
     const next = location.pathname.split('/').pop() + location.search + location.hash;
     location.replace('index.html?next=' + encodeURIComponent(next));
@@ -2242,7 +2419,7 @@ function livePos(r) {
   return { pos: ps.playing ? (ps.pos || 0) + (snow() - (ps.ts || snow())) / 1000 : (ps.pos || 0), playing: !!ps.playing };
 }
 const roomApi = {
-  rooms: () => homeRooms, byId: id => homeRooms.find(r => r.id === id) || null,
+  rooms: () => visibleRooms(), byId: id => visibleRooms().find(r => r.id === id) || null,
   previewSource, livePos, now: snow, attachSrc, thumb, fmt, PRIV, ic, platBadge, nsfwBadge,
   reload: () => loadHome(),
   dismiss: id => rpc('room_dismiss', { p_room: id }),
@@ -2261,6 +2438,8 @@ if (window.NovaPlayer) NovaPlayer.init({
   adminName: () => R ? nm(who(R.admin_id)) : '',
   rate: { get: () => ui.rate, set: r => setRoomRate(r, true) },
   hidden: { get: () => ui.phide, set: setPlayerHidden },
+  /* floating player (Picture-in-Picture): only direct / stream videos; YouTube and embedded pages are iframes the browser cannot float */
+  pip: { can: () => !!(P.kind === 'video' && P.video && Nova.pip.enabled()), on: () => !!P.video && document.pictureInPictureElement === P.video, toggle: () => { const v = P.video; if (!v) return; Nova.pip.toggle(v).then(ok => { if (!ok && document.pictureInPictureElement !== v && Nova.pip.enabled()) toast('The floating player is not available for this video yet', 'err'); }); } },
   like: { can: m => canLike(m), is: m => canLike(m) && NovaApp.isLiked(likeItem(m)), toggle: m => { if (canLike(m)) { NovaApp.toggleLike(likeItem(m)); renderNow(); } } },
   sourceUrl: m => {
     if (!m) return '';

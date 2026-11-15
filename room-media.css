@@ -244,3 +244,7 @@
 /* v14: People list shows original joining order + creator tag */
 #rm .li .ord{color:var(--mut);font-weight:600;font-variant-numeric:tabular-nums;margin-right:2px}
 #rm .li .ctag{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.02em;padding:1px 7px;border-radius:999px;background:#b8860b1f;color:#8a6508;vertical-align:middle}
+
+/* Translate / Original button inside a room message card */
+#rm .cm .mcard .mt-btn,#rm .cm .mcard .mt-note{display:block;margin:2px 0 0;padding:2px 0;background:none;border:0;border-radius:0;box-shadow:none;color:inherit;font:inherit;font-size:12px;font-weight:500;opacity:.55;text-align:left}
+#rm .cm .mcard .mt-btn:hover{opacity:.85}

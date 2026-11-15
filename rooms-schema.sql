@@ -265,6 +265,43 @@ begin
 end $$;
 
 -- validates + normalises media coming from clients (blocks javascript:, data:, huge strings…)
+-- ---------- Hide Mature Content (server side) ----------
+-- A viewer "hides mature content" when their setting is ON (the default) or they have not passed the 18+ check.
+-- A room is "mature" when its current video carries the 18+ flag (set by the app's detector) or is caught by the instant
+-- checks below (same rules as nsfw-detect.js: adult sites / CDNs / TLDs in the video or picture link, explicit words in
+-- the address or title).  list_rooms, join_room, room_pick, create_room, room_invite and public_room_for_user all use them,
+-- so a hidden room cannot be listed, opened by link, invited to, or joined by any other way.
+create or replace function public._viewer_hides_mature(uid uuid) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare v boolean;
+begin
+  if uid is null then return true; end if;
+  select (coalesce(settings ->> 'hideMature', 'true') <> 'false') or not coalesce(maturity_verified, false)
+    into v from public.profiles where id = uid;
+  return coalesce(v, true);                       -- no profile row yet -> safest answer
+end $$;
+
+create or replace function public._media_is_nsfw(m jsonb) returns boolean
+language plpgsql immutable set search_path = public as $$
+declare u text; t text;
+begin
+  if m is null or jsonb_typeof(m) <> 'object' then return false; end if;
+  if lower(coalesce(m ->> 'nsfw', '')) = 'true' then return true; end if;
+  if coalesce(m ->> 'age_limit', '') ~ '^(1[89]|[2-9][0-9])$' then return true; end if;
+  -- the video / picture links (also a link hidden inside a proxy address), lower-cased and percent-decoded for : / .
+  u := lower(coalesce(m ->> 'url', '') || ' ' || coalesce(m ->> 'thumb', ''));
+  u := replace(replace(replace(u, '%2f', '/'), '%3a', ':'), '%2e', '.');
+  if u ~ '(^|[/.@=:\s])(pornhub\.com|pornhub\.org|phncdn\.com|pornhubpremium\.com|xvideos\.com|xvideos2\.com|xvideos-cdn\.com|xvideos\.es|xnxx\.com|xnxx\.tv|xnxx-cdn\.com|xhamster\.com|xhamster\.desi|xhamster2\.com|xhamster3\.com|xhcdn\.com|xhamsterlive\.com|spankbang\.com|sb-cd\.com|eporner\.com|redtube\.com|rdtcdn\.com|youporn\.com|ypncdn\.com|tube8\.com|beeg\.com|tnaflix\.com|thumbzilla\.com|porn\.com|pornone\.com|pornone\.org|motherless\.com|chaturbate\.com|stripchat\.com|bongacams\.com|cam4\.com|livejasmin\.com|camsoda\.com|myfreecams\.com|onlyfans\.com|fansly\.com|manyvids\.com|clips4sale\.com|rule34\.xxx|rule34\.us|e-hentai\.org|exhentai\.org|nhentai\.net|nhentai\.to|hanime\.tv|hentaihaven\.xxx|hentaihaven\.com|hentaigasm\.com|hentai\.tv|hentaistream\.com|hitomi\.la|txxx\.com|hclips\.com|hdzog\.com|upornia\.com|porntrex\.com|sxyprn\.com|erome\.com|hqporner\.com|daftsex\.com|vporn\.com|4tube\.com|drtuber\.com|sunporno\.com|nuvid\.com|fuq\.com|fapello\.com|fapello\.is|pornpics\.com|brazzers\.com|realitykings\.com|bangbros\.com|naughtyamerica\.com|nubiles\.net|mofos\.com|teamskeet\.com|porntube\.com|youjizz\.com|slutload\.com|xtube\.com|heavy-r\.com|redgifs\.com|thothub\.to|camwhores\.tv|cumlouder\.com|xmoviesforyou\.com|fullporner\.com|pornktube\.com|pornhat\.com|eroprofile\.com|sex\.com|lewdgames\.com|ixxx\.com|3movs\.com|hotmovs\.com|fxggxt\.com|tubegalore\.com|yespornplease\.com|xfreehd\.com|anyporn\.com|analdin\.com|pornzog\.com|tubxporn\.com|bellesa\.co|faphouse\.com|javhd\.com|jav\.guru|missav\.com|missav\.ws|supjav\.com|njav\.tv|spankwire\.com|keezmovies\.com|extremetube\.com|pornerbros\.com|gotporn\.com|porndig\.com|vjav\.com|pornflip\.com)([:/?#&\s]|$)' then return true; end if;
+  if u ~ '\.(xxx|porn|sex|adult|sexy)([:/?#&\s]|$)' then return true; end if;
+  if u ~ '(^|[^a-z0-9])(porn|porno|pornos|xxx|hentai|nsfw|milf|camgirls?|camwhore|blowjob|handjob|creampie|gangbang|bukkake|xvideos|pornhub|xnxx|xhamster|redtube|youporn|onlyfans|sexcams?|sextape|sexvideos?|sexmovies|adultvideos?|pornstars?|rule34)([^a-z0-9]|$)' then return true; end if;
+  -- explicit words in the title / channel
+  t := lower(coalesce(m ->> 'title', '') || ' ' || coalesce(m ->> 'channel', ''));
+  if t ~ '\yp[o0]rn(o|s|hub|star|stars|ography|ographic)?\y|\ypr0n\y|\yx{3,}\y|\yhentai\y|\yxvideos?\y|\yxnxx\y|\yxhamster\y|\yonlyfans\y|\yfansly\y|\ynsfw\y|\y18\s*\+|\yadult\s+(film|films|video|videos|movie|movies|content|site|only|entertainment|cam)\y|\yblow\s?jobs?\y|\yhand\s?jobs?\y|\ycream\s?pies?\y|\ygang\s?bangs?\y|\ybukkake\y|\ymilfs?\y|\yorgasms?\y|\ycum\s?shots?\y|\y(anal|oral)\s+sex\y|\ysex\s+(scene|scenes|video|videos|clip|clips|movie|movies|cam|chat|show)\y|\yhardcore\s+sex\y|\yfull\s+sex\y|\ycam\s?(girl|girls|model|models|show)\y|\ystrip\s?tease\y|\ydeepthroat\y|\ythreesome\y|\ydesi\s+(sex|xxx)\y|\ybhabhi\s+sex\y|\ychudai\y|порно|секс\s?видео|эротик|порнуха|色情|成人影片|成人视频|無碼|无码|ポルノ|エロ動画|アダルト(動画|ビデオ)|야동|포르노|إباحي|اباحي|سكس|pornograf[ií]a|pornogr[aá]fic[oa]|pornographie' then
+    return true;
+  end if;
+  return false;
+end $$;
+
 create or replace function public._clean_media(p jsonb) returns jsonb
 language plpgsql immutable set search_path = public as $$
 declare k text; u text; r jsonb;
@@ -299,8 +336,19 @@ begin
   return r;
 end $$;
 
+-- members who hide mature content leave a room that is playing an adult video (admin passes on, an empty room closes)
+create or replace function public._room_drop_mature(rid uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare x uuid;
+begin
+  for x in select user_id from public.room_members where room_id = rid order by joined_at loop
+    if public._viewer_hides_mature(x) then perform public._room_drop_member(rid, x, 'left'); end if;
+  end loop;
+end $$;
+
 create or replace function public._set_media(rid uuid, m jsonb) returns void
-language sql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public as $$
+begin
   -- a new video starts a NEW voting session: leftover suggestions go, remaining votes reset
   delete from public.room_queue where room_id = rid and suggested;
   update public.room_queue set votes = '{}' where room_id = rid and cardinality(votes) > 0;
@@ -308,7 +356,9 @@ language sql security definer set search_path = public as $$
     play_state = jsonb_build_object('playing', true, 'pos', 0, 'ts', public.room_now(),
                    'seq', coalesce((play_state->>'seq')::int, 0) + 1, 'idx', 0, 'phase', 'PLAYING')
   where id = rid;
-$$;
+  -- an adult video starts: everyone who hides mature content leaves the room (admin passes on, an empty room closes)
+  if public._media_is_nsfw(m) then perform public._room_drop_mature(rid); end if;
+end $$;
 
 -- one line in the playback log
 create or replace function public._log(rid uuid, uid uuid, ev text, m jsonb default null, d jsonb default null) returns void
@@ -531,6 +581,9 @@ begin
     raise exception 'Location permission is needed to create a Nearby room' using hint = 'nearby_location';
   end if;
   m := public._clean_media(p_media);
+  if public._media_is_nsfw(m) and public._viewer_hides_mature(uid) then
+    raise exception 'Mature content is hidden in your settings' using hint = 'mature';
+  end if;
   for x in select room_id from public.room_members where user_id = uid loop
     perform public._room_drop_member(x, uid, 'left');
   end loop;
@@ -567,6 +620,10 @@ begin
   if r.status <> 'open' then raise exception 'This room is closed' using hint = 'closed'; end if;
   if exists(select 1 from public.room_bans where room_id = r.id and user_id = uid) then
     raise exception 'You were removed from this room' using hint = 'banned';
+  end if;
+  -- Hide Mature Content: an adult room can never be entered (link, invite, nearby, friends, creator or admin) while the setting is ON
+  if public._media_is_nsfw(r.media) and public._viewer_hides_mature(uid) then
+    raise exception 'This room has 18+ content and Hide Mature Content is on' using hint = 'mature';
   end if;
   -- people already inside are never interrupted by a privacy change
   if exists(select 1 from public.room_members where room_id = r.id and user_id = uid) then
@@ -680,6 +737,9 @@ begin
     raise exception 'Join the room first'; end if;
   m := public._clean_media(p_media);                       -- exists + supported
   if m is null then raise exception 'Nothing to play'; end if;
+  if public._media_is_nsfw(m) and public._viewer_hides_mature(uid) then
+    raise exception 'Mature content is hidden in your settings' using hint = 'mature';
+  end if;
   isadm  := (r.admin_id = uid);
   ended  := (r.media is null) or coalesce((r.play_state->>'ended')::boolean, false);
   voting := (r.play_state->'vote_until') is not null;
@@ -1011,15 +1071,16 @@ end $$;
 
 create or replace function public.room_invite(p_room uuid, p_users uuid[]) returns int
 language plpgsql security definer set search_path = public as $$
-declare uid uuid := auth.uid(); u uuid; n int := 0; owner_id uuid; rp text;
+declare uid uuid := auth.uid(); u uuid; n int := 0; owner_id uuid; rp text; rm jsonb;
 begin
   if not exists(select 1 from public.room_members where room_id = p_room and user_id = uid) then
     raise exception 'Join the room first'; end if;
-  select admin_id, privacy into owner_id, rp from public.rooms where id = p_room and status = 'open';
+  select admin_id, privacy, media into owner_id, rp, rm from public.rooms where id = p_room and status = 'open';
   if owner_id is null then raise exception 'Room is closed'; end if;
   if rp = 'invite' and uid <> owner_id then raise exception 'Only the host can invite people to an Invite only room'; end if;
   foreach u in array coalesce(p_users, '{}') loop
     if u <> uid and public._is_friend(uid, u)
+       and not (public._media_is_nsfw(rm) and public._viewer_hides_mature(u))          -- never invite someone who hides mature content to an adult room
        and not exists(select 1 from public.room_members where room_id = p_room and user_id = u) then
       if exists(select 1 from public.room_bans where room_id = p_room and user_id = u) then
         if uid <> owner_id then raise exception 'Only the admin can invite someone removed from this room'; end if;
@@ -1145,6 +1206,7 @@ begin
   from public.rooms r
   join public.room_members target on target.room_id = r.id and target.user_id = p_user
   where r.status = 'open' and r.privacy = 'public'
+    and not (public._media_is_nsfw(r.media) and public._viewer_hides_mature(auth.uid()))
   limit 1;
   return result;
 end $$;
@@ -1152,9 +1214,10 @@ end $$;
 -- rooms the caller may see on the Nova home screen
 create or replace function public.list_rooms(p_lat double precision default null, p_lng double precision default null) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare uid uuid := auth.uid();
+declare uid uuid := auth.uid(); hide boolean;
 begin
   if uid is null then return '[]'::jsonb; end if;
+  hide := public._viewer_hides_mature(uid);          -- Hide Mature Content ON: adult rooms are not listed at all (Invited, Public, Nearby, Friends)
   perform public._room_sweep_all();
   return coalesce((
     select jsonb_agg(t.j order by t.created_at desc) from (
@@ -1175,6 +1238,7 @@ begin
       where r.status = 'open'
         and not exists(select 1 from public.room_dismissed d where d.room_id = r.id and d.user_id = uid)
         and not public._room_blocked(uid, r.admin_id)
+        and not (hide and public._media_is_nsfw(r.media))
         and (
             r.admin_id = uid
          or exists(select 1 from public.room_members mm where mm.room_id = r.id and mm.user_id = uid)
@@ -1250,7 +1314,7 @@ begin
            from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public'
              and p.proname in ('_is_friend','_sys','_notice','_distance_km','_priv_label','_room_blocked','_room_cfg','_clean_media','_set_media','_room_drop_member',
-                               '_room_sweep','_room_sweep_all','_room_next','_room_next_admin','_room_set_admin','_room_finish','_media_same','_room_defaults','_log','_unavailable','_wait_phase') loop
+                               '_room_sweep','_room_sweep_all','_room_next','_room_next_admin','_room_set_admin','_room_finish','_media_same','_room_defaults','_log','_unavailable','_wait_phase','_viewer_hides_mature','_media_is_nsfw','_room_drop_mature') loop
     execute format('revoke all on function %s from public, anon, authenticated', f.sig);
   end loop;
 end $$;

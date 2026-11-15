@@ -24,6 +24,7 @@ const svg = (body, o) => `<svg viewBox="0 0 24 24" width="${(o && o.s) || 24}" h
 const NUM = '<text x="12" y="15.4" text-anchor="middle" font-size="8.2" font-weight="700" font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif" fill="currentColor" stroke="none">15</text>';
 const I = {
   fs: svg('<path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>'),
+  pip: svg('<path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4"/><rect width="10" height="7" x="12" y="13" rx="2"/>'),
   fsx: svg('<path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M16 21v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>'),
   like: svg('<path d="M7 10v12"/><path d="M15 5.9 14 10h5.8a2 2 0 0 1 1.9 2.6l-2.3 8a2 2 0 0 1-1.9 1.4H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.8a2 2 0 0 0 1.8-1.1L12 2a3.1 3.1 0 0 1 3 3.9Z"/>'),
   more: svg('<circle cx="12" cy="5" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="19" r="1.7" fill="currentColor"/>'),
@@ -129,7 +130,8 @@ function resetPer() {
 function renderTop() {
   const t = $('.ptop', ui); if (!t) return;
   const m = media(), likeable = H.like.can(m), liked = likeable && H.like.is(m);
-  t.innerHTML = `<button type="button" class="pb" data-p="fs" aria-label="${S.fs || S.pfs ? 'Exit full screen' : 'Full screen'}" title="${S.fs || S.pfs ? 'Exit full screen' : 'Full screen'}">${S.fs || S.pfs ? I.fsx : I.fs}</button>
+  const pip = H.pip && H.pip.can(), pipOn = pip && H.pip.on();
+  t.innerHTML = `${pip ? `<button type="button" class="pb${pipOn ? ' on' : ''}" data-p="pip" aria-pressed="${pipOn}" aria-label="${pipOn ? 'Bring video back' : 'Floating player'}" title="${pipOn ? 'Bring video back' : 'Floating player'}">${I.pip}</button>` : ''}<button type="button" class="pb" data-p="fs" aria-label="${S.fs || S.pfs ? 'Exit full screen' : 'Full screen'}" title="${S.fs || S.pfs ? 'Exit full screen' : 'Full screen'}">${S.fs || S.pfs ? I.fsx : I.fs}</button>
     ${likeable ? `<button type="button" class="pb${liked ? ' on' : ''}" data-p="like" aria-pressed="${liked}" aria-label="${liked ? 'Unlike video' : 'Like video'}" title="${liked ? 'Unlike' : 'Like'}">${liked ? I.like.replace('fill="none"', 'fill="currentColor"') : I.like}</button>` : ''}
     <button type="button" class="pb mo${S.menu ? ' on' : ''}" data-p="more" aria-haspopup="menu" aria-expanded="${S.menu ? 'true' : 'false'}" aria-label="More options" title="More options">${I.more}</button>`;
 }
@@ -139,7 +141,8 @@ function update() {
   const adm = H.isAdmin(), embed = isEmbed();
   if (ui.dataset.adm !== (adm ? '1' : '0')) { ui.dataset.adm = adm ? '1' : '0'; renderMenuSoft(); }
   if (wrap) wrap.classList.toggle('padm', adm && !embed);
-  const likeBtn = $('[data-p=like]', ui), likeable = H.like.can(m);
+  const likeBtn = $('[data-p=like]', ui), likeable = H.like.can(m), pipBtn = $('[data-p=pip]', ui);
+  if (!!pipBtn !== !!(H.pip && H.pip.can())) renderTop();
   if (!!likeBtn !== likeable || (likeBtn && likeBtn.classList.contains('on') !== H.like.is(m))) renderTop();
   const tt = $('.ptt', ui), ts = $('.pts', ui);
   if (tt.textContent !== (m.title || 'Video')) tt.textContent = m.title || 'Video';
@@ -459,6 +462,7 @@ function onClick(e) {
   wake(); S.kbd = e.detail === 0;
   const p = el.dataset.p, adm = H.isAdmin();
   if (p === 'fs') toggleFs();
+  else if (p === 'pip') { H.pip && H.pip.toggle(); }
   else if (p === 'like') { H.like.toggle(media()); renderTop(); }
   else if (p === 'more') { S.menu ? closeMenu() : openMenu('main'); }
   else if (p === 'mback') openMenu('main');
@@ -495,6 +499,8 @@ function docKey(e) {
 /* =====================================================================
    public
    ===================================================================== */
+/* Settings changed / the floating window opened or closed: repaint the Floating player button */
+['nova:setting', 'nova:pip'].forEach(n => document.addEventListener(n, () => { if (ui && H) renderTop(); }));
 window.NovaPlayer = {
   init(host) { H = host; },
   mount, unmount, update, layout,

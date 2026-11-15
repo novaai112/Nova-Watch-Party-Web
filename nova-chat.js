@@ -947,7 +947,12 @@
 
   /* ============================================================ messages */
   const GROUP_GAP = 5 * 60000;
-  const quickReactions = () => { try { const v = JSON.parse(localStorage.getItem(`nova_chat_quick_${U.id}`) || 'null'); if (Array.isArray(v) && v.length) return v.slice(0, 6); } catch (_) {} return R.DEFAULT_QUICK.slice(0, 6); };
+  /* slot 1 is always the Settings > Quick Reaction emoji (the one double-tap uses); the rest is the person's own list */
+  const quickReactions = () => {
+    let v = []; try { const x = JSON.parse(localStorage.getItem(`nova_chat_quick_${U.id}`) || 'null'); if (Array.isArray(x)) v = x.filter(e => typeof e === 'string' && e); } catch (_) {}
+    if (!v.length) v = R.DEFAULT_QUICK.slice();
+    const q = Nova.quick(); return [q, ...v.filter(e => e !== q)].slice(0, 6);
+  };
   Core.quickReactions = quickReactions;
   const mentionMap = () => { const map = new Map(); (S.conv && S.conv.member_ids || []).forEach(id => { const p = person(id); if (p.username) map.set(String(p.username).toLowerCase(), id); }); return map; };
 
@@ -992,16 +997,12 @@
     } catch { S.previews.set(url, null); }
   }
   function bodyHtml(m) {
-    const text = m.body || ''; if (!text) return '';
+    const mine = m.sender_id === U.id; Nova.mt.auto('inbox', m.id, m.body, mine);
+    const text = Nova.mt.text('inbox', m.id, m.body || ''); if (!text) return '';
     const long = text.length > 700 && !S.expanded.has(m.id), shown = long ? text.slice(0, 600).trimEnd() + '…' : text;
     const only = R.emojiOnlyCount(text);
-    return `<div class="nc-text${only && only <= 8 && !(m.attachments || []).length ? ` big e${Math.min(only, 3)}` : ''}" dir=auto>${R.render(shown, { mentions: mentionMap() })}</div>${long ? `<button type=button class="nc-readmore" data-expand="${esc(m.id)}">Read more</button>` : ''}`;
+    return `<div class="nc-text${only && only <= 8 && !(m.attachments || []).length ? ` big e${Math.min(only, 3)}` : ''}" dir=auto>${R.render(shown, { mentions: mentionMap() })}</div>${long ? `<button type=button class="nc-readmore" data-expand="${esc(m.id)}">Read more</button>` : ''}${Nova.mt.button('inbox', m.id, m.body, mine)}`;
   }
-  function translationHtml(m) {
-    const t = S.translations.get(m.id); if (!t) return '';
-    return `<div class="nc-translation" dir=auto>${t === 'loading' ? '<i class="nc-spin sm"></i> Translating…' : `<small>Translated</small>${esc(t)}`}</div>`;
-  }
-
   function msgHtml(m, ctx) {
     const mine = m.sender_id === U.id, group = S.conv && S.conv.is_group;
     if (m.deleted_at) return `<div class="nc-bubble deleted">${M.ic('ban', 14)}<i>${mine ? 'You deleted this message' : 'This message was deleted'}</i><span class="nc-meta"><time>${R.fmtTime(m.created_at)}</time></span></div>`;
@@ -1022,7 +1023,7 @@
     }
     const head = visual.length ? `<div class="nc-bubble bare">${name}<div class="nc-media-row"><div class="nc-media-main">${M.renderAttachments(atts, { ...ctxA, part: 'visual' })}</div></div></div>` : '';
     const cardLead = visual.length ? `${fwd}${replyQuote(m)}` : lead;
-    return `${head}<div class="nc-bubble${head ? ' after-media' : ''}">${cardLead}${others.length ? M.renderAttachments(atts, { ...ctxA, part: 'other' }) : ''}${bodyHtml(m)}${translationHtml(m)}${previewCard(m)}${meta}</div>${failed}`;
+    return `${head}<div class="nc-bubble${head ? ' after-media' : ''}">${cardLead}${others.length ? M.renderAttachments(atts, { ...ctxA, part: 'other' }) : ''}${bodyHtml(m)}${previewCard(m)}${meta}</div>${failed}`;
   }
 
   function buildRows() {
@@ -1264,17 +1265,8 @@
     if (error) return toastErr(error);
     await loadPins(); renderMessages({}); Nova.toast(pinned ? 'Message unpinned' : 'Message pinned');
   }
-  async function translateMessage(m) {
-    if (S.translations.has(m.id)) { S.translations.delete(m.id); return renderMessages({}); }
-    const target = (navigator.language || 'en').split('-')[0]; S.translations.set(m.id, 'loading'); renderMessages({});
-    try {
-      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(R.plain(m.body).slice(0, 450))}&langpair=${encodeURIComponent(`Autodetect|${target}`)}`);
-      const json = await res.json(); const text = json && json.responseData && json.responseData.translatedText;
-      if (!text || /INVALID|QUERY LENGTH/i.test(text)) throw new Error('x');
-      S.translations.set(m.id, text);
-    } catch { S.translations.delete(m.id); Nova.toast('Translation is unavailable right now.', 'err'); }
-    renderMessages({});
-  }
+  /* Translate / Original button + Auto-translate to English: the engine is Nova.mt in nova-core.js */
+  Nova.mt.host('inbox', { rerender: () => Core.renderMessages({}), items: () => S.msgs.filter(m => m.body && !m.deleted_at && !m._local).map(m => ({ id: m.id, body: m.body, mine: m.sender_id === U.id })) });
   const msgById = id => S.msgs.find(m => m.id === id || m.client_id === id) || S.replyCache.get(id);
   function startReply(m) { S.replyTo = m; S.editing = null; paintContext(); const i = $('#ncInput'); i && i.focus(); }
   function startEdit(m) { S.editing = m; S.replyTo = null; const i = $('#ncInput'); if (i) { i.value = m.body; autosize(i); i.focus(); } paintContext(); }
@@ -1325,7 +1317,7 @@
       A('Forward', 'forward', () => Core.forward([m.id]));
       if (canEdit) A('Edit', 'pencil', () => startEdit(m));
       A(S.pins.includes(m.id) ? 'Unpin' : 'Pin', 'pushpin', () => togglePin(m.id));
-      if (m.body) A(S.translations.has(m.id) ? 'Hide translation' : 'Translate', 'translate', () => translateMessage(m));
+      if (m.body && !mine && Nova.mt.eligible(m.body) && (Nova.mt.shown('inbox', m.id, m.body) || !Nova.mt.likelyEnglish(m.body))) { const on = Nova.mt.shown('inbox', m.id, m.body); A(on ? 'Show original' : 'Translate to English', 'translate', () => Nova.mt.act('inbox', m.id, m.body, on ? 'orig' : 'tr')); }
       A('Select', 'check', () => { S.selection = new Set([m.id]); renderMessages({}); paintSelBar(); });
       if ((m.attachments || []).some(a => a.path || a.url)) A('Save to device', 'download', () => (m.attachments || []).filter(a => a.path).forEach(a => M.saveAttachment(a).catch(e => Nova.toast(e.message, 'err'))));
       if (mine) A('Message info', 'info', () => Core.messageInfo && Core.messageInfo(m.id));
@@ -1639,7 +1631,7 @@
         if (m && S.selection && !e.target.closest('a')) toggleSelect(m.dataset.msgId); return; }
       if (S.selection) return toggleSelect(m.dataset.msgId);
       const now = Date.now(), id = m.dataset.msgId;
-      if (lastTap.id === id && now - lastTap.t < 320) { lastTap = { id: '', t: 0 }; const msg = msgById(id); if (msg && !msg.deleted_at && !msg._local) toggleReaction(id, quickReactions()[0]); }
+      if (lastTap.id === id && now - lastTap.t < 320) { lastTap = { id: '', t: 0 }; const msg = msgById(id); if (msg && !msg.deleted_at && !msg._local) toggleReaction(id, Nova.quick()); }
       else lastTap = { id, t: now };
     });
   })();

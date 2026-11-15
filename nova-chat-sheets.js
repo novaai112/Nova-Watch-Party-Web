@@ -206,6 +206,7 @@
       <label class="nc-set"><span><b>Photos</b></span>${sel('dImg', pf.dlImage, dl)}</label><label class="nc-set"><span><b>Videos</b></span>${sel('dVid', pf.dlVideo, dl)}</label><label class="nc-set"><span><b>Audio</b></span>${sel('dAud', pf.dlAudio, dl)}</label><label class="nc-set"><span><b>Documents</b></span>${sel('dFile', pf.dlFile, dl)}</label>
       <h4>Chats</h4>
       ${sw('sEnter', pf.enterSends !== false, 'Enter sends message', 'On desktop; use Shift+Enter for a new line')}
+      ${sw('sAutoTr', !!Nova.S.translate, 'Auto-translate to English', 'Show every received message in English. Each message still has a Translate / Original button')}
       ${sw('sTrans', !!pf.transcribe, 'Voice message transcripts', 'Uses your browser’s speech recognition where supported')}
       ${'Notification' in window ? `<div class="nc-set"><span><b>Notifications</b><small>${Notification.permission === 'granted' ? 'Enabled in this browser' : Notification.permission === 'denied' ? 'Blocked in browser settings' : 'Alerts while the page is open or in the background'}</small></span>${Notification.permission === 'default' ? '<button type=button class="nc-btn sm pri" data-enable-notif>Enable</button>' : ''}</div>` : ''}
       <h4>Blocked</h4><button type=button class="nc-set btn" data-go-blocked><span><b>Blocked contacts</b><small>Manage people you have blocked</small></span>${ic('right', 16)}</button>` });
@@ -218,12 +219,12 @@
       const id = e.target.id;
       if (['sLast', 'sOnline', 'sReceipts', 'sTyping', 'sReq'].includes(id)) savePrivacy();
       const map = { dImg: 'dlImage', dVid: 'dlVideo', dAud: 'dlAudio', dFile: 'dlFile' }; if (map[id]) M.setPref(map[id], e.target.value);
-      if (id === 'sEnter') M.setPref('enterSends', e.target.checked); if (id === 'sTrans') M.setPref('transcribe', e.target.checked);
+      if (id === 'sAutoTr') Nova.set('translate', e.target.checked); if (id === 'sEnter') M.setPref('enterSends', e.target.checked); if (id === 'sTrans') M.setPref('transcribe', e.target.checked);
     });
     p.node.addEventListener('click', async e => {
       const q = e.target.closest('[data-qe]');
-      if (q) { const i = Number(q.dataset.qe); Core.emojiPicker(emoji => { const list = Core.quickReactions(); list[i] = emoji; try { localStorage.setItem(`nova_chat_quick_${U.id}`, JSON.stringify(list)); } catch (_) {} q.textContent = emoji; }); }
-      if (e.target.closest('[data-qe-reset]')) { try { localStorage.removeItem(`nova_chat_quick_${U.id}`); } catch (_) {} $$('[data-qe]', p.node).forEach((b, i) => { b.textContent = R.DEFAULT_QUICK[i]; }); }
+      if (q) { const i = Number(q.dataset.qe); Core.emojiPicker(emoji => { const list = Core.quickReactions(); list[i] = emoji; try { localStorage.setItem(`nova_chat_quick_${U.id}`, JSON.stringify(list)); } catch (_) {} if (i === 0) Nova.set('quick', emoji); $$('[data-qe]', p.node).forEach((b, k) => { b.textContent = list[k] || b.textContent; }); }); }
+      if (e.target.closest('[data-qe-reset]')) { try { localStorage.removeItem(`nova_chat_quick_${U.id}`); } catch (_) {} const fresh = Core.quickReactions(); $$('[data-qe]', p.node).forEach((b, i) => { b.textContent = fresh[i] || R.DEFAULT_QUICK[i]; }); }
       if (e.target.closest('[data-enable-notif]')) { try { await Notification.requestPermission(); } catch (_) {} p.close(); Core.openSettings(); }
       if (e.target.closest('[data-go-blocked]')) { p.close(); Core.go('#friends'); setTimeout(() => { const b = $('[data-people-tab="blocked"]'); b && b.click(); }, 900); }
     });

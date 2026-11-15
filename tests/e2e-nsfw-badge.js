@@ -15,7 +15,7 @@ const STUB = `window.supabase={createClient:()=>{
  const generic=()=>new Proxy(function(){},{get:(_,k)=>k==='then'?undefined:generic(),apply:()=>generic()});
  const builder=()=>{const p=new Proxy({},{get(_,k){ if(k==='then')return(res,rej)=>Promise.resolve(ok([])).then(res,rej); if(k==='single'||k==='maybeSingle')return()=>Promise.resolve(ok(null)); return()=>p;}});return p};
  return {auth:{getSession:async()=>({data:{session:{access_token:'t',user:{id:'me',email:'me@x.com',user_metadata:{}}}}}),getUser:async()=>({data:{user:{id:'me',email:'me@x.com'}}}),onAuthStateChange(){return{data:{subscription:{unsubscribe(){}}}}},signOut:async()=>{}},
-  from:builder,
+  from:t=>t==='profiles'?(()=>{const p=new Proxy({},{get(_,k){ if(k==='then')return undefined; if(k==='single'||k==='maybeSingle')return()=>Promise.resolve(ok(window.__profile||null)); return()=>p;}});return p})():builder(),
   rpc:(n,a)=>{ (window.__calls=window.__calls||[]).push([n,a]);
     if(n==='room_now') return Promise.resolve(ok(Date.now()));
     if(n==='list_rooms') return Promise.resolve(ok((window.__rooms||[]).filter(r=>!(window.__gone||[]).includes(r.id))));
@@ -66,6 +66,7 @@ let ok = 0, bad = 0; const t = async (n, f) => { try { await f(); ok++; console.
   /* stand-in for TensorFlow.js + NSFWJS (the real libraries load from a CDN): room 8's thumbnail is "Porn", the others "Neutral" */
   await ctx.addInitScript(`window.tf={};window.nsfwjs={load:async()=>({classify:async(im)=>{window.__imgChecks=(window.__imgChecks||0)+1;const adult=/\\/8\\.svg/.test(im.src);return adult?[{className:'Porn',probability:.93},{className:'Neutral',probability:.07}]:[{className:'Neutral',probability:.97},{className:'Porn',probability:.03}]}})};`);
   await ctx.addInitScript(`window.__rooms=${JSON.stringify(rooms())};`);
+  await ctx.addInitScript(`window.__profile={settings:{hideMature:false},maturity_verified:true};`);   // a verified 18+ account with Hide Mature Content OFF (otherwise adult rooms are not shown at all)
   const page = await ctx.newPage(); const errs = []; page.on('pageerror', e => errs.push(e.message));
   await page.goto(`http://localhost:${port}/nova-home.html`);
   await page.waitForSelector('#pubL .room', { timeout: 8000 });
